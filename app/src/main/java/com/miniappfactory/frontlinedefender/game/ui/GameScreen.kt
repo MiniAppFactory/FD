@@ -1,6 +1,7 @@
 package com.miniappfactory.frontlinedefender.game.ui
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -13,14 +14,48 @@ import com.miniappfactory.frontlinedefender.game.model.GameConfig
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.miniappfactory.frontlinedefender.game.ads.AdHost
+import com.miniappfactory.frontlinedefender.game.ads.AdPolicyConfig
+import com.miniappfactory.frontlinedefender.game.ads.AdRewardBridge
+import com.miniappfactory.frontlinedefender.game.ads.BannerAdSlot
+import com.miniappfactory.frontlinedefender.game.ads.ConsentManager
+import com.miniappfactory.frontlinedefender.game.ads.InterstitialReason
+import com.miniappfactory.frontlinedefender.game.ads.LoggingAdRewardBridge
+import com.miniappfactory.frontlinedefender.game.ads.NoOpAdHost
+import com.miniappfactory.frontlinedefender.game.ads.RewardedOfferSheet
+import com.miniappfactory.frontlinedefender.game.ads.RewardedPlacement
+import com.miniappfactory.frontlinedefender.game.ads.SupplyDropBar
+import com.miniappfactory.frontlinedefender.game.ads.applyDoublePayout
+import com.miniappfactory.frontlinedefender.game.ads.applyReinforcement
+import com.miniappfactory.frontlinedefender.game.ads.applySupplyDrop
+import com.miniappfactory.frontlinedefender.game.ads.findActivity
 import com.miniappfactory.frontlinedefender.game.audio.AudioManager
 import com.miniappfactory.frontlinedefender.game.data.SaveManager
 import com.miniappfactory.frontlinedefender.game.engine.GameEngine
 import com.miniappfactory.frontlinedefender.game.engine.GameState
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
+/**
+ * Sonuc modalindan cikis + interstitial. Navigasyon SADECE reklam akisi
+ * bittiginde yapilir, ama reklam gelmese de MUTLAKA yapilir.
+ */
+private data class PendingBattleExit(
+    val reason: InterstitialReason,
+    val navigate: () -> Unit
+)
+
 @Composable
-fun GameScreen() {
+fun GameScreen(
+    /**
+     * Faz 5. Varsayilan [NoOpAdHost]: onizlemeler ve testler reklam SDK'sina
+     * hic dokunmaz ve **en kotu senaryoyu** (hicbir reklam yok) yasar. Gercek
+     * host'u `MainActivity` verir — SDK'nin ve rizanin sahibi orasidir.
+     */
+    adHost: AdHost = NoOpAdHost(),
+    /** Faz 5. Ekonomi katmani baglandiginda burasi degisir; baska hicbir yer degismez. */
+    rewardBridge: AdRewardBridge = LoggingAdRewardBridge
+) {
     val context = LocalContext.current
 
     val saveManager = remember { SaveManager(context) }
@@ -95,21 +130,174 @@ fun GameScreen() {
     // kalici implementasyonu baglayacak, `CampaignProgress` sozlesmesi hazir).
     val campaignProgress = remember(saveManager) { InMemoryCampaignProgress(saveManager) }
 
+    // ----------------------------------------------------------------------
+    // Faz 5 — REKLAM CAGRI YERLERI
+    //
+    // Yerlesim (DECISIONS "Reklam doktrini" + GDD §G.1):
+    //   banner        -> YALNIZCA MAIN_MENU ve LEVEL_SELECT, ekranin ALT KENARI
+    //   interstitial  -> YALNIZCA sonuc modali KAPANDIKTAN sonra, bolum secime
+    //                    donuste (zafer VEYA yenilgi). RETRY'de YOK.
+    //   rewarded      -> R1 bolum secim, R3 zafer, R2 yenilgi (motor API'si bekliyor)
+    //   savas ekrani  -> HICBIR reklam yuzeyi yok
+    // ----------------------------------------------------------------------
+    val activity = remember(context) { context.findActivity() }
+    val appContext = remember(context) { context.applicationContext }
+
+    // Riza akisini BURADA topluyoruz: UMP formu kapandiginda GameScreen
+    // recompose olur ve `adHost.bannerAllowed` yeniden okunur. Aksi halde
+    // banner ilk acilista hic gelmez (@Volatile alan recomposition tetiklemez).
+    val canRequestAds by ConsentManager.canRequestAdsFlow.collectAsState()
+    val bannerEnabled = canRequestAds && adHost.bannerAllowed
+
+    /** Savas gercekten devam ediyor mu? Dalga aralarindaki PREPARATION'i saymaz. */
+    var battleActive by remember { mutableStateOf(false) }
+
+    /** Rewarded hak sayaci degisti -> teklif satirlari yeniden okunsun. */
+    var rewardTick by remember { mutableIntStateOf(0) }
+
+    var doublePayoutOfferOpen by remember { mutableStateOf(false) }
+    var reinforcementOfferOpen by remember { mutableStateOf(false) }
+    var supplyDropOfferOpen by remember { mutableStateOf(false) }
+    var pendingExit by remember { mutableStateOf<PendingBattleExit?>(null) }
+
+    // Savas yasam dongusu -> frekans politikasinin sayaclari.
+    LaunchedEffect(gameState) {
+        when (gameState) {
+            GameState.PREPARATION -> if (!battleActive) {
+                battleActive = true
+                adHost.onBattleStarted()
+                rewardTick++
+            }
+            GameState.VICTORY, GameState.DEFEAT -> if (battleActive) {
+                battleActive = false
+                // Interstitial hakki BURADA dogar (GDD §G.2/5): savas sonuna
+                // kadar oynandi. Yarida birakilan savas tetiklemez.
+                adHost.onBattleCompleted()
+                // Sonuc ekrani gorunurken sessiz on-yukleme (GDD §G.4).
+                adHost.preload(appContext)
+                if (gameState == GameState.VICTORY) {
+                    doublePayoutOfferOpen =
+                        adHost.isRewardedOffered(RewardedPlacement.DOUBLE_PAYOUT)
+                } else {
+                    // R2 yalnizca motor gercekten takviye uygulayabildiginde
+                    // teklif edilir; calismayan bir odul teklif edilmez.
+                    reinforcementOfferOpen = rewardBridge.reinforcementSupported &&
+                        adHost.isRewardedOffered(RewardedPlacement.REINFORCEMENT)
+                }
+                rewardTick++
+            }
+            GameState.MAIN_MENU, GameState.LEVEL_SELECT -> {
+                if (battleActive) {
+                    battleActive = false
+                    // Yarida birakildi: interstitial hakki DOGMAZ.
+                    adHost.onBattleAbandoned()
+                }
+                adHost.preload(appContext)
+            }
+            else -> {}
+        }
+    }
+
+    // Sonuc modali kapandiktan SONRA interstitial, sonra navigasyon.
+    val exit = pendingExit
+    LaunchedEffect(exit) {
+        if (exit == null) return@LaunchedEffect
+        // Modal bu kare ile birlikte kaldirildi (pendingExit != null iken
+        // cizilmiyor). Bir kare bekleyip reklamin modalin USTUNE acilmasini
+        // kesin olarak engelliyoruz.
+        withFrameNanos { }
+
+        var done = false
+        val proceed = {
+            if (!done) {
+                done = true
+                exit.navigate()
+                pendingExit = null
+            }
+        }
+
+        val act = activity
+        if (act == null) {
+            proceed()
+        } else {
+            adHost.showInterstitial(act, exit.reason) { proceed() }
+            // Son savunma: SDK callback'i hic gelmezse oyuncu modalsiz bir
+            // savas alaninda kilitlenirdi. Hedef ekran her iki yolda da ayni
+            // oldugu icin bu supap hicbir seyi bozmaz.
+            delay(AdPolicyConfig.EXIT_WATCHDOG_MS)
+            proceed()
+        }
+    }
+
+    /** Boss zaferi (bolum 11/22) politika tarafinda korunur — GDD §G.2/6. */
+    fun victoryExitReason(): InterstitialReason =
+        if (gameEngine.levelSpec.levelId in AdPolicyConfig.BOSS_LEVEL_IDS) {
+            InterstitialReason.BOSS_VICTORY_TO_LEVEL_SELECT
+        } else {
+            InterstitialReason.RESULT_TO_LEVEL_SELECT
+        }
+
     Box(modifier = Modifier.fillMaxSize()) {
         when (gameState) {
             GameState.MAIN_MENU -> {
-                // MAIN_MENU -> LEVEL_SELECT -> BATTLE akisi.
-                MainMenuOverlay(
-                    gameEngine = gameEngine,
-                    onStartGame = { gameEngine.openLevelSelect() }
-                )
+                // Banner ALT KENARDA ve Column icinde: no-fill'de 0dp'ye
+                // cokmesi ustteki menunun yerini DEGISTIRMEZ (bindirme yok,
+                // yani parmagin altinda duzen kaymasi da yok).
+                Column(modifier = Modifier.fillMaxSize()) {
+                    Box(modifier = Modifier.weight(1f)) {
+                        MainMenuOverlay(
+                            gameEngine = gameEngine,
+                            onStartGame = { gameEngine.openLevelSelect() }
+                        )
+                    }
+                    BannerAdSlot(enabled = bannerEnabled)
+                }
             }
             GameState.LEVEL_SELECT -> {
-                LevelSelectScreen(
-                    progress = campaignProgress,
-                    onPlayLevel = { levelNo -> gameEngine.startNewGame(levelNo) },
-                    onBack = { gameEngine.returnToMainMenu() }
-                )
+                val supplyOffered = remember(rewardTick) {
+                    adHost.isRewardedOffered(RewardedPlacement.SUPPLY_DROP)
+                }
+                val supplyRemaining = remember(rewardTick) {
+                    adHost.rewardedRemaining(RewardedPlacement.SUPPLY_DROP)
+                }
+
+                Column(modifier = Modifier.fillMaxSize()) {
+                    Box(modifier = Modifier.weight(1f)) {
+                        LevelSelectScreen(
+                            progress = campaignProgress,
+                            onPlayLevel = { levelNo -> gameEngine.startNewGame(levelNo) },
+                            onBack = { gameEngine.returnToMainMenu() }
+                        )
+                    }
+                    // R1 seridi banner ile bolum kartlari ARASINDA: hicbir
+                    // oynanis/navigasyon butonu reklama bitisik durmaz.
+                    SupplyDropBar(
+                        offered = supplyOffered,
+                        remaining = supplyRemaining,
+                        onRequest = { supplyDropOfferOpen = true }
+                    )
+                    BannerAdSlot(enabled = bannerEnabled, guardGapDp = 12.dp)
+                }
+
+                if (supplyDropOfferOpen) {
+                    RewardedOfferSheet(
+                        adHost = adHost,
+                        placement = RewardedPlacement.SUPPLY_DROP,
+                        title = "SUPPLY REQUISITION",
+                        body = "Watch a short ad and HQ sends " +
+                            "${AdPolicyConfig.SUPPLY_DROP_FULL_COIN} coin. " +
+                            "If no ad is available you still get " +
+                            "${AdPolicyConfig.SUPPLY_DROP_REDUCED_COIN} coin and your " +
+                            "daily requisition is kept.",
+                        remainingLabel = "$supplyRemaining of " +
+                            "${AdPolicyConfig.SUPPLY_DROP_DAILY_LIMIT} left today",
+                        applyResult = { applySupplyDrop(it, rewardBridge) },
+                        onDismiss = {
+                            supplyDropOfferOpen = false
+                            rewardTick++
+                        }
+                    )
+                }
             }
             else -> {
                 // Interactive 2D Canvas Battlefield
@@ -139,33 +327,89 @@ fun GameScreen() {
                     modifier = Modifier.align(Alignment.BottomCenter)
                 )
 
+                // SAVAS EKRANINDA BANNER YOK (DECISIONS bağlayıcı) — oynanis
+                // yuzeyi hicbir reklam tarafindan kaydirilmaz/kucultulmez.
+
                 // Overlay Modals
-                when (gameState) {
-                    // Faz 4: "MAIN MENU" butonlari eskiden startNewGame() cagiriyordu,
-                    // yani menuye donmek yerine ayni bolumu bastan baslatiyordu.
-                    // Artik gercek bir cikis var.
-                    GameState.PAUSED -> {
-                        PauseMenuModal(
-                            gameEngine = gameEngine,
-                            onResume = { gameEngine.togglePause() },
-                            onRestart = { gameEngine.startNewGame() },
-                            onMainMenu = { gameEngine.returnToLevelSelect() }
-                        )
+                // pendingExit != null iken modal cizilmez: interstitial
+                // modalin USTUNE acilmaz, arkasinda da kalmaz.
+                if (pendingExit == null) {
+                    when (gameState) {
+                        // Faz 4: "MAIN MENU" butonlari eskiden startNewGame() cagiriyordu,
+                        // yani menuye donmek yerine ayni bolumu bastan baslatiyordu.
+                        // Artik gercek bir cikis var.
+                        GameState.PAUSED -> {
+                            PauseMenuModal(
+                                gameEngine = gameEngine,
+                                onResume = { gameEngine.togglePause() },
+                                onRestart = { gameEngine.startNewGame() },
+                                // Yarida birakma: interstitial YOK (GDD §G.2/5).
+                                onMainMenu = { gameEngine.returnToLevelSelect() }
+                            )
+                        }
+                        GameState.VICTORY -> {
+                            if (doublePayoutOfferOpen) {
+                                // R3 — sonuc modalinin ONUNDE, ustune bindirmeden.
+                                RewardedOfferSheet(
+                                    adHost = adHost,
+                                    placement = RewardedPlacement.DOUBLE_PAYOUT,
+                                    title = "DOUBLE PAYOUT",
+                                    body = "Watch a short ad to double this operation's " +
+                                        "coin payout. Your base payout is already banked " +
+                                        "either way.",
+                                    applyResult = { applyDoublePayout(it, rewardBridge) },
+                                    onDismiss = {
+                                        doublePayoutOfferOpen = false
+                                        rewardTick++
+                                    }
+                                )
+                            } else {
+                                VictoryModal(
+                                    gameEngine = gameEngine,
+                                    onReplay = {
+                                        pendingExit = PendingBattleExit(victoryExitReason()) {
+                                            gameEngine.returnToLevelSelect()
+                                        }
+                                    }
+                                )
+                            }
+                        }
+                        GameState.DEFEAT -> {
+                            if (reinforcementOfferOpen) {
+                                // R2 — bugun ULASILMAZ dal: rewardBridge
+                                // .reinforcementSupported false. Motor API'si
+                                // eklendiginde tek satirla acilir
+                                // (docs/ADMOB_INTEGRATION.md §6).
+                                RewardedOfferSheet(
+                                    adHost = adHost,
+                                    placement = RewardedPlacement.REINFORCEMENT,
+                                    title = "CALL REINFORCEMENTS",
+                                    body = "Watch a short ad to restore your base to " +
+                                        "${AdPolicyConfig.REINFORCEMENT_LIVES} lives and " +
+                                        "continue this battle from the current wave.",
+                                    applyResult = { applyReinforcement(it, rewardBridge) },
+                                    onDismiss = {
+                                        reinforcementOfferOpen = false
+                                        rewardTick++
+                                    }
+                                )
+                            } else {
+                                DefeatModal(
+                                    gameEngine = gameEngine,
+                                    // RETRY: interstitial YOK. "Bir kere daha
+                                    // deneyeyim" dongusu reklamla cezalandirilmaz
+                                    // (GDD §G.1: savas BASLAMADAN interstitial yok).
+                                    onRetry = { gameEngine.startNewGame() },
+                                    onMainMenu = {
+                                        pendingExit = PendingBattleExit(
+                                            InterstitialReason.RESULT_TO_LEVEL_SELECT
+                                        ) { gameEngine.returnToLevelSelect() }
+                                    }
+                                )
+                            }
+                        }
+                        else -> {}
                     }
-                    GameState.VICTORY -> {
-                        VictoryModal(
-                            gameEngine = gameEngine,
-                            onReplay = { gameEngine.returnToLevelSelect() }
-                        )
-                    }
-                    GameState.DEFEAT -> {
-                        DefeatModal(
-                            gameEngine = gameEngine,
-                            onRetry = { gameEngine.startNewGame() },
-                            onMainMenu = { gameEngine.returnToLevelSelect() }
-                        )
-                    }
-                    else -> {}
                 }
             }
         }

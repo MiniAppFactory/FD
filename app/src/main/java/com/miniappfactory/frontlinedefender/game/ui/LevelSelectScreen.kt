@@ -172,11 +172,23 @@ fun LevelSelectScreen(
                         .background(Color(0x33FFD54F))
                         .padding(horizontal = 12.dp, vertical = 6.dp)
                 ) {
-                    Text("COIN", color = Color(0xFFFFD54F), fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold)
+                    // "COIN" translatable=false: meta para birimi adi Turkcede
+                    // de "Coin" (DECISIONS — para birimi adlandirmasi).
+                    Text(
+                        text = stringResource(R.string.level_coin_label),
+                        color = Color(0xFFFFD54F),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1
+                    )
                     Spacer(Modifier.width(8.dp))
-                    Text("${progress.coins}", color = Color(0xFFFFF3C4), fontSize = 15.sp,
-                        fontWeight = FontWeight.Black)
+                    Text(
+                        text = stringResource(R.string.level_coin_amount, progress.coins),
+                        color = Color(0xFFFFF3C4),
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Black,
+                        maxLines = 1
+                    )
                 }
             }
 
@@ -213,8 +225,11 @@ fun LevelSelectScreen(
             }
 
             Text(
-                text = "Swipe horizontally to browse all " +
-                    "${GameConfig.CAMPAIGN_LEVEL_COUNT} operations",
+                text = pluralStringResource(
+                    R.plurals.level_browse_hint,
+                    GameConfig.CAMPAIGN_LEVEL_COUNT,
+                    GameConfig.CAMPAIGN_LEVEL_COUNT
+                ),
                 color = Color(0x99C5D6B4),
                 fontSize = 11.sp,
                 modifier = Modifier
@@ -233,10 +248,11 @@ private fun ActDivider(act: Int) {
         modifier = Modifier.padding(end = 12.dp)
     ) {
         Text(
-            text = if (act == 1) "ACT I" else "ACT II",
+            text = stringResource(actLabelRes(act)),
             color = Color(0xFF8FA87A),
             fontSize = 12.sp,
-            fontWeight = FontWeight.Black
+            fontWeight = FontWeight.Black,
+            maxLines = 1
         )
         Spacer(Modifier.height(4.dp))
         Box(
@@ -281,42 +297,62 @@ private fun LevelCard(
                 .background(borderColor.copy(alpha = if (isNext) 0.9f else 0.25f))
         ) {
             Text(
-                text = "${spec.levelId}",
+                text = stringResource(R.string.level_number, spec.levelId),
                 color = if (isNext) Color(0xFF1A1A0E) else Color(0xFFE8F0DC),
                 fontSize = 16.sp,
-                fontWeight = FontWeight.Black
+                fontWeight = FontWeight.Black,
+                maxLines = 1
             )
         }
 
         Spacer(Modifier.height(6.dp))
 
-        Text(
-            text = spec.displayName,
+        // TASMA — bu ekranin en riskli yeri. Kart genisligi SABIT 126 dp
+        // (yatay seritte gorsel ritim icin) yani ic genislik 106 dp. En uzun
+        // adlar: "Village Outskirts" (EN, 17 kr) ve "Karanlik Bogaz" (TR).
+        // Iki satira sarar; UCUNCU satira tasarsa punto kuculur. Kesme YOK:
+        // "Karanlik Bo…" hangi harita oldugunu belirsizlestirir.
+        AutoShrinkText(
+            text = stringResource(mapNameRes(spec.mapId)),
             color = Color(0xFFDCE8CC),
-            fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
+            maxFontSize = 11.sp,
+            minFontSize = 8.sp,
+            maxLines = 2,
             textAlign = TextAlign.Center,
-            maxLines = 2
+            modifier = Modifier.fillMaxWidth()
         )
 
         Text(
-            text = "${spec.waveCount} waves",
+            text = pluralStringResource(
+                R.plurals.level_wave_count,
+                spec.waveCount,
+                spec.waveCount
+            ),
             color = Color(0x99C5D6B4),
-            fontSize = 10.sp
+            fontSize = 10.sp,
+            maxLines = 1
         )
 
         if (spec.overlay == GameConfig.MapOverlay.NIGHT) {
-            Text("NIGHT", color = Color(0xFF7FA6D6), fontSize = 9.sp,
-                fontWeight = FontWeight.Bold)
+            Text(
+                text = stringResource(R.string.level_night_badge),
+                color = Color(0xFF7FA6D6),
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1
+            )
         }
 
         Spacer(Modifier.height(6.dp))
 
-        // Yildizlar (0-3)
+        // Yildizlar (0-3). Glifler translatable="false".
+        val starFilled = stringResource(R.string.level_star_filled_glyph)
+        val starEmpty = stringResource(R.string.level_star_empty_glyph)
         Row {
             repeat(3) { i ->
                 Text(
-                    text = if (i < stars) "*" else "-",
+                    text = if (i < stars) starFilled else starEmpty,
                     color = if (i < stars) Color(0xFFFFD54F) else Color(0x55FFFFFF),
                     fontSize = 17.sp,
                     fontWeight = FontWeight.Black
@@ -327,32 +363,40 @@ private fun LevelCard(
 
         Spacer(Modifier.height(6.dp))
 
-        // Durum satiri: kilitliyse bedel, degilse eylem
+        // Durum satiri: kilitliyse bedel, degilse eylem.
+        // 106 dp'lik sabit genislikte en uzun karsilik "KILIDI AC 350" (TR);
+        // hepsi AutoShrinkText ile tek satirda kalir, kesilmez.
+        val statusColor: Color
+        val statusText: String
+        val statusSize = if (unlocked && isNext) 11.sp else 10.sp
+        val statusWeight = if (unlocked && isNext) FontWeight.Black else FontWeight.Bold
         when {
-            !unlocked && spec.deploymentCost > 0 -> Text(
-                text = "UNLOCK ${spec.deploymentCost}",
-                color = Color(0xFFFFD54F),
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold
-            )
-            !unlocked -> Text(
-                text = "LOCKED",
-                color = Color(0x99FFFFFF),
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold
-            )
-            isNext -> Text(
-                text = "DEPLOY",
-                color = Color(0xFFFFD54F),
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Black
-            )
-            else -> Text(
-                text = "REPLAY",
-                color = Color(0xFFA8C48C),
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold
-            )
+            !unlocked && spec.deploymentCost > 0 -> {
+                statusText = stringResource(R.string.level_unlock_cost, spec.deploymentCost)
+                statusColor = Color(0xFFFFD54F)
+            }
+            !unlocked -> {
+                statusText = stringResource(R.string.level_locked)
+                statusColor = Color(0x99FFFFFF)
+            }
+            isNext -> {
+                statusText = stringResource(R.string.level_deploy)
+                statusColor = Color(0xFFFFD54F)
+            }
+            else -> {
+                statusText = stringResource(R.string.level_replay)
+                statusColor = Color(0xFFA8C48C)
+            }
         }
+        AutoShrinkText(
+            text = statusText,
+            color = statusColor,
+            fontWeight = statusWeight,
+            maxFontSize = statusSize,
+            minFontSize = 8.sp,
+            maxLines = 1,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth()
+        )
     }
 }

@@ -329,7 +329,8 @@ fun DefeatModal(
                         // gibi uzun karsiliklar icin punto kucultmeye izin var.
                         AutoShrinkText(
                             text = stringResource(R.string.dialog_main_menu),
-                            color = Color.White,
+                            // Unspecified = eskisi gibi butonun contentColor'u.
+                            color = Color.Unspecified,
                             fontWeight = FontWeight.Bold,
                             maxFontSize = 12.sp,
                             minFontSize = 9.sp,
@@ -348,7 +349,7 @@ fun DefeatModal(
                     ) {
                         AutoShrinkText(
                             text = stringResource(R.string.dialog_retry),
-                            color = Color.White,
+                            color = Color.Unspecified,
                             fontWeight = FontWeight.Bold,
                             maxFontSize = 12.sp,
                             minFontSize = 9.sp,
@@ -453,7 +454,7 @@ fun PauseMenuModal(
                     // 16 sp Bold'da ~150 dp -> sigar; tek satirda kalir.
                     AutoShrinkText(
                         text = stringResource(R.string.dialog_restart_level),
-                        color = Color.White,
+                        color = Color.Unspecified,
                         fontWeight = FontWeight.Bold,
                         maxFontSize = 16.sp,
                         minFontSize = 12.sp,

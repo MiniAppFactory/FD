@@ -14,9 +14,6 @@
 -->
 <resources>
 
-    <!-- ==================== common ==================== -->
-    <string name="common_close">Kapat</string>
-
     <!-- ==================== hud ==================== -->
     <string name="hud_wave_label">DALGA %1$d/%2$d</string>
     <string name="hud_prep_timer">(%1$d sn)</string>

@@ -453,8 +453,16 @@ object GameConfig {
      * Detay + donusum komutu: docs/CAMPAIGN_INTEGRATION.md.
      * ---------------------------------------------------------------------
      */
-    val SHIPPED_MAP_IDS: Set<Int> = setOf(1)
+    // Faz 4b: 11 harita bitmap'i de `drawable-nodpi/bg_level_01..11.webp` olarak
+    // pakete girdi (1920 px, WebP q80, toplam 3.34 MB). Yedek harita mekanizmasi
+    // yerinde kaliyor: ileride bir bitmap eksik kalirsa oynanis ile cizili harita
+    // ayrismaz, sadece o bolum yedege duser.
+    val SHIPPED_MAP_IDS: Set<Int> = (1..11).toSet()
     const val MAP_FALLBACK_ID = 1
+
+    /** `bg_level_XX.webp` kaynak adindaki XX icin. Bkz. GameSprites.mapResFor(). */
+    const val MAP_ID_MIN = 1
+    const val MAP_ID_MAX = 11
 
     /**
      * Yildiz esikleri **YUZDE** cinsindendir, mutlak can degil. Us cani bolume ve

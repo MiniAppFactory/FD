@@ -195,6 +195,40 @@ internal fun eligibleTemplates(
     return filtered.ifEmpty { listOf(pool.minByOrNull { it.minClearedLevels }!!) }
 }
 
+internal fun gcd(a: Int, b: Int): Int {
+    var x = a
+    var y = b
+    while (y != 0) {
+        val t = x % y
+        x = y
+        y = t
+    }
+    return x
+}
+
+/**
+ * Havuz boyutuna gore ASAL adim. Gunluk indeks `offset + gun * adim` seklinde
+ * ilerledigi icin bu iki ozelligi GARANTI eder:
+ *
+ * 1. `adim mod boyut != 0` -> **ardisik iki gun ayni gorevi vermez.**
+ * 2. `gcd(adim, boyut) == 1` -> havuzun tamami donmeden hicbir gorev tekrar etmez,
+ *    yani gorevler esit dagilir ve "hep ayni iki gorev" sikayeti olusmaz.
+ *
+ * Onceki tasarim "dun ne cikmissa bir sonrakine kay" seklindeydi; o kural
+ * ardisiklik garantisi VERMIYORDU (dunun kendisi de kaydirilmis olabildigi icin
+ * zincir kirilir ve gorev ust uste iki gun cikabilirdi). Regresyon testi:
+ * `missionInASlotDoesNotRepeatFromYesterday`.
+ */
+internal fun coprimeStride(seed: Long, slotOrdinal: Int, size: Int): Int {
+    if (size <= 1) return 0
+    val start = deterministicIndex(missionHash(seed, -7L, slotOrdinal, 0), size - 1)
+    for (i in 0 until size - 1) {
+        val candidate = 1 + ((start + i) % (size - 1))
+        if (gcd(candidate, size) == 1) return candidate
+    }
+    return 1 // 1 her zaman asaldir; buraya asla dusmez
+}
+
 private fun pickTemplate(
     slot: MissionSlot,
     epochDay: Long,
@@ -202,14 +236,16 @@ private fun pickTemplate(
     reroll: Int,
     clearedLevels: Int,
     unlockedTowerTypes: Int,
-    avoidId: String?,
 ): MissionTemplate {
     val eligible = eligibleTemplates(MissionPools.poolFor(slot), clearedLevels, unlockedTowerTypes)
-    val hash = missionHash(seed, epochDay, slot.ordinal, reroll)
-    var index = deterministicIndex(hash, eligible.size)
-    if (avoidId != null && eligible.size > 1 && eligible[index].id == avoidId) {
-        index = (index + 1) % eligible.size
-    }
+    val size = eligible.size
+    if (size == 1) return eligible[0]
+
+    val offset = deterministicIndex(missionHash(seed, 0L, slot.ordinal, 0), size)
+    val stride = coprimeStride(seed, slot.ordinal, size)
+    // reroll, gunu bir adim ileri saymakla ayni: adim asal oldugu icin sonuc
+    // KESIN olarak farkli bir gorevdir.
+    val index = Math.floorMod(offset + (epochDay + reroll) * stride, size.toLong()).toInt()
     return eligible[index]
 }
 
@@ -236,13 +272,10 @@ fun dailyMissions(
         "rerollsBySlot boyutu ${EconomyConfig.DAILY_MISSION_SLOTS} olmali"
     }
     return MissionSlot.entries.map { slot ->
-        val yesterday = pickTemplate(
-            slot, epochDay - 1, seed, 0, clearedLevels, unlockedTowerTypes, null
-        ).id
         Mission(
             pickTemplate(
                 slot, epochDay, seed, rerollsBySlot[slot.ordinal],
-                clearedLevels, unlockedTowerTypes, yesterday
+                clearedLevels, unlockedTowerTypes
             )
         )
     }

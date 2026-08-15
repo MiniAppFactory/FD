@@ -25,6 +25,16 @@ interface AdRewardBridge {
     fun grantCoins(amount: Int, source: String)
 
     /**
+     * R3 Cift Odeme tam odulu: **son tamamlanan bolumun** coin odulu
+     * [multiplier] ile carpilir.
+     *
+     * Taban odulu ekonomi katmani zaten reklamdan ONCE yatirmis olmalidir
+     * (GDD §G.4, kritik kural); bu cagri yalnizca EK katmani ekler. Reklam
+     * katmani taban odulun ne oldugunu bilmez ve bilmemelidir.
+     */
+    fun grantDoublePayout(multiplier: Int)
+
+    /**
      * R2 Takviye tam odulu: us cani [lives] degerine getirilir ve savas
      * **kaldigi dalgadan** devam eder.
      *
@@ -40,7 +50,7 @@ interface AdRewardBridge {
      *
      * **BUGUN false** ve bu bilincli: `GameEngine`'de yenilgiden sonra savasi
      * surdurecek bir API YOK (`_lives` ve `_gameState` private, DEFEAT'ten
-     * cikis yolu yok) ve `game/engine/*` bu ajanin yazma kapsaminda degil.
+     * cikis yolu yok) ve `game/engine` paketi bu ajanin yazma kapsaminda degil.
      * Gereken motor API'si `docs/ADMOB_INTEGRATION.md` §6'da satir seviyesinde
      * tarif edildi (gameplay-developer ajani).
      */
@@ -62,6 +72,14 @@ object LoggingAdRewardBridge : AdRewardBridge {
             AD_LOG_TAG,
             "reward_pending_economy coins=$amount source=$source " +
                 "(LoggingAdRewardBridge: bakiye DEGISMEDI, ekonomi katmani baglanmali)"
+        )
+    }
+
+    override fun grantDoublePayout(multiplier: Int) {
+        Log.w(
+            AD_LOG_TAG,
+            "reward_pending_economy double_payout x$multiplier " +
+                "(LoggingAdRewardBridge: bakiye DEGISMEDI)"
         )
     }
 

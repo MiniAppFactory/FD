@@ -377,12 +377,17 @@ class LevelGeometryDataTest {
 
     @Test
     fun routeLengthsAreWithinAPlausibleBand() {
-        // Olculen aralik 1785..2283 ref-px (GEOMETRY_REPORT). Cok kisa bir rota
-        // dusmanin usse kosarcasina varmasi, cok uzun rota olu bekleme demektir.
+        // Olculen aralik 2353..3195 ref-px. Cok kisa bir rota dusmanin usse
+        // kosarcasina varmasi, cok uzun rota olu bekleme demektir.
+        //
+        // NOT: GEOMETRY_REPORT.md harita basina "yol=1785..2283 ref-px" diyor;
+        // o sayi maske uzerindeki Dijkstra yolu, buradaki ise waypoint
+        // polylinesinin uzunlugu (ekran disi spawn/us uzantilari dahil). Ayni
+        // metrik degil, bu yuzden rapordaki sayiya karsi assert EDILMEZ.
         allRoutes().forEach { (label, route) ->
             val len = GeometryTestSupport.polylineLength(route)
-            assertTrue("$label rota uzunlugu $len ref-px — 1500'den kisa", len > 1500f)
-            assertTrue("$label rota uzunlugu $len ref-px — 3000'den uzun", len < 3000f)
+            assertTrue("$label rota uzunlugu $len ref-px — 2000'den kisa", len > 2000f)
+            assertTrue("$label rota uzunlugu $len ref-px — 3500'den uzun", len < 3500f)
         }
     }
 

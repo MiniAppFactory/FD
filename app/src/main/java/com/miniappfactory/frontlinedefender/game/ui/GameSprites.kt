@@ -26,7 +26,6 @@ import com.miniappfactory.frontlinedefender.game.model.GameConfig
  * Olculen toplam bitmap bellegi: sprite'lar ~3.5 MB + harita ~7.9 MB.
  */
 class GameSprites private constructor(
-    val map: ImageBitmap,
     val towers: Map<GameConfig.TowerType, ImageBitmap>,
     val enemies: Map<GameConfig.EnemyType, ImageBitmap>,
     val muzzleFlash: ImageBitmap,
@@ -50,8 +49,32 @@ class GameSprites private constructor(
             return BitmapFactory.decodeResource(res, id, opts).asImageBitmap()
         }
 
+        /**
+         * Faz 4b: 11 harita arkaplani. Bir harita 1920x1081 ARGB_8888 = **8.3 MB
+         * bellek**, 11'i birden tutmak 91 MB eder ve API 24 cihazda OOM olur.
+         * Bu yuzden harita GameSprites'a DAHIL DEGIL: `rememberMapBitmap()` ile
+         * yalnizca aktif bolumun haritasi decode edilir, bolum degisince eskisi
+         * cop toplamaya birakilir.
+         */
+        @DrawableRes
+        fun mapResFor(mapId: Int): Int = when (mapId.coerceIn(GameConfig.MAP_ID_MIN, GameConfig.MAP_ID_MAX)) {
+            1 -> R.drawable.bg_level_01
+            2 -> R.drawable.bg_level_02
+            3 -> R.drawable.bg_level_03
+            4 -> R.drawable.bg_level_04
+            5 -> R.drawable.bg_level_05
+            6 -> R.drawable.bg_level_06
+            7 -> R.drawable.bg_level_07
+            8 -> R.drawable.bg_level_08
+            9 -> R.drawable.bg_level_09
+            10 -> R.drawable.bg_level_10
+            else -> R.drawable.bg_level_11
+        }
+
+        internal fun loadMap(res: Resources, mapId: Int): ImageBitmap =
+            load(res, mapResFor(mapId))
+
         fun create(res: Resources): GameSprites = GameSprites(
-            map = load(res, R.drawable.bg_level_01),
             towers = mapOf(
                 GameConfig.TowerType.MACHINE_GUN to load(res, R.drawable.spr_tower_machine_gun),
                 GameConfig.TowerType.CANNON to load(res, R.drawable.spr_tower_heavy_cannon),
@@ -102,4 +125,17 @@ class GameSprites private constructor(
 fun rememberGameSprites(): GameSprites {
     val res = LocalContext.current.resources
     return remember(res) { GameSprites.create(res) }
+}
+
+/**
+ * Aktif bolumun harita arkaplani. `mapId` degisince YENIDEN decode edilir ve
+ * onceki bitmap birakilir — bellekte her zaman TEK harita bulunur.
+ *
+ * `mapId`, motorun `activeMapId` degeridir (yani bitmap'i pakette olan harita);
+ * `levelSpec.mapId` degil. Ikisi ayrismasin diye motor bu ayrimi kendisi yapiyor.
+ */
+@Composable
+fun rememberMapBitmap(mapId: Int): ImageBitmap {
+    val res = LocalContext.current.resources
+    return remember(res, mapId) { GameSprites.loadMap(res, mapId) }
 }

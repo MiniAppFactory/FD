@@ -21,9 +21,9 @@
 <resources>
     <string name="app_name">Frontline Defender</string>
 
-    <!-- ==================== common ==================== -->
-    <string name="common_close">Close</string>
-    <!-- Glif: dile bagli degil, cevrilmez. -->
+    <!-- ==================== common ====================
+         Kapat glifi: dile bagli degil, cevrilmez. Ekran okuyucunun okudugu ad
+         panele gore degisir (build_close_desc / inspector_close_desc). -->
     <string name="common_close_glyph" translatable="false">✕</string>
 
     <!-- ==================== hud (HUDOverlay) ==================== -->

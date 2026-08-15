@@ -301,12 +301,12 @@ fun applySupplyDrop(result: RewardedResult, bridge: AdRewardBridge): String =
     }
 
 /** R3 Cift Odeme. Taban odul reklamdan ONCE verilmis olmalidir (GDD §G.4). */
-fun applyDoublePayout(result: RewardedResult, bridge: AdRewardBridge, baseCoin: Int): String =
+fun applyDoublePayout(result: RewardedResult, bridge: AdRewardBridge): String =
     when (result.outcome) {
         RewardedOutcome.FULL_REWARD -> {
-            val bonus = baseCoin * (AdPolicyConfig.DOUBLE_PAYOUT_MULTIPLIER - 1)
-            bridge.grantCoins(bonus, "rewarded_double_payout")
-            "Double payout approved: +$bonus bonus coin."
+            bridge.grantDoublePayout(AdPolicyConfig.DOUBLE_PAYOUT_MULTIPLIER)
+            "Double payout approved: this operation's coin payout is " +
+                "x${AdPolicyConfig.DOUBLE_PAYOUT_MULTIPLIER}."
         }
         RewardedOutcome.REDUCED_REWARD ->
             "No ad was available. Your operation payout is already banked."

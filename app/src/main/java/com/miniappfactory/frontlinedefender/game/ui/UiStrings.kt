@@ -1,7 +1,6 @@
 package com.miniappfactory.frontlinedefender.game.ui
 
 import androidx.annotation.StringRes
-import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -170,33 +169,4 @@ fun AutoShrinkText(
             }
         }
     )
-}
-
-/**
- * `AutoShrinkText`'in kapsayicisi olcusunu bilmesi gerekir; ic ice `Row`
- * icinde `weight` verilmeyen kartlarda metni once bir `Box` ile sinirlamak
- * gerekir. Bu yardimci o kaliba kisayol.
- */
-@Composable
-fun AutoShrinkLabel(
-    text: String,
-    color: Color,
-    maxFontSize: TextUnit,
-    modifier: Modifier = Modifier,
-    fontWeight: FontWeight? = null,
-    maxLines: Int = 1,
-    textAlign: TextAlign? = null,
-    resetKey: Any? = text
-) {
-    Box(modifier = modifier) {
-        AutoShrinkText(
-            text = text,
-            color = color,
-            maxFontSize = maxFontSize,
-            fontWeight = fontWeight,
-            maxLines = maxLines,
-            textAlign = textAlign,
-            resetKey = resetKey
-        )
-    }
 }

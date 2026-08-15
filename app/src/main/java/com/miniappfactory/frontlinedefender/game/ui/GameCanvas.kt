@@ -41,6 +41,13 @@ fun GameCanvas(
     val selectedBuildSpot by gameEngine.selectedBuildSpot.collectAsState()
     val selectedTower by gameEngine.selectedTower.collectAsState()
 
+    // Faz 4b: harita arkaplani bolume gore. `currentLevelId` gozlemlenebilir
+    // oldugu icin bolum degisince bu Composable recompose olur ve `activeMapId`
+    // o an guncel olur (motor loadLevel'da ikisini birlikte set ediyor).
+    // Harita bitmap'i 8.3 MB; bellekte TEK harita tutulur.
+    val levelId by gameEngine.currentLevelId.collectAsState()
+    val mapBitmap = rememberMapBitmap(remember(levelId) { gameEngine.activeMapId })
+
     Canvas(
         modifier = modifier
             .fillMaxSize()
@@ -79,7 +86,7 @@ fun GameCanvas(
             //    oynanis koordinatlari tasmayan gercek dikdortgene bagli.
             val over = GameConfig.SHAKE_OVERSCAN_REF_PX * s
             drawSprite(
-                image = sprites.map,
+                image = mapBitmap,
                 left = gameEngine.fieldLeftPx - over,
                 top = gameEngine.fieldTopPx - over,
                 width = gameEngine.fieldWidthPx + over * 2f,
