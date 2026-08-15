@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Faz 6 — TURKCE. Ton: askeri, kisa, emir kipi. Ceviri degil KARSILIK:
+  "harekat", "sevk", "us", "dalga", "tedarik" oyuncunun beklediği terimler.
+
+  Sabit terimler (docs/LOCALIZATION.md sozlugu):
+    Supply -> Tedarik · Coin -> Coin (cevrilmez) · Wave -> Dalga · Base -> Us
+    Upgrade -> Yukselt · Sell -> Sat · Retry -> Tekrar Dene
+    Start Operation -> Harekati Baslat · Campaign -> Kampanya · Locked -> Kilitli
+
+  TASMA: Turkce metin Ingilizceden ~%20-35 uzun. Sabit genislikli kartlarda
+  (LevelSelectScreen 126 dp, TowerBuildBar weight(1f)) metin kesilmez,
+  AutoShrinkText ile OLCEK kucultulur — bkz. UiStrings.kt.
+-->
+<resources>
+
+    <!-- ==================== common ==================== -->
+    <string name="common_close">Kapat</string>
+
+    <!-- ==================== hud ==================== -->
+    <string name="hud_wave_label">DALGA %1$d/%2$d</string>
+    <string name="hud_prep_timer">(%1$d sn)</string>
+    <string name="hud_supply_icon_desc">Tedarik</string>
+    <string name="hud_supply_amount">%1$d</string>
+    <string name="hud_lives_icon_desc">Üs bütünlüğü</string>
+    <string name="hud_lives_value">%1$d/%2$d</string>
+    <string name="hud_start_wave">BAŞLAT</string>
+    <string name="hud_start_wave_icon_desc">Dalgayı başlat</string>
+    <string name="hud_speed_icon_desc">Oyun hızı</string>
+    <string name="hud_pause_icon_desc">Oyunu duraklat</string>
+
+    <!-- ==================== build ==================== -->
+    <string name="build_cost">%1$d</string>
+    <string name="build_close_desc">İnşa panelini kapat</string>
+
+    <!-- ==================== tower ====================
+         ANTI_ARMOR: sprite fuze rampasi, ses fuze firlatma -> gorunen metin de
+         fuze. "Railgun / isin" metni kaldirildi (kimlik celiskisi). -->
+    <string name="tower_machine_gun_name">Gatling Topu</string>
+    <string name="tower_machine_gun_desc">Hızlı ateş, orta hasar. Piyadeye karşı biçilmiş kaftan.</string>
+    <string name="tower_cannon_name">Ağır Top</string>
+    <string name="tower_cannon_desc">Geniş çaplı patlama hasarı. Kümelenmiş düşmanı dağıtır.</string>
+    <string name="tower_anti_armor_name">Füze Rampası</string>
+    <string name="tower_anti_armor_desc">Uzun menzilli güdümlü füze. Zırhı parçalar.</string>
+    <string name="tower_slow_name">Buz Alanı</string>
+    <string name="tower_slow_desc">Soğutucu darbelerle düşman hızını yarıya indirir.</string>
+
+    <!-- ==================== enemy ==================== -->
+    <string name="enemy_infantry_name">Piyade Takımı</string>
+    <string name="enemy_fast_soldier_name">Keşif Eri</string>
+    <string name="enemy_armored_vehicle_name">Zırhlı Araç</string>
+    <string name="enemy_tank_name">Ağır Tank</string>
+    <string name="enemy_shielded_trooper_name">Kalkanlı Er</string>
+    <string name="enemy_command_tank_name">Komuta Tankı</string>
+
+    <!-- ==================== inspector ====================
+         Kisaltmalar bilincli: panel tek satir ve dort butonla ayni Row'da.
+         "HASAR/ATIŞ/İMHA" tam kelime, sigmazsa olcek kuculur. -->
+    <string name="inspector_tower_title">%1$s (Kd.%2$d)</string>
+    <string name="inspector_stats">HASAR %1$d  ·  ATIŞ %2$.2f sn  ·  İMHA %3$d</string>
+    <string name="inspector_targeting_icon_desc">Hedefleme modu</string>
+    <string name="inspector_target_first">İLK</string>
+    <string name="inspector_target_last">SON</string>
+    <string name="inspector_target_strongest">EN GÜÇLÜ</string>
+    <string name="inspector_target_weakest">EN ZAYIF</string>
+    <string name="inspector_upgrade_icon_desc">Yükselt</string>
+    <string name="inspector_upgrade_cost">%1$d</string>
+    <string name="inspector_max_level">MAKS</string>
+    <string name="inspector_sell_icon_desc">Sat</string>
+    <string name="inspector_sell_value">+%1$d</string>
+    <string name="inspector_close_desc">Kule panelini kapat</string>
+
+    <!-- ==================== dialog ==================== -->
+    <string name="dialog_game_subtitle">Taktik Kule Savunması</string>
+    <string name="dialog_high_score">EN İYİ SKOR: %1$d</string>
+    <string name="dialog_high_score_icon_desc">En iyi skor</string>
+    <string name="dialog_start_operation">HAREKÂTI BAŞLAT</string>
+    <string name="dialog_play_icon_desc">Oyna</string>
+    <string name="dialog_sound_toggle_desc">Sesi aç/kapat</string>
+
+    <string name="dialog_victory_title">ZAFER!</string>
+    <string name="dialog_victory_subtitle">MUHAREBE ALANI TEMİZ!</string>
+    <string name="dialog_star_desc">%1$d. yıldız</string>
+    <string name="dialog_lives_remaining">Kalan üs canı: %1$d/%2$d</string>
+    <string name="dialog_final_score">Nihai skor: %1$d</string>
+    <string name="dialog_replay">TEKRAR OYNA</string>
+
+    <string name="dialog_defeat_title">ÜS DÜŞTÜ!</string>
+    <string name="dialog_defeat_body">Düşman %1$d. dalgada savunma hattını yardı.</string>
+    <string name="dialog_retry">TEKRAR DENE</string>
+
+    <string name="dialog_paused_title">OYUN DURAKLADI</string>
+    <string name="dialog_sound_effects">Ses Efektleri</string>
+    <string name="dialog_resume">DEVAM ET</string>
+    <string name="dialog_restart_level">BÖLÜMÜ BAŞTAN AL</string>
+    <string name="dialog_main_menu">ANA MENÜ</string>
+
+    <!-- ==================== level ==================== -->
+    <string name="level_back">&lt; GERİ</string>
+    <string name="level_campaign_title">KAMPANYA</string>
+    <string name="level_coin_amount">%1$d</string>
+    <string name="level_act_1">KISIM I</string>
+    <string name="level_act_2">KISIM II</string>
+    <string name="level_number">%1$d</string>
+    <plurals name="level_wave_count">
+        <item quantity="one">%d dalga</item>
+        <item quantity="other">%d dalga</item>
+    </plurals>
+    <plurals name="level_browse_hint">
+        <item quantity="one">Tüm harekâtı görmek için yana kaydır</item>
+        <item quantity="other">%d harekâtın tümünü görmek için yana kaydır</item>
+    </plurals>
+    <string name="level_night_badge">GECE</string>
+    <string name="level_unlock_cost">KİLİDİ AÇ %1$d</string>
+    <string name="level_locked">KİLİTLİ</string>
+    <string name="level_deploy">SEVK ET</string>
+    <string name="level_replay">TEKRAR</string>
+
+    <!-- ==================== map_name ====================
+         LevelGeometry.kt icindeki ASCII-bozuk adlarin duzgun Turkcesi. -->
+    <string name="map_name_01">Çayır Geçidi</string>
+    <string name="map_name_02">Şelale Ormanı</string>
+    <string name="map_name_03">Karanlık Boğaz</string>
+    <string name="map_name_04">Göl Kuşağı</string>
+    <string name="map_name_05">Bataklık Ova</string>
+    <string name="map_name_06">Uçurum Geçidi</string>
+    <string name="map_name_07">Açık Ova</string>
+    <string name="map_name_08">Derin Orman</string>
+    <string name="map_name_09">Sur Yamacı</string>
+    <string name="map_name_10">Nehir Kolları</string>
+    <string name="map_name_11">Köy Sınırı</string>
+</resources>

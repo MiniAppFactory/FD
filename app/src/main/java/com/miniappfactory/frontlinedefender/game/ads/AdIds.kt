@@ -1,0 +1,89 @@
+package com.miniappfactory.frontlinedefender.game.ads
+
+/**
+ * Faz 5 — reklam kimliklerinin TEK kaynagi.
+ *
+ * DECISIONS.md "Reklam doktrini": ilk APK'da **yalnizca Google'in herkese acik
+ * TEST kimlikleri** kullanilir. Gercek (production) kimlikler AYRI bir karardir
+ * ve kullanici onayi gerektirir — bu yuzden asagidaki PRODUCTION_* sabitleri
+ * bilincli olarak BOS birakildi.
+ *
+ * Gercek kimlikler geldiginde yapilacak is:
+ *   1. PRODUCTION_* sabitlerini doldur (koda gomme yerine tercihen
+ *      local.properties -> buildConfigField; bkz. GDD §G.5).
+ *   2. [USE_TEST_ADS] degerini `BuildConfig.DEBUG` yap.
+ *   3. Cihaz kimligini [developerTestDeviceIds] listesine ekle (asagiya bak).
+ *
+ * `USE_TEST_ADS` sabiti bilincli olarak `true` — `BuildConfig.DEBUG` DEGIL.
+ * Sebep: bugun release build'de gostericek gercek bir kimlik yok; `BuildConfig.DEBUG`
+ * yazsak release APK bos ad unit id ile SDK'ya gider ve her istek hata dondurur.
+ */
+object AdIds {
+
+    /**
+     * TRUE oldugu surece TUM build tiplerinde Google test reklamlari kullanilir.
+     * Gercek kimlikler onaylanana kadar DEGISTIRILMEZ.
+     */
+    const val USE_TEST_ADS: Boolean = true
+
+    // ---------------------------------------------------------------------
+    // Google'in resmi test kimlikleri (herkese acik, dokumante, guvenli):
+    // https://developers.google.com/admob/android/test-ads
+    // Bunlar her zaman doldurulur ve her zaman fill verir — no-fill senaryosunu
+    // test etmek icin ucak modu kullanilir (bkz. docs/ADMOB_INTEGRATION.md §7).
+    // ---------------------------------------------------------------------
+    private const val TEST_APP_ID = "ca-app-pub-3940256099942544~3347511713"
+    private const val TEST_BANNER_AD_UNIT_ID = "ca-app-pub-3940256099942544/9214589741"
+    private const val TEST_INTERSTITIAL_AD_UNIT_ID = "ca-app-pub-3940256099942544/1033173712"
+    private const val TEST_REWARDED_AD_UNIT_ID = "ca-app-pub-3940256099942544/5224354917"
+
+    // ---------------------------------------------------------------------
+    // Gercek kimlikler — HENUZ YOK, onay bekliyor. Bos string birakildi;
+    // USE_TEST_ADS false yapilmadan bu sabitler hicbir yerde okunmaz.
+    // ---------------------------------------------------------------------
+    const val PRODUCTION_APP_ID: String = ""
+    private const val PRODUCTION_BANNER_AD_UNIT_ID: String = ""
+    private const val PRODUCTION_INTERSTITIAL_AD_UNIT_ID: String = ""
+    private const val PRODUCTION_REWARDED_AD_UNIT_ID: String = ""
+
+    /**
+     * AndroidManifest'teki `com.google.android.gms.ads.APPLICATION_ID`
+     * meta-data'sinin **ayni** degeri. Manifest degeri derleme zamaninda
+     * sabitlenir; buradaki kopya yalnizca dogrulama/log amaclidir.
+     */
+    val manifestAppId: String get() = if (USE_TEST_ADS) TEST_APP_ID else PRODUCTION_APP_ID
+
+    fun bannerAdUnitId(): String =
+        if (USE_TEST_ADS) TEST_BANNER_AD_UNIT_ID else PRODUCTION_BANNER_AD_UNIT_ID
+
+    fun interstitialAdUnitId(): String =
+        if (USE_TEST_ADS) TEST_INTERSTITIAL_AD_UNIT_ID else PRODUCTION_INTERSTITIAL_AD_UNIT_ID
+
+    fun rewardedAdUnitId(): String =
+        if (USE_TEST_ADS) TEST_REWARDED_AD_UNIT_ID else PRODUCTION_REWARDED_AD_UNIT_ID
+
+    /** Kimlik bos ise reklam istegi hic yapilmaz — SDK'yi bos id ile cagirmayiz. */
+    fun isConfigured(adUnitId: String): Boolean = adUnitId.isNotBlank()
+
+    /**
+     * Gelistirici/test cihazlari. Bu listedeki cihazlara RELEASE build'de bile
+     * her zaman Google'in guvenli test reklamlari gosterilir; boylece ekibin
+     * kendi reklamina tiklamasi (invalid traffic) AdMob hesabini riske atmaz.
+     *
+     * DIKKAT — bu kimlik UYGULAMA BAZLIDIR, cihaz bazli DEGIL. Ayni Galaxy S22
+     * Ultra'da olculdu (2026-08-13): Kaboom "F83812BB...", Kron Drive
+     * "B5BD61FF..." bildirdi. Yani **bu uygulamadan okunan** kimlik yazilmali;
+     * baska bir uygulamadan alinan kimlik hicbir ise yaramaz.
+     *
+     * Kimlik nasil okunur (uygulamada ilk reklam istegi yapildiktan sonra):
+     *   adb logcat | grep setTestDeviceIds
+     * Cikti: "Use RequestConfiguration.Builder().setTestDeviceIds(
+     *         Arrays.asList("XXXX")) to get test ads on this device."
+     *
+     * Bugun BOS: USE_TEST_ADS=true oldugu surece tum cihazlar zaten test
+     * reklami aliyor, listeye ihtiyac yok. Gercek kimliklere gecilen anda
+     * Galaxy S8 (SM-G950F) ve S22 Ultra kimlikleri BU UYGULAMADAN okunup
+     * buraya yazilmali — yoksa ilk gercek tiklamada politika ihlali riski var.
+     */
+    val developerTestDeviceIds: List<String> = emptyList()
+}

@@ -1,0 +1,37 @@
+# Depo genelinde metin dosyalari normalize edilir; checkout'ta platform yerlisi kullanilir.
+* text=auto
+
+# `gradlew` bir POSIX kabuk betigi. Bu makinede core.autocrlf=true oldugu icin
+# .gitattributes olmadan CRLF ile checkout edilir ve Linux/macOS/CI uzerinde
+# "bad interpreter: /bin/sh^M" hatasi verir. LF zorunlu.
+gradlew         text eol=lf
+*.sh            text eol=lf
+
+# Windows toolchain betikleri CRLF ister.
+gradlew.bat     text eol=crlf
+*.cmd           text eol=crlf
+
+# Kaynak / yapilandirma dosyalari: LF ile sakla.
+*.kt            text eol=lf
+*.kts           text eol=lf
+*.java          text eol=lf
+*.xml           text eol=lf
+*.toml          text eol=lf
+*.properties    text eol=lf
+*.pro           text eol=lf
+*.md            text eol=lf
+*.json          text eol=lf
+
+# Ikili varliklar: Git ASLA dokunmasin (bozulma riski).
+*.webp          binary
+*.ogg           binary
+*.png           binary
+*.jpg           binary
+*.jpeg          binary
+*.jar           binary
+*.aar           binary
+*.so            binary
+*.ttf           binary
+*.otf           binary
+*.keystore      binary
+*.jks           binary

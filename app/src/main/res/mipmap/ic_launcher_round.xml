@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Pre-API-26 launcher icon fallback.
+
+  minSdk is 24, but <adaptive-icon> is only supported from API 26. The adaptive
+  variant lives in mipmap-anydpi-v26/ and is picked automatically on API 26+;
+  this unqualified variant is what API 24/25 devices resolve (the primary test
+  device is a Galaxy S8 on Android 7.0 / API 24).
+
+  The original template shipped ten mipmap-*dpi WebP rasters, but all ten were
+  corrupted by a UTF-8 text conversion in the AI Studio export and were deleted.
+  A real branded icon is a separate task; this composes the two intact drawables.
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@drawable/ic_launcher_background" />
+    <item
+        android:drawable="@drawable/img_app_icon"
+        android:gravity="center"
+        android:width="42dp"
+        android:height="42dp" />
+</layer-list>

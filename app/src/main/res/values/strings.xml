@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Faz 6 — LOKALIZASYON. Varsayilan dil INGILIZCE; Turkce karsiliklari
+  res/values-tr/strings.xml icindedir.
+
+  Anahtar semasi (docs/LOCALIZATION.md):
+    common_    ortak / birden fazla ekranda
+    hud_       savas HUD seridi (HUDOverlay.kt)
+    build_     kule insa cubugu (TowerBuildBar.kt)
+    inspector_ secili kule paneli (SelectedTowerInspector.kt)
+    dialog_    ana menu ve modallar (GameDialogs.kt)
+    level_     bolum secme ekrani (LevelSelectScreen.kt)
+    tower_     kule adlari/aciklamalari (UiStrings.kt esler)
+    enemy_     dusman adlari (UiStrings.kt esler)
+    map_name_  11 harita adi (UiStrings.kt esler)
+
+  PARA BIRIMI (docs/DECISIONS.md — BAGLAYICI):
+    savas ici = "Supply" / "Tedarik" · meta = "Coin" / "Coin".
+    Coin savas HUD'inda ASLA gorunmez, ikisi ayni ekranda olmaz.
+-->
+<resources>
+    <string name="app_name">Frontline Defender</string>
+
+    <!-- ==================== common ==================== -->
+    <string name="common_close">Close</string>
+    <!-- Glif: dile bagli degil, cevrilmez. -->
+    <string name="common_close_glyph" translatable="false">✕</string>
+
+    <!-- ==================== hud (HUDOverlay) ==================== -->
+    <!-- %1$d = suanki dalga, %2$d = toplam dalga -->
+    <string name="hud_wave_label">WAVE %1$d/%2$d</string>
+    <!-- Hazirlik geri sayimi, saniye -->
+    <string name="hud_prep_timer">(%1$ds)</string>
+    <string name="hud_supply_icon_desc">Supply</string>
+    <string name="hud_supply_amount">%1$d</string>
+    <string name="hud_lives_icon_desc">Base integrity</string>
+    <!-- %1$d = kalan can, %2$d = azami can -->
+    <string name="hud_lives_value">%1$d/%2$d</string>
+    <string name="hud_start_wave">START</string>
+    <string name="hud_start_wave_icon_desc">Start wave</string>
+    <string name="hud_speed_icon_desc">Game speed</string>
+    <string name="hud_speed_1x" translatable="false">1x</string>
+    <string name="hud_speed_2x" translatable="false">2x</string>
+    <string name="hud_pause_icon_desc">Pause game</string>
+
+    <!-- ==================== build (TowerBuildBar) ==================== -->
+    <string name="build_cost">%1$d</string>
+    <string name="build_close_desc">Close build menu</string>
+
+    <!-- ==================== tower (GameConfig.TowerType) ====================
+         KIMLIK DUZELTMESI: ANTI_ARMOR sprite'i spr_tower_missile_launcher
+         (fuze rampasi) ve sesi sfx_missile_launch. GameConfig'teki "Railgun /
+         armor penetrating beam" metni gorunenle celisiyordu; gorunen metin
+         fuze kimligine cevrildi. Enum adi ANTI_ARMOR olarak KALDI. -->
+    <string name="tower_machine_gun_name">Gatling Gun</string>
+    <string name="tower_machine_gun_desc">Rapid firing, low-medium damage. Excellent against infantry.</string>
+    <string name="tower_cannon_name">Heavy Cannon</string>
+    <string name="tower_cannon_desc">High splash damage explosion. Destroys grouped enemies.</string>
+    <string name="tower_anti_armor_name">Missile Battery</string>
+    <string name="tower_anti_armor_desc">Long-range guided missiles. Tears through armor.</string>
+    <string name="tower_slow_name">Frost Field</string>
+    <string name="tower_slow_desc">Cryo pulses that cut enemy movement speed in half.</string>
+
+    <!-- ==================== enemy (GameConfig.EnemyType) ==================== -->
+    <string name="enemy_infantry_name">Infantry Squad</string>
+    <string name="enemy_fast_soldier_name">Scout Runner</string>
+    <string name="enemy_armored_vehicle_name">Armored Car</string>
+    <string name="enemy_tank_name">Heavy Tank</string>
+    <string name="enemy_shielded_trooper_name">Shielded Trooper</string>
+    <string name="enemy_command_tank_name">Command Tank</string>
+
+    <!-- ==================== inspector (SelectedTowerInspector) ==================== -->
+    <!-- %1$s = kule adi, %2$d = kademe -->
+    <string name="inspector_tower_title">%1$s (Lv.%2$d)</string>
+    <!-- %1$d = hasar, %2$.2f = atislar arasi saniye, %3$d = imha -->
+    <string name="inspector_stats">DMG %1$d  ·  RATE %2$.2fs  ·  KILLS %3$d</string>
+    <string name="inspector_targeting_icon_desc">Targeting mode</string>
+    <string name="inspector_target_first">FIRST</string>
+    <string name="inspector_target_last">LAST</string>
+    <string name="inspector_target_strongest">STRONGEST</string>
+    <string name="inspector_target_weakest">WEAKEST</string>
+    <string name="inspector_upgrade_icon_desc">Upgrade</string>
+    <string name="inspector_upgrade_cost">%1$d</string>
+    <string name="inspector_max_level">MAX</string>
+    <string name="inspector_sell_icon_desc">Sell</string>
+    <string name="inspector_sell_value">+%1$d</string>
+    <string name="inspector_close_desc">Close tower panel</string>
+
+    <!-- ==================== dialog (GameDialogs) ==================== -->
+    <!-- Marka adi: cevrilmez. -->
+    <string name="dialog_game_title" translatable="false">FRONTLINE DEFENDER</string>
+    <string name="dialog_game_subtitle">Tactical Tower Defense</string>
+    <string name="dialog_high_score">HIGH SCORE: %1$d</string>
+    <string name="dialog_high_score_icon_desc">High score</string>
+    <string name="dialog_start_operation">START OPERATION</string>
+    <string name="dialog_play_icon_desc">Play</string>
+    <string name="dialog_sound_toggle_desc">Toggle sound</string>
+
+    <string name="dialog_victory_title">VICTORY!</string>
+    <string name="dialog_victory_subtitle">BATTLEFIELD CLEARED!</string>
+    <!-- %1$d = yildiz sirasi (1-3) -->
+    <string name="dialog_star_desc">Star %1$d</string>
+    <!-- %1$d = kalan can, %2$d = azami can -->
+    <string name="dialog_lives_remaining">Lives remaining: %1$d/%2$d</string>
+    <string name="dialog_final_score">Final score: %1$d</string>
+    <string name="dialog_replay">REPLAY</string>
+
+    <string name="dialog_defeat_title">BASE OVERRUN!</string>
+    <!-- %1$d = dusmanin yardigi dalga -->
+    <string name="dialog_defeat_body">The enemy broke through your defenses on Wave %1$d.</string>
+    <string name="dialog_retry">RETRY</string>
+
+    <string name="dialog_paused_title">GAME PAUSED</string>
+    <string name="dialog_sound_effects">Sound Effects</string>
+    <string name="dialog_resume">RESUME</string>
+    <string name="dialog_restart_level">RESTART LEVEL</string>
+    <string name="dialog_main_menu">MAIN MENU</string>
+
+    <!-- ==================== level (LevelSelectScreen) ==================== -->
+    <string name="level_back">&lt; BACK</string>
+    <string name="level_campaign_title">CAMPAIGN</string>
+    <!-- Meta para birimi. Turkcede de "Coin" (DECISIONS). -->
+    <string name="level_coin_label" translatable="false">COIN</string>
+    <string name="level_coin_amount">%1$d</string>
+    <string name="level_act_1">ACT I</string>
+    <string name="level_act_2">ACT II</string>
+    <string name="level_number">%1$d</string>
+    <plurals name="level_wave_count">
+        <item quantity="one">%d wave</item>
+        <item quantity="other">%d waves</item>
+    </plurals>
+    <plurals name="level_browse_hint">
+        <item quantity="one">Swipe horizontally to browse %d operation</item>
+        <item quantity="other">Swipe horizontally to browse all %d operations</item>
+    </plurals>
+    <string name="level_night_badge">NIGHT</string>
+    <!-- %1$d = Coin bedeli -->
+    <string name="level_unlock_cost">UNLOCK %1$d</string>
+    <string name="level_locked">LOCKED</string>
+    <string name="level_deploy">DEPLOY</string>
+    <string name="level_replay">REPLAY</string>
+    <string name="level_star_filled_glyph" translatable="false">*</string>
+    <string name="level_star_empty_glyph" translatable="false">-</string>
+
+    <!-- ==================== map_name (LevelGeometry mapId 1..11) ====================
+         Kotlin tarafindaki LevelGeometry adlari ASCII-bozuk ("Cayir Gecidi /
+         Meadow Pass") ve BILINCLI olarak oyle kaldi (uretilmis dosya).
+         Oyuncunun gordugu ad BURADAN gelir. -->
+    <string name="map_name_01">Meadow Pass</string>
+    <string name="map_name_02">Waterfall Woods</string>
+    <string name="map_name_03">Dark Ravine</string>
+    <string name="map_name_04">Lakeside Ring</string>
+    <string name="map_name_05">Marshland</string>
+    <string name="map_name_06">Ravine Crossing</string>
+    <string name="map_name_07">Open Plain</string>
+    <string name="map_name_08">Deep Forest</string>
+    <string name="map_name_09">Rampart Slope</string>
+    <string name="map_name_10">River Fork</string>
+    <string name="map_name_11">Village Outskirts</string>
+</resources>

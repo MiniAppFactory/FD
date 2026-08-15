@@ -1,0 +1,60 @@
+*.iml
+.gradle
+.gradle/
+.kotlin
+.kotlin/
+/.idea/
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+Thumbs.db
+/build
+build/
+/captures
+.externalNativeBuild
+.cxx
+
+# --- Faz 1: secret / imzalama hijyeni (INTAKE raporu §6, ORTA risk) ---
+# Global CLAUDE.md §8: API anahtarlari, keystore sifreleri ve secret degerler
+# ASLA commit edilmez. Bu satirlar olmadan ileride uretilecek upload key
+# yanlislikla commit edilebilirdi.
+local.properties
+/local.properties
+local.defaults.properties
+.env
+.env.*
+!.env.example
+*.jks
+*.keystore
+keystore.properties
+signing.properties
+debug.keystore
+google-services.json
+secrets.properties
+*.p8
+*.p12
+*.pem
+*.pepk
+service-account*.json
+
+# --- Faz 0: build cikti artifaktlari (depoya girmez, her build'de uretilir) ---
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+output-metadata.json
+mapping.txt
+/app/release/
+/app/debug/
+
+# --- Faz 0: proje disi klasorlerin depoya sizmasini engelle ---
+# Bunlar normalde `source\` DISINDA yasar; buraya bir kopya sizarsa commit'e girmesin.
+original-ai-studio/
+copied items/
+asset-pack/
+/docs/
