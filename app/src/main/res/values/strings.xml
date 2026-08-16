@@ -19,7 +19,11 @@
     Coin savas HUD'inda ASLA gorunmez, ikisi ayni ekranda olmaz.
 -->
 <resources>
-    <string name="app_name">Frontline Defender</string>
+    <!-- Uygulama adi bir MARKA adidir, cevrilmez: launcher'da, Play kaydinda ve
+         store gorsellerinde ayni yazilmak zorunda. `translatable="false"`
+         olmadan lint `MissingTranslation` HATASI veriyordu (values-tr'de
+         karsiligi yok ve olmamali) ve `lintDebug` build'i durduruyordu. -->
+    <string name="app_name" translatable="false">Frontline Defender</string>
 
     <!-- ==================== common ====================
          Kapat glifi: dile bagli degil, cevrilmez. Ekran okuyucunun okudugu ad

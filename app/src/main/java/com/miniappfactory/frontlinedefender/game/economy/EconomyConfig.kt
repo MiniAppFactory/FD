@@ -314,11 +314,29 @@ object EconomyConfig {
     const val AIR_SUPPORT_SUPPLY_STEP: Int = 8
 
     /**
-     * Ekrandaki her dusmandan silinen MAKS CAN orani. **1,0'dan kucuk olmak ZORUNDA:**
-     * hava destegi tek basina tam canli bir dusmani oldurmez, dolayisiyla "dalga
-     * temizleme butonu" degildir (pay-to-win kalkani).
+     * Ekrandaki her dusmandan silinen MAKS CAN orani.
+     *
+     * **SERT KISIT — SAVAS BASINA TOPLAM, tek kullanim degil:**
+     * `AIR_SUPPORT.maxUsesPerBattle x AIR_SUPPORT_DAMAGE_FRACTION < 1,0`.
+     *
+     * FAZ 10.1 — 0,60 -> 0,45. Duzeltilen sey bir mantik hatasi, bir tuning
+     * karari degil: kisit "tek kullanim tam canli dusmani oldurmez" diye
+     * yazilmisti, ama Hava Destegi'nin savas basina **iki** kullanimi var
+     * (1 ucretli + 1 rewarded) ve bekleme suresi 45 sn, yani ikisi ayni uzun
+     * dalgada kullanilabiliyor. 2 x 0,60 = 1,20 > 1,0 -> iki kullanim ekrandaki
+     * HER dusmani, boss dahil, **dogrudan oldurur**. Yani kalkanin korumasi
+     * gereken sey (pay-to-win / dalga temizleme butonu) aslinda aciktı.
+     *
+     * 2 x 0,45 = 0,90 -> hicbir dusman yalnizca guclendiriciyle olmez; son %10
+     * her zaman kulelerden gelmek zorunda.
+     *
+     * ORANIN (yuzde, sabit sayi degil) OLMASI KASITLI: dusman cani x3,5
+     * kalibre edildiginde (Faz 10) hava destegi kendiliginden olcegi tuttu.
+     * Sabit hasar olsaydi ayni gun degersizlesirdi. Ayni sebeple zirhtan da
+     * bagimsizdir — zirh 0,55 -> 0,78/0,86 cikarken kurtarma degeri korundu ve
+     * "tank sizdi, fuze rampam yok" durumunun cevabi olmaya devam etti.
      */
-    const val AIR_SUPPORT_DAMAGE_FRACTION: Double = 0.60
+    const val AIR_SUPPORT_DAMAGE_FRACTION: Double = 0.45
 
     /** Iki hava destegi arasinda zorunlu bekleme. "Uzun bekleme" gereksinimi. */
     const val AIR_SUPPORT_COOLDOWN_MS: Long = 45_000L

@@ -1,21 +1,23 @@
 package com.miniappfactory.frontlinedefender.game.economy
 
 import com.miniappfactory.frontlinedefender.game.model.GameConfig
+import com.miniappfactory.frontlinedefender.game.model.WaveDefinitions
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Faz 10 — SAVAS ICI TEDARIK BUTCESI (ECONOMY_SPEC A).
+ * Faz 10 / 10.1 — SAVAS ICI TEDARIK BUTCESI (ECONOMY_SPEC A).
  *
- * Testcinin sikayetini olculebilir hale getirir ve onerilen sayilarin gercekten
+ * Testcinin sikayetini olculebilir hale getirir ve uygulanan sayilarin gercekten
  * cozdugunu kanitlar:
  *   *"6 tane kule yapacak para kazaniyorsun ama 2 tanesi yetiyor."*
  *
- * Bu sinif **oneriyi** dogrular; `GameConfig` henuz sikilastirilmadigi icin motora
- * karsi sozlesme testi burada YOKTUR (uygulanmasi baska ajanin isi, ECONOMY_SPEC 9).
- * Uygulama yapildiginda [gameConfigStillUsesTheLegacyFlatSupply] testi ters cevrilir
- * ve gercek bir sozlesme kilidine donusur.
+ * FAZ 10.1'DE DEGISEN SEY: model artik hicbir dalga/kule sayisini KOPYALAMIYOR;
+ * gelir `WaveDefinitions` x `ENEMY_SPECS`, bolen ise `TOWER_SPECS`ten canli
+ * turetiliyor ([CampaignFacts]). Bu yuzden bu dosyadaki beklenen degerler artik
+ * "dokumandaki tablo" degil **bugunku oyunun olculmus gercegi**dir ve dalga tablosu
+ * degistiginde kirilmalari ISTENEN davranistir — sessizce yaniltici olmalari degil.
  */
 class SupplyBudgetTest {
 
@@ -23,13 +25,20 @@ class SupplyBudgetTest {
     // 1. TESHIS — bolluk sayiyla kanitlanir
     // =================================================================================
 
+    /**
+     * Faz 10 ONCESI ekonomi, BUGUNKU dalga tablosunda. SPI > 4 = artan Tedarigin
+     * harcanacak yeri yok, karar olur.
+     *
+     * Iki tarafin AYNI dalga tablosunda karsilastirilmasi kasitli: eski dalga
+     * tablosunun toplamlariyla karsilastirmak, dalga sikilastirmasinin getirdigi
+     * geliri odul kesintisinin hanesine yazardi.
+     */
     @Test
-    fun todaysEconomyIsMeasurablyFarTooFlush() {
-        // SPI > 4 = artan Tedarigin harcanacak yeri yok, karar olur.
+    fun theEconomyBeforeTighteningWasMeasurablyFarTooFlush() {
         for (level in 1..6) {
             val spi = SupplyBudgetModel.legacySupplyPressureIndex(level)
             assertTrue(
-                "L$level bugunku SPI %.2f — sikayet yoksa test yanlis".format(spi),
+                "L$level sikilastirma oncesi SPI %.2f — sikayet yoksa test yanlis".format(spi),
                 spi > 4.0,
             )
         }
@@ -78,10 +87,7 @@ class SupplyBudgetTest {
     fun tightenedRewardTablePreservesEnemyValueRatios() {
         // Kule kimlikleri ve hedef secimi DEGISMEMELI: her dusmanin piyadeye gore
         // goreli degeri eski tabloyla ayni kalmali (+-%15).
-        val legacy = mapOf(
-            "INFANTRY" to 12, "FAST_SOLDIER" to 15, "SHIELDED_TROOPER" to 22,
-            "ARMORED_VEHICLE" to 28, "TANK" to 60, "COMMAND_TANK" to 180,
-        )
+        val legacy = SupplyBudgetModel.LEGACY_ENEMY_SUPPLY_REWARD
         val tightened = SupplyBudgetModel.TIGHTENED_ENEMY_SUPPLY_REWARD
         assertEquals(legacy.keys, tightened.keys)
         legacy.forEach { (name, old) ->
@@ -136,11 +142,22 @@ class SupplyBudgetTest {
         }
     }
 
+    /**
+     * ONCEKI HALI (`recommendedBudgetTableMatchesEconomySpec`) 454/556/654/950/877/1188
+     * bekliyordu. O sayilar Faz 10'un dalga tablosundan turetilmisti ve kule ajani
+     * dalgalari sikilastirinca **sessizce yanlis** oldular — ama test yesil kalmaya
+     * devam etti, cunku model de ayni bayat diziyi okuyordu. Iki taraf ayni yanlisi
+     * paylastigi icin hata ancak elle olculdugunde goruldu.
+     *
+     * Faz 10.1'de model canli dalga tablosunu okuyor; bu yuzden buradaki sayilar
+     * BUGUNKU olcumdur ve dalga tablosu degistiginde bu test **kirilmalidir**.
+     * Kirildiginda yapilacak sey esigi guncellemek degil, SPI'ye bakmaktir.
+     */
     @Test
-    fun recommendedBudgetTableMatchesEconomySpec() {
-        // ECONOMY_SPEC A.3 tablosunun "yeni butce" kolonu.
+    fun budgetTableMatchesTodaysMeasuredWaveTable() {
         val expected = mapOf(
-            1 to 454, 2 to 556, 3 to 654, 4 to 950, 5 to 877, 6 to 1188,
+            1 to 570, 2 to 692, 3 to 820, 4 to 1260,
+            5 to 1054, 6 to 1374, 7 to 1175, 8 to 1273,
         )
         expected.forEach { (level, budget) ->
             assertEquals("L$level butce", budget, SupplyBudgetModel.supplyBudget(level))
@@ -157,6 +174,174 @@ class SupplyBudgetTest {
                     spi, SupplyBudgetModel.SPI_TARGET_MIN, SupplyBudgetModel.SPI_TARGET_MAX,
                 ),
                 spi >= SupplyBudgetModel.SPI_TARGET_MIN && spi <= SupplyBudgetModel.SPI_TARGET_MAX,
+            )
+        }
+    }
+
+    /**
+     * BANT KILIDI — bandin icinde olmak yetmez, NEREDE oldugu da kilitli.
+     *
+     * Sebep: Faz 10'da SPI bandin ustune cikti ve bunu **hicbir test yakalamadi**,
+     * cunku bant testi bayat bir diziyi okuyordu. Bant testi tek basina yeterli
+     * degil; bir sonraki dalga degisikliginin bolum bolum ne yaptigini gormek
+     * istiyoruz. Bu test kirildiginda mesaj dogrudan yeni SPI'yi yazar.
+     *
+     * Bu sayilari guncellemek MESRU bir islemdir — esigi gevsetmek degildir —
+     * yeter ki [everyModelledLevelLandsInsideTheTargetPressureBand] yesil kalsin.
+     */
+    @Test
+    fun theSupplyPressureIndexIsLockedLevelByLevel() {
+        val expected = mapOf(
+            1 to 2.28, 2 to 1.85, 3 to 1.88, 4 to 2.03,
+            5 to 1.70, 6 to 2.22, 7 to 1.62, 8 to 1.76,
+        )
+        expected.forEach { (level, spi) ->
+            assertEquals(
+                "L$level SPI kaydi (butce ${SupplyBudgetModel.supplyBudget(level)}, " +
+                    "kadro ${SupplyBudgetModel.designedRoster(level)} = " +
+                    "${SupplyBudgetModel.designedLoadoutCost(level)})",
+                spi,
+                SupplyBudgetModel.supplyPressureIndex(level),
+                0.02,
+            )
+        }
+    }
+
+    // =================================================================================
+    // 2b. BAYATLAMA KALKANI — model dalga/kule tablosunu KOPYALAMIYOR
+    // =================================================================================
+
+    /**
+     * Bu proje ayni hatayi iki kez yapti: `WaveMetrics.AEHP` ve
+     * `SupplyBudgetModel.TIGHTENED_WAVE_KILL_SUPPLY` elle yazilmisti, altindaki karar
+     * degisti, tablolar kaldi. Asagidaki uc test ucuncusunu yapisal olarak engeller.
+     */
+    @Test
+    fun killIncomeIsRecomputedFromTheLiveWaveTable() {
+        // Testin kendisi toplami BAGIMSIZ olarak yeniden hesaplar. Model bir yerde
+        // onceden hesaplanmis toplam saklıyorsa bu test onu yakalar.
+        for (level in 1..EconomyConfig.CAMPAIGN_LEVELS) {
+            val expected = WaveDefinitions.wavesFor(level).sumOf { wave ->
+                wave.spawns.sumOf { spawn ->
+                    GameConfig.ENEMY_SPECS.getValue(spawn.enemyType).rewardGold
+                }
+            }
+            val actMul = GameConfig.actRewardMultiplier(GameConfig.levelSpec(level).act)
+            if (actMul == 1f) {
+                assertEquals(
+                    "L$level oldurme geliri canli dalga tablosuyla uyusmuyor",
+                    expected,
+                    SupplyBudgetModel.waveKillSupply(level),
+                )
+            }
+        }
+        assertEquals(
+            "L1 dalga sayisi canli tablodan gelmiyor",
+            WaveDefinitions.wavesFor(1).size,
+            SupplyBudgetModel.waveCount(1),
+        )
+    }
+
+    @Test
+    fun killIncomeFollowsAChangedWaveTable() {
+        // Dalga tablosu degistiginde gelirin GERCEKTEN degistigini kanitlar: sahte
+        // bir tabloda dusman sayisi yarilanirsa gelir de yarilanmali.
+        val halved = object : CampaignFacts by GameConfigCampaignFacts {
+            override fun enemyCounts(level: Int): Map<String, Int> =
+                GameConfigCampaignFacts.enemyCounts(level).mapValues { (_, n) -> n / 2 }
+        }
+        val full = SupplyBudgetModel.waveKillSupply(1)
+        val half = SupplyBudgetModel.waveKillSupply(1, halved)
+        assertEquals("gelir dalga tablosunu takip etmiyor", full / 2.0, half.toDouble(), 2.0)
+        assertTrue("model bir ara toplam sakliyor olmali", half < full)
+    }
+
+    @Test
+    fun designedLoadoutIsPricedFromLiveTowerSpecs() {
+        // Bolen de bayatlamamali: kule fiyatlari degisirse tasarlanan kadro maliyeti
+        // kendiliginden takip etmeli (Faz 10'da CANNON 90->95, SLOW 80->100 oldu ve
+        // elle yazilmis bolen bunu takip etmiyordu).
+        for (level in 1..SupplyBudgetModel.MODELLED_LEVELS) {
+            val expected = SupplyBudgetModel.designedRoster(level).sumOf { name ->
+                val type = GameConfig.TowerType.valueOf(name)
+                val spec = GameConfig.TOWER_SPECS.getValue(type)
+                spec.buildCost + spec.level2UpgradeCost
+            }
+            assertEquals(
+                "L$level tasarlanan kadro maliyeti canli TOWER_SPECS ile uyusmuyor",
+                expected,
+                SupplyBudgetModel.designedLoadoutCost(level),
+            )
+        }
+
+        val pricier = object : CampaignFacts by GameConfigCampaignFacts {
+            override val towerBuildCost: Map<String, Int> =
+                GameConfigCampaignFacts.towerBuildCost.mapValues { (_, c) -> c * 2 }
+        }
+        assertTrue(
+            "kule fiyati iki katina cikti, bolen degismedi — bolen kopyalanmis",
+            SupplyBudgetModel.designedLoadoutCost(1, pricier) >
+                SupplyBudgetModel.designedLoadoutCost(1),
+        )
+    }
+
+    @Test
+    fun theDesignedRosterOnlyEverContainsUnlockedTowers() {
+        // "Oyuncunun sahip olmadigi mekanik zorunlu basari kosulu olamaz" kuralinin
+        // ekonomi tarafi: tasarlanan kadro o bolumde kurulamayan bir kule iceremez,
+        // yoksa SPI'nin boleni oyuncunun ERISEMEDIGI bir savunmayi fiyatlar.
+        for (level in 1..SupplyBudgetModel.MODELLED_LEVELS) {
+            SupplyBudgetModel.designedRoster(level).forEach { name ->
+                val spec = GameConfig.TOWER_SPECS.getValue(GameConfig.TowerType.valueOf(name))
+                assertTrue(
+                    "L$level kadrosunda $name var ama L${spec.unlockedAtLevel}'de aciliyor",
+                    spec.unlockedAtLevel <= level,
+                )
+            }
+        }
+    }
+
+    @Test
+    fun theDesignedRosterNeverShrinksAsTheCampaignProgresses() {
+        for (level in 2..SupplyBudgetModel.MODELLED_LEVELS) {
+            assertTrue(
+                "L$level tasarlanan kadrosu L${level - 1}'den ucuz — oyuncu kule sokmuyor",
+                SupplyBudgetModel.designedLoadoutCost(level) >=
+                    SupplyBudgetModel.designedLoadoutCost(level - 1),
+            )
+        }
+    }
+
+    /**
+     * BOLENDEN BAGIMSIZ BOLLUK OLCUMU.
+     *
+     * SPI'nin boleni Faz 10.1'de degisti; "bant asimini boleni buyuterek cozduk"
+     * itirazina kapali bir olcut gerekiyor. Testcinin cumlesi zaten boyle bir olcut:
+     * *"her dalga 1-3 kule finanse ediyor."* Bu test onu dogrudan olcer ve hicbir
+     * tasarim niyetine bakmaz — yalnizca canli dalga tablosu ve canli kule fiyati.
+     */
+    @Test
+    fun noSingleWaveFinancesAWholeUpgradedTower() {
+        val tierTwoGatling = GameConfig.TOWER_SPECS.getValue(GameConfig.TowerType.MACHINE_GUN)
+            .let { it.buildCost + it.level2UpgradeCost }
+        assertEquals(125, tierTwoGatling)
+
+        for (level in 1..SupplyBudgetModel.MODELLED_LEVELS) {
+            val perWave = SupplyBudgetModel.waveKillSupply(level).toDouble() /
+                SupplyBudgetModel.waveCount(level)
+            val towersPerWave = perWave / tierTwoGatling
+            assertTrue(
+                "L$level: bir dalga %.2f kademe-2 Gatling finanse ediyor — 1,1'i gecerse "
+                    .format(towersPerWave) + "eski bolluk geri gelir",
+                towersPerWave <= 1.1,
+            )
+            // Faz 10 oncesiyle karsilastirma: kesinti gercekten calisti mi.
+            val legacyPerWave = SupplyBudgetModel.legacyWaveKillSupply(level).toDouble() /
+                SupplyBudgetModel.waveCount(level) / tierTwoGatling
+            assertTrue(
+                "L$level: dalga basi kule finansmani %.2f -> %.2f, iki katindan az "
+                    .format(legacyPerWave, towersPerWave) + "iyilesme yetersiz",
+                legacyPerWave >= towersPerWave * 2,
             )
         }
     }

@@ -425,6 +425,156 @@ class BoosterEconomyTest {
         assertTrue(EconomyConfig.AIR_SUPPORT_DAMAGE_FRACTION > 0.0)
     }
 
+    /**
+     * FAZ 10.1 — YUKARIDAKI TESTIN ACIK BIRAKTIGI DELIK.
+     *
+     * `airSupportCanNeverClearAWaveByItself` yalnizca TEK kullanimi olcuyordu. Hava
+     * Destegi'nin savas basina **iki** kullanimi var (1 ucretli + 1 rewarded) ve
+     * bekleme 45 sn, yani ikisi ayni uzun dalgada kullanilabilir. 0,60 oraniyla
+     * 2 x 0,60 = 1,20 > 1,0 idi: iki kullanim ekrandaki her dusmani, KOMUTA TANKI
+     * dahil, dogrudan olduruyordu. Yani pay-to-win kalkani kagit uzerinde vardi ama
+     * sayilar onu ihlal ediyordu.
+     *
+     * Dogru kisit **savas basina toplam** uzerinde tanimli olmali.
+     */
+    @Test
+    fun allAirSupportUsesInOneBattleStillCannotKillAnything() {
+        val total = BoosterType.AIR_SUPPORT.maxUsesPerBattle *
+            EconomyConfig.AIR_SUPPORT_DAMAGE_FRACTION
+        assertEquals("savas basina kullanim sayisi degisti — orani yeniden hesapla", 2, BoosterType.AIR_SUPPORT.maxUsesPerBattle)
+        assertTrue(
+            "savas basina toplam hava destegi hasari maks canin %.0f%%'i — %%100'e ulasirsa "
+                .format(total * 100) + "guclendirici tek basina oldurur",
+            total < 1.0,
+        )
+        // Son vurusun kulelerden gelmesi icin anlamli bir pay kalmali (>= %10).
+        // EPSILON KASITLI: 2 x 0,45 ikili tabanda tam 0,9 etmez (0,90000000000000002),
+        // yani kalan pay 0,09999999999999998 cikar ve ciplak `>= 0.10` tasarimin TAM
+        // sinirinda kirilir. Esik %10'un kendisi; epsilon yalnizca kayan nokta
+        // gurultusunu tolere eder, gercek bir ihlali (or. 0,50 -> pay 0,0) hâlâ yakalar.
+        assertTrue(
+            "kalan can payi cok ince: %.4f".format(1.0 - total),
+            1.0 - total >= 0.10 - 1e-9,
+        )
+    }
+
+    /**
+     * Hava Destegi HASARININ **oran** olmasi (sabit sayi degil) kalibrasyon-guvenli
+     * olmasini sagliyor: dusman cani x3,5 edildiginde (Faz 10) kurtarma degeri
+     * kendiliginden olcegi tuttu. Bu test o ozelligi kilitler — biri sabit hasara
+     * cevirmeye kalkarsa oran testi olmadan fark edilmez.
+     *
+     * Ayni sebeple zirhtan da bagimsizdir: zirh 0,55 -> 0,78/0,86 cikarken hava
+     * destegi zirhli/tank karsisinda deger kaybetmedi, dolayisiyla "agir sizdi ve
+     * dogru muhimmatim yok" durumunun cevabi olmaya devam ediyor.
+     */
+    @Test
+    fun airSupportRescueValueScalesWithEnemyHealthInsteadOfDecaying() {
+        val facts = GameConfigCampaignFacts
+        val infantry = facts.enemyMaxHp.getValue("INFANTRY")
+        val tank = facts.enemyMaxHp.getValue("TANK")
+        val fraction = EconomyConfig.AIR_SUPPORT_DAMAGE_FRACTION
+
+        // Kalibrasyon oncesi piyade 75, tank 580 canliydi; oran sabit oldugu icin
+        // silinen can otomatik olarak x3,5 buyudu.
+        assertEquals(260.0, infantry, 0.5)
+        assertEquals(2030.0, tank, 0.5)
+
+        // Tek kullanim hicbirini oldurmez ama ikisinde de anlamli bir dilim alir.
+        assertTrue("piyade tek vurusta olmemeli", fraction * infantry < infantry)
+        assertTrue("silinen can hissedilir olmali", fraction >= 0.30)
+
+        // Tank karsisinda: iki kullanim bile tanki bitirmez (yukaridaki kisit),
+        // ama kalan can bir kademe-2 Gatling'in makul surede bitirebilecegi kadar
+        // olmali, yoksa guclendirici "ise yaramaz" hissi verir.
+        val tankLeftAfterBothUses = tank * (1.0 - 2 * fraction)
+        assertTrue(
+            "iki hava destegi sonrasi tankta %.0f can kaliyor — kurtarma hissi yok"
+                .format(tankLeftAfterBothUses),
+            tankLeftAfterBothUses in 1.0..(tank * 0.25),
+        )
+    }
+
+    /**
+     * Hava Destegi fiyati **acilis bolumunde tam olarak bir kademe-2 Gatling** kadar
+     * olmali: "3. kule mi hava destegi mi" karari ancak iki secenek ayni parayi
+     * istiyorsa gercek bir karardir.
+     *
+     * Faz 10.1'de bu oran KONTROL EDILDI ve fiyat DEGISMEDI: 96 + 8(L-1), tasarlanan
+     * kadronun %19-21'i (L4 120/620 ... L8 152/725) — bolumler boyunca sabit "bir
+     * kule kadar". Dolayisiyla Tedarik bollugu degistigi halde fiyat kalibrasyonu
+     * hâlâ dogru.
+     */
+    @Test
+    fun airSupportCostsAboutOneFullyUpgradedGatlingAtUnlock() {
+        val tierTwoGatling = GameConfigCampaignFacts.tierTwoCost("MACHINE_GUN")
+        assertEquals(125, tierTwoGatling)
+
+        val atUnlock = boosterPrice(BoosterType.AIR_SUPPORT, BoosterType.AIR_SUPPORT.unlockLevel)
+        assertEquals(120, atUnlock)
+        assertTrue(
+            "acilista hava destegi $atUnlock, kademe-2 Gatling $tierTwoGatling — " +
+                "fiyatlar ayrisirsa karar 'karar' olmaktan cikar",
+            atUnlock >= tierTwoGatling * 80 / 100 && atUnlock <= tierTwoGatling * 120 / 100,
+        )
+
+        // Modellenen bolumlerde fiyat, tasarlanan kadronun %15-25'i bandinda kalmali:
+        // bir kulelik karar. Bant disina cikarsa ya bedava gibi olur ya alinamaz olur.
+        for (level in BoosterType.AIR_SUPPORT.unlockLevel..SupplyBudgetModel.MODELLED_LEVELS) {
+            val share = 100.0 * boosterPrice(BoosterType.AIR_SUPPORT, level) /
+                SupplyBudgetModel.designedLoadoutCost(level)
+            assertTrue(
+                "L$level: hava destegi tasarlanan kadronun %%%.1f'i".format(share),
+                share in 15.0..25.0,
+            )
+        }
+    }
+
+    /**
+     * Us Tamiri'nin coin fiyati yildiz atlamasini ASLA karsilamamali. Faz 10.1'de
+     * yeniden dogrulandi: coin ekonomisi (odul formulu, yildiz carpanlari) Faz 10'dan
+     * beri degismedi, dolayisiyla `repairPriceExceedsEveryStarJumpItCouldEverBuy`
+     * kisiti aynen gecerli. Burada marjin de kilitleniyor ki daralirsa gorulsun.
+     */
+    @Test
+    fun repairPriceKeepsAGrowingMarginOverTheBiggestStarJump() {
+        for (level in BoosterType.BASE_REPAIR.unlockLevel..EconomyConfig.CAMPAIGN_LEVELS) {
+            val jump = levelReward(level, 3) - levelReward(level, 1)
+            val price = boosterPrice(BoosterType.BASE_REPAIR, level)
+            assertTrue(
+                "L$level: tamir $price, 1->3 yildiz farki $jump — tamir kara gecebilir",
+                price > jump,
+            )
+        }
+        // Marjin bolumle BUYUMELI: gec oyunda odul dogrusal buyurken tamir de
+        // buyudugu icin arbitraj penceresi hic acilmaz.
+        val marginAtUnlock = boosterPrice(BoosterType.BASE_REPAIR, 7) -
+            (levelReward(7, 3) - levelReward(7, 1))
+        val marginAtEnd = boosterPrice(BoosterType.BASE_REPAIR, 22) -
+            (levelReward(22, 3) - levelReward(22, 1))
+        assertEquals(50, marginAtUnlock)
+        assertEquals(80, marginAtEnd)
+        assertTrue("arbitraj marjini daraliyor", marginAtEnd > marginAtUnlock)
+    }
+
+    /**
+     * Acil Tedarik **yalnizca reklam** kalmali: coin -> Tedarik donusumu GDD D.4
+     * tarafindan yasak. Faz 10.1 gozden gecirmesinde korundu.
+     */
+    @Test
+    fun emergencySupplyHasNoPaidPathAtAnyLevel() {
+        assertEquals(BoosterCurrency.AD_ONLY, BoosterType.EMERGENCY_SUPPLY.currency)
+        assertFalse(BoosterType.EMERGENCY_SUPPLY.hasPaidPath)
+        assertEquals(0, BoosterType.EMERGENCY_SUPPLY.paidUsesPerBattle)
+        for (level in 1..EconomyConfig.CAMPAIGN_LEVELS) {
+            assertEquals("L$level acil tedarik ucretli yol acmis", 0, boosterPrice(BoosterType.EMERGENCY_SUPPLY, level))
+        }
+        assertEquals(
+            BoosterDecision.PaidPathUnavailable,
+            boosterAllowed(state(10), BoosterType.EMERGENCY_SUPPLY, viaAd = false, richWallet),
+        )
+    }
+
     @Test
     fun baseRepairIsStarNeutralSoItCanNeverBeCoinPositive() {
         // ARBITRAJ: "tamir et -> yildiz atla -> tamirden fazla coin kazan".
