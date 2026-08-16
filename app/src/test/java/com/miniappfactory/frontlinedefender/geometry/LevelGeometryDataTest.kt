@@ -266,8 +266,18 @@ class LevelGeometryDataTest {
 
     /**
      * Bir pad'e kurulan kule yola ATES EDEBILMELI. Pad, oyundaki en uzun kule
-     * menzilinden (ANTI_ARMOR kademe 2 = 280 ref-px) daha uzaktaysa o pad
-     * OLUDUR: uzerine ne kurulursa kurulsun hicbir dusmani vuramaz.
+     * menzilinden daha uzaktaysa o pad OLUDUR: uzerine ne kurulursa kurulsun
+     * hicbir dusmani vuramaz.
+     *
+     * Faz 10: en uzun menzil ANTI_ARMOR kademe 2 (280) DEGIL, artik SLOW
+     * kademe 2 (320 ref-px) — destek kulesinin menzili bilincli olarak en genis
+     * (testci: "buz kulesinin kapsama alani buyuk olmali").
+     *
+     * Menzil buyudugu icin OLU PAD SAYISI 11'DEN 7'YE DUSTU: harita 7 pad 3,
+     * harita 8 pad 8 ve 11, harita 10 pad 17 artik (yalnizca Frost Field ile)
+     * yola erisiyor. Kalan 7 pad hâlâ olu ve DECISIONS bunlari sanat karari
+     * olarak kabul etmis durumda. Liste yine donduruluyor ki gelecekte sessizce
+     * degismesin.
      *
      * DECISIONS bu "uzak pad"leri sanat karari olarak KABUL ETTI, bu yuzden
      * test hard-fail etmiyor; bunun yerine listeyi **donduruyor**. Yeni bir olu
@@ -279,15 +289,17 @@ class LevelGeometryDataTest {
     @Test
     fun theSetOfDeadBuildPadsMatchesTheFrozenKnownList() {
         val maxRange = GeometryTestSupport.maxTowerRange()
-        assertEquals("en uzun kule menzili degisti — dondurulmus liste yenilenmeli", 280f, maxRange, 0.01f)
+        assertEquals("en uzun kule menzili degisti — dondurulmus liste yenilenmeli", 320f, maxRange, 0.01f)
 
+        // Faz 10 olcumu (maxRange 320 ref-px). Onceki liste (maxRange 280):
+        //   3=[10], 6=[4,10], 7=[3,6], 8=[6,8,11], 9=[5], 10=[8,17]
         val frozenDeadPads: Map<Int, Set<Int>> = mapOf(
             3 to setOf(10),
             6 to setOf(4, 10),
-            7 to setOf(3, 6),
-            8 to setOf(6, 8, 11),
+            7 to setOf(6),
+            8 to setOf(6),
             9 to setOf(5),
-            10 to setOf(8, 17)
+            10 to setOf(8)
         )
 
         val measured = sortedMapOf<Int, Set<Int>>()
@@ -334,11 +346,13 @@ class LevelGeometryDataTest {
         // karistirilmis gorunuyor (134 - 28 uzak pad = 106).
         assertEquals("130 ref-px icindeki pad sayisi", 79, within130)
         assertEquals(
-            "en kisa L1 menzili (SLOW = 150 ref-px) disindaki pad sayisi",
+            // Faz 10: en kisa L1 menzili artik MACHINE_GUN (160 -> 150 ref-px);
+            // SLOW 270'e cikti. Sayi ayni cunku esik degeri hâlâ 150.
+            "en kisa L1 menzili (MACHINE_GUN = 150 ref-px) disindaki pad sayisi",
             41, beyondShortestL1
         )
         assertEquals(
-            "MACHINE_GUN L1 (160 ref-px) disindaki pad sayisi — DECISIONS'in '28 uzak pad'i",
+            "160 ref-px disindaki pad sayisi — DECISIONS'in '28 uzak pad'i",
             29, distances.count { it > 160f }
         )
     }

@@ -2,7 +2,11 @@ package com.miniappfactory.frontlinedefender.balance
 
 import com.miniappfactory.frontlinedefender.game.model.GameConfig
 import com.miniappfactory.frontlinedefender.game.model.GameConfig.EnemyType
+import com.miniappfactory.frontlinedefender.game.model.GameConfig.TowerRole
 import com.miniappfactory.frontlinedefender.game.model.GameConfig.TowerType
+import com.miniappfactory.frontlinedefender.game.economy.SupplyBudgetModel
+import com.miniappfactory.frontlinedefender.game.economy.startingSupplyFor
+import com.miniappfactory.frontlinedefender.game.model.ProjectileType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -158,25 +162,527 @@ class BalanceConsistencyTest {
         assertEquals(TowerType.MACHINE_GUN, cheapest.type)
     }
 
+    /**
+     * ESKI HALI: "baslangic tedariki en az 2 kule almali."
+     *
+     * Faz 10'da bu KASTEN yanlis hale geldi: L1 Tedariki 150 -> 80, yani tam
+     * BIR Gatling. Ekonomi ajaninin olcumu, iki-uc kuleyi hazirlik fazinda
+     * birden kurabilmenin "hangi kuleyi once?" kararini tamamen yok ettigini
+     * gosterdi. Kural bu yuzden gevsetilmedi, DOGRU ifadeye cevrildi:
+     * ilk bolumde en az bir kule kurulabilmeli (yoksa oyun baslamaz) ve
+     * butce bolum bolum artmali.
+     */
     @Test
-    fun startingSupplyAffordsAtLeastTwoOfTheCheapestTower() {
+    fun theOpeningLevelAffordsExactlyItsFirstTowerAndBudgetsGrow() {
         val cheapest = GameConfig.TOWER_SPECS.values.minOf { it.buildCost }
+        val first = GameConfig.levelSpec(1).startingSupply
         assertTrue(
-            "baslangic tedariki ${GameConfig.INITIAL_GOLD}, en ucuz kule $cheapest — " +
-                "ilk dalgada en az 2 kule kurulabilmeli",
+            "L1 tedariki $first, en ucuz kule $cheapest — ilk kule KURULABILMELI",
+            first >= cheapest
+        )
+        assertTrue(
+            "L1 tedariki $first iki kule birden almamali ($cheapest x2) — ikinci " +
+                "kule oldurmeyle KAZANILIR",
+            first < cheapest * 2
+        )
+        val actIBudgets = (1..6).map { GameConfig.levelSpec(it).startingSupply }
+        for (i in 1 until actIBudgets.size) {
+            assertTrue(
+                "bolum ${i + 1} tedariki (${actIBudgets[i]}) oncekinden " +
+                    "(${actIBudgets[i - 1]}) az olmamali",
+                actIBudgets[i] >= actIBudgets[i - 1]
+            )
+        }
+        assertTrue(
+            "INITIAL_GOLD (${GameConfig.INITIAL_GOLD}) L7+ icin taban degerdir ve " +
+                "en az iki kule almali",
             GameConfig.INITIAL_GOLD >= cheapest * 2
         )
     }
 
+    /**
+     * EKONOMI DEVIR SOZLESMESI.
+     *
+     * Ekonomi ajani sayilari `SupplyBudgetModel` icinde OLCTU ve uygulamayi bu
+     * ajana devretti (ECONOMY_SPEC 9). Iki katman ayri dosyalarda oldugu icin
+     * tek koruma bu kilit: biri degisip digeri kalirsa bolum secme ekrani bir
+     * butce gosterip savas baska butceyle baslar.
+     */
     @Test
-    fun theLongestRangedTowerIsAlsoTheMostExpensiveToBuild() {
-        val longest = GameConfig.TOWER_SPECS.values.maxBy { it.level1Range }
-        val priciest = GameConfig.TOWER_SPECS.values.maxBy { it.buildCost }
+    fun gameConfigMatchesTheEconomyHandoverNumbers() {
         assertEquals(
-            "en uzun menzilli kule ayni zamanda en pahali olmali, aksi halde " +
-                "diger kuleler anlamsizlasir",
+            "dalga temizleme ikramiyesi ekonomi modeliyle uyusmuyor",
+            SupplyBudgetModel.WAVE_CLEAR_SUPPLY_BONUS,
+            GameConfig.WAVE_CLEAR_SUPPLY_BONUS
+        )
+        for (level in 1..GameConfig.CAMPAIGN_LEVEL_COUNT) {
+            assertEquals(
+                "L$level baslangic Tedariki ekonomi modeliyle uyusmuyor",
+                startingSupplyFor(level),
+                GameConfig.levelSpec(level).startingSupply
+            )
+        }
+        SupplyBudgetModel.TIGHTENED_ENEMY_SUPPLY_REWARD.forEach { (name, reward) ->
+            val type = EnemyType.valueOf(name)
+            assertEquals(
+                "$type odulu ekonomi modelinin sikilastirilmis tablosuyla uyusmuyor",
+                reward, GameConfig.ENEMY_SPECS.getValue(type).rewardGold
+            )
+        }
+    }
+
+    /**
+     * Ekonomi ajaninin kalibrasyon hedefi: **bir kule ~15 oldurme.** Oran
+     * bozulursa (odul yukselir ya da kule ucuzlarsa) "6 kule parasi kazaniyorsun"
+     * sikayeti geri gelir.
+     */
+    @Test
+    fun aTowerCostsRoughlyFifteenInfantryKills() {
+        val gatling = spec(TowerType.MACHINE_GUN).buildCost
+        val infantry = enemySpec(EnemyType.INFANTRY).rewardGold
+        val kills = gatling.toDouble() / infantry
+        assertTrue(
+            "bir Gatling ${"%.1f".format(kills)} piyade oldurmesi ediyor — " +
+                "hedef 12..20 bandi (eski deger 5 idi ve bolluk oradan geliyordu)",
+            kills in 12.0..20.0
+        )
+    }
+
+    /**
+     * Dusmanlarin BIRBIRINE goreli degeri korunmali. Odul olcegi tam 1/3
+     * secilmesinin sebebi buydu: 0.375 gibi bir olcek zirhliyi piyadeye gore
+     * %18 degerlendirip hedef secimini sessizce degistirirdi.
+     */
+    @Test
+    fun relativeEnemyValueSurvivedTheRewardRescale() {
+        val infantry = enemySpec(EnemyType.INFANTRY).rewardGold.toDouble()
+        val expectedRatios = mapOf(
+            EnemyType.FAST_SOLDIER to 1.25,
+            EnemyType.TANK to 5.0,
+            EnemyType.COMMAND_TANK to 15.0
+        )
+        expectedRatios.forEach { (type, expected) ->
+            val actual = enemySpec(type).rewardGold / infantry
+            assertEquals(
+                "$type / piyade odul orani degisti — hedef secimi kayar",
+                expected, actual, 0.01
+            )
+        }
+    }
+
+    /**
+     * ESKI HALI: "en uzun menzilli kule ayni zamanda en pahali olmali."
+     *
+     * O kural Faz 10'da YANLIS hale geldi, cunku artik en uzun menzilli kule
+     * DESTEK kulesi (Frost Field, 270 ref-px) ve hicbir hasar vermiyor —
+     * menzilini fiyatla degil "sifir hasar" ile odiyor. Kural bu yuzden
+     * ZAYIFLATILMADI, HASAR VEREN kulelere daraltildi: aralarinda menzil hâlâ
+     * parayla alinir, yoksa kisa menzilli kuleler anlamsizlasir.
+     */
+    @Test
+    fun amongTheDamageTowersTheLongestRangedIsStillTheMostExpensive() {
+        val gunners = GameConfig.TOWER_SPECS.values.filter { it.role != TowerRole.SUPPORT }
+        val longest = gunners.maxBy { it.level1Range }
+        val priciest = gunners.maxBy { it.buildCost }
+        assertEquals(
+            "hasar veren kuleler arasinda en uzun menzilli olan en pahali olmali",
             longest.type, priciest.type
         )
+    }
+
+    // =========================================================================
+    // Faz 10 — KULE UZMANLASMASI
+    //
+    // Testcinin en onemli maddesi: "bir de her kule hepsinde ise yariyor."
+    // Asagidaki testler bunun bir daha OLMAMASINI garanti eder: her kule kendi
+    // hedef sinifinda ALTIN BASINA en iyi, en az bir sinifta da acik ara en
+    // kotu olmak ZORUNDA. Biri "Gatling'i biraz guclendirelim" derse ve kule
+    // her seye yeterli hale gelirse burasi kirilir.
+    // =========================================================================
+
+    /**
+     * Bir kulenin bir dusman sinifina karsi ETKIN DPS'i — motor formulunun aynasi
+     * (GameEngine.applyDamageToEnemy + onProjectileImpact).
+     *
+     * @param cluster Hedef kumesinde kac dusman var. Alan etkili kuleler
+     *   (Cannon splash / fuze carpma alani / cryo darbesi) kumenin tamamina
+     *   vurur; makineli tufek her zaman TEK hedef vurur.
+     */
+    private fun effectiveDps(
+        s: GameConfig.TowerStats,
+        e: GameConfig.EnemyStats,
+        cluster: Int = 1
+    ): Float {
+        val perShot = when {
+            // Splash zirhi BYPASS eder (DECISIONS B2) ve kumenin tamamina vurur.
+            s.splashRadius > 0f -> s.level1Damage * e.splashVulnerability * cluster
+            // Cryo darbesi: kucuk hasar ama kumenin tamamina, zirh tam etkili.
+            s.slowPulseRadius > 0f -> s.level1Damage * (1f - e.armor) * cluster
+            else -> {
+                val armorLeft = e.armor * (1f - s.armorPierce)
+                val primary = s.level1Damage * (1f - armorLeft)
+                // Fuze carpma alani: KESIRLI hasar, zirhi bypass etmez.
+                val others = (cluster - 1).coerceAtLeast(0)
+                val secondary = if (s.missileImpactRadius > 0f) {
+                    s.level1Damage * s.missileImpactDamageFraction * (1f - armorLeft) * others
+                } else {
+                    0f
+                }
+                primary + secondary
+            }
+        }
+        return perShot / s.level1FireRate
+    }
+
+    private fun dpsPerGold(
+        s: GameConfig.TowerStats,
+        e: GameConfig.EnemyStats,
+        cluster: Int = 1
+    ): Float = effectiveDps(s, e, cluster) / s.buildCost
+
+    private fun spec(t: TowerType) = GameConfig.TOWER_SPECS.getValue(t)
+    private fun enemySpec(t: EnemyType) = GameConfig.ENEMY_SPECS.getValue(t)
+
+    @Test
+    fun everyRoleIsFilledByExactlyOneTower() {
+        val byRole = GameConfig.TOWER_SPECS.values.groupBy { it.role }
+        TowerRole.values().forEach { role ->
+            assertEquals(
+                "$role rolu tam bir kule tarafindan doldurulmali — iki kule ayni " +
+                    "rolde olursa biri gereksiz, hicbiri olmazsa o hedef sinifinin " +
+                    "cevabi yok",
+                1, byRole[role]?.size ?: 0
+            )
+        }
+    }
+
+    /** CROWD: kalabaliga karsi altin basina en iyi ve en ucuz kule. */
+    @Test
+    fun theCrowdTowerIsTheBestValueAgainstUnarmouredInfantry() {
+        val infantry = enemySpec(EnemyType.INFANTRY)
+        val best = GameConfig.TOWER_SPECS.values.maxBy { dpsPerGold(it, infantry) }
+        assertEquals(TowerRole.CROWD, best.role)
+        assertEquals(
+            "en ucuz kule kalabalik kulesi olmali (ilk dalgada alinabilmeli)",
+            TowerRole.CROWD,
+            GameConfig.TOWER_SPECS.values.minBy { it.buildCost }.role
+        )
+    }
+
+    /**
+     * Testcinin sikayetinin OLCULMUS hali. Eski dengede Gatling zirhli araca
+     * karsi bile altin basina en iyi secenekti (0.66 vs fuzenin 0.51'i), yani
+     * zirh bir karsi-koyma degil sadece kalin bir piyadeydi.
+     */
+    @Test
+    fun bulletsAreNearlyUselessAgainstHeavyArmour() {
+        val mg = spec(TowerType.MACHINE_GUN)
+        val vsInfantry = effectiveDps(mg, enemySpec(EnemyType.INFANTRY))
+        listOf(EnemyType.ARMORED_VEHICLE, EnemyType.TANK, EnemyType.COMMAND_TANK).forEach { t ->
+            val vsArmour = effectiveDps(mg, enemySpec(t))
+            assertTrue(
+                "makineli tufek $t'a ${"%.1f".format(vsArmour)} DPS veriyor; piyadeye " +
+                    "${"%.1f".format(vsInfantry)} — zirhli hedefte %25'in altina " +
+                    "dusmeli, yoksa oyuncu muhimmat degistirmek zorunda kalmaz",
+                vsArmour <= vsInfantry * 0.25f
+            )
+        }
+    }
+
+    /** ANTI_TANK: tek agir zirhli hedefte altin basina acik ara en iyi. */
+    @Test
+    fun theAntiTankTowerOwnsSingleHeavyArmourTargets() {
+        listOf(EnemyType.ARMORED_VEHICLE, EnemyType.TANK).forEach { t ->
+            val e = enemySpec(t)
+            val best = GameConfig.TOWER_SPECS.values.maxBy { dpsPerGold(it, e) }
+            assertEquals(
+                "$t'a karsi altin basina en iyi kule zirh kirici olmali " +
+                    "(olculen: ${best.type})",
+                TowerRole.ANTI_TANK, best.role
+            )
+            val at = dpsPerGold(spec(TowerType.ANTI_ARMOR), e)
+            val mg = dpsPerGold(spec(TowerType.MACHINE_GUN), e)
+            assertTrue(
+                "$t'a karsi zirh kirici (${"%.2f".format(at)}), makineliden " +
+                    "(${"%.2f".format(mg)}) en az 1.4 kat verimli olmali",
+                at >= mg * 1.4f
+            )
+        }
+    }
+
+    /** ANTI_TANK'in bedeli: kalabaliga karsi verimsiz olmak ZORUNDA. */
+    @Test
+    fun theAntiTankTowerIsPoorValueAgainstASwarm()
+    {
+        val infantry = enemySpec(EnemyType.INFANTRY)
+        val at = dpsPerGold(spec(TowerType.ANTI_ARMOR), infantry)
+        val mg = dpsPerGold(spec(TowerType.MACHINE_GUN), infantry)
+        assertTrue(
+            "zirh kirici piyadeye karsi ${"%.2f".format(at)} DPS/altin veriyor, " +
+                "makineli ${"%.2f".format(mg)} — kalabalikta makinelinin yarisini " +
+                "gecmemeli, yoksa 'her kule her seye yarar' geri doner",
+            at <= mg * 0.5f
+        )
+        assertTrue(
+            "zirh kirici atis araligi en yavas olmali (kalabalikta ceza)",
+            GameConfig.TOWER_SPECS.values.all {
+                it.role == TowerRole.ANTI_TANK || it.level1FireRate < spec(TowerType.ANTI_ARMOR).level1FireRate
+            }
+        )
+        assertTrue(
+            "zirh kirici atis basina en yuksek hasari vurmali",
+            GameConfig.TOWER_SPECS.values.maxBy { it.level1Damage }.role == TowerRole.ANTI_TANK
+        )
+    }
+
+    /** SIEGE: kumelenmis hedefte altin basina en iyi. */
+    @Test
+    fun theSiegeTowerOwnsClusteredTargets() {
+        val infantry = enemySpec(EnemyType.INFANTRY)
+        val best = GameConfig.TOWER_SPECS.values.maxBy { dpsPerGold(it, infantry, cluster = 5) }
+        assertEquals(
+            "5'li kumeye karsi altin basina en iyi kule kusatma kulesi olmali " +
+                "(olculen: ${best.type})",
+            TowerRole.SIEGE, best.role
+        )
+        assertTrue(
+            "splash yaricapi fuzenin carpma alanindan belirgin buyuk olmali, " +
+                "yoksa fuze kusatma kimligini golgeler",
+            spec(TowerType.CANNON).splashRadius >= spec(TowerType.ANTI_ARMOR).missileImpactRadius * 1.5f
+        )
+    }
+
+    /**
+     * SIEGE'in bedeli: mermi o kadar YAVAS ki hizli hedefi iskaliyor.
+     *
+     * Bu bir yorum degil, motor formulunun sonucu: ucus suresi = 100 / speed
+     * (mesafeden bagimsiz), mermi ATES ANINDAKI noktaya gider. Dusman o surede
+     * splash yaricapindan cok yol alirsa patlamanin disinda kalir.
+     */
+    @Test
+    fun theSiegeShellIsTooSlowToCatchTheFastestEnemyButCatchesSlowOnes() {
+        val cannon = spec(TowerType.CANNON)
+        val flight = 100f / GameConfig.PROJECTILE_SPEEDS.getValue(ProjectileType.CANNON_SHELL)
+
+        val runner = enemySpec(EnemyType.FAST_SOLDIER)
+        val runnerTravel = runner.baseSpeed * flight
+        assertTrue(
+            "top mermisi ${"%.2f".format(flight)} sn ucuyor, kosucu o surede " +
+                "${"%.0f".format(runnerTravel)} ref-px yol aliyor; splash yaricapi " +
+                "${cannon.splashRadius} — kosucu patlamanin DISINDA kalmali " +
+                "(kusatma kulesinin kasitli kor noktasi)",
+            runnerTravel > cannon.splashRadius
+        )
+
+        listOf(EnemyType.INFANTRY, EnemyType.ARMORED_VEHICLE, EnemyType.TANK).forEach { t ->
+            val travel = enemySpec(t).baseSpeed * flight
+            assertTrue(
+                "$t ${"%.0f".format(travel)} ref-px yol aliyor; top bu hedefi " +
+                    "VURABILMELI (yoksa kule hicbir seye yaramaz)",
+                travel <= cannon.splashRadius
+            )
+        }
+
+        // KOMBO: destek kulesi yavaslatinca top kosucuyu da yakalar. Oyunun
+        // ogretmek istedigi kule etkilesimi tam olarak bu.
+        val slowed = runner.baseSpeed * (1f - spec(TowerType.SLOW).slowFactor) * flight
+        assertTrue(
+            "yavaslatilmis kosucu ${"%.0f".format(slowed)} ref-px yol almali ve " +
+                "${cannon.splashRadius} yaricapina girmeli — Frost Field + Cannon " +
+                "kombosu tasarimin bir parcasi",
+            slowed <= cannon.splashRadius
+        )
+    }
+
+    /** SUPPORT: en genis kapsama, en zayif silah. */
+    @Test
+    fun theSupportTowerHasTheWidestReachAndTheWeakestGun() {
+        val support = spec(TowerType.SLOW)
+        val others = GameConfig.TOWER_SPECS.values.filter { it.role != TowerRole.SUPPORT }
+
+        others.forEach { o ->
+            assertTrue(
+                "destek kulesi menzili (${support.level1Range}) ${o.type} " +
+                    "menzilinden (${o.level1Range}) buyuk olmali — testci: 'buz " +
+                    "kulesinin kapsama alani buyuk olmali'",
+                support.level1Range > o.level1Range
+            )
+        }
+        val shortest = others.minOf { it.level1Range }
+        assertTrue(
+            "destek menzili (${support.level1Range}) en kisa menzilin " +
+                "($shortest) en az 1.5 katı olmali, yoksa fark sahada gorunmez",
+            support.level1Range >= shortest * 1.5f
+        )
+        others.forEach { o ->
+            assertTrue(
+                "destek kulesi DPS'i (${support.level1Dps}) ${o.type} DPS'inin " +
+                    "(${o.level1Dps}) %20'sini gecmemeli — hasar vermesi kimligi degil",
+                support.level1Dps <= o.level1Dps * 0.20f
+            )
+        }
+    }
+
+    /**
+     * Frost Field'in gercek duzeltmesi menzil DEGIL, darbenin ALAN olmasiydi:
+     * eskiden cryo darbesi yalnizca hedeflenen TEK dusmani yavaslatiyordu, yani
+     * 20 kisilik suruye karsi 0.65 sn'de bir dusman = pratikte hicbir sey.
+     */
+    @Test
+    fun theSupportTowerChillsAnAreaWiderThanTheCannonBlast() {
+        val support = spec(TowerType.SLOW)
+        assertTrue("destek kulesi alan darbesi olmali", support.slowPulseRadius > 0f)
+        assertTrue(
+            "cryo darbesi (${support.slowPulseRadius}) top patlamasindan " +
+                "(${spec(TowerType.CANNON).splashRadius}) genis olmali — alan " +
+                "kontrolu kulesinin kontrol ettigi alan kusatma kulesinden kucuk olamaz",
+            support.slowPulseRadius > spec(TowerType.CANNON).splashRadius
+        )
+        // Yavaslatma sahada FARK EDILMELI: bir kule hedefe en az 1.5 kat daha
+        // uzun sure ates edebilmeli.
+        val exposureGain = 1f / (1f - support.slowFactor)
+        assertTrue(
+            "yavaslatma %${(support.slowFactor * 100).toInt()} — bataryanin " +
+                "atis penceresini en az 1.5 katina cikarmali " +
+                "(olculen ${"%.2f".format(exposureGain)}x)",
+            exposureGain >= 1.5f
+        )
+    }
+
+    // ------------------------------------------------------- yeni alan sozlesmeleri
+
+    @Test
+    fun theSlowPulseRadiusIsExclusiveToTheSupportTower() {
+        GameConfig.TOWER_SPECS.forEach { (t, s) ->
+            if (t == TowerType.SLOW) {
+                assertTrue("SLOW darbe yaricapi pozitif olmali", s.slowPulseRadius > 0f)
+            } else {
+                assertEquals("$t slowPulseRadius 0 olmali", 0f, s.slowPulseRadius, 0f)
+            }
+        }
+    }
+
+    @Test
+    fun theMissileImpactAreaIsExclusiveToTheAntiArmorTowerAndStaysSecondary() {
+        GameConfig.TOWER_SPECS.forEach { (t, s) ->
+            if (t == TowerType.ANTI_ARMOR) {
+                assertTrue("fuze carpma alani pozitif olmali", s.missileImpactRadius > 0f)
+                assertTrue(
+                    "fuzenin ikincil hasar orani 0..1 arasinda ve 1'in ALTINDA " +
+                        "olmali (yoksa ikinci bir top olur)",
+                    s.missileImpactDamageFraction > 0f && s.missileImpactDamageFraction < 1f
+                )
+            } else {
+                assertEquals("$t missileImpactRadius 0 olmali", 0f, s.missileImpactRadius, 0f)
+                assertEquals(
+                    "$t missileImpactDamageFraction 0 olmali",
+                    0f, s.missileImpactDamageFraction, 0f
+                )
+            }
+        }
+    }
+
+    // ------------------------------------------------------------ mermi ucus suresi
+
+    @Test
+    fun everyProjectileTypeHasADeclaredSpeed() {
+        ProjectileType.values().forEach { p ->
+            assertTrue(
+                "$p icin PROJECTILE_SPEEDS kaydi yok — motor 300f varsayilanina " +
+                    "duser ve denge sessizce kayar",
+                GameConfig.PROJECTILE_SPEEDS.containsKey(p)
+            )
+            assertTrue("$p hizi pozitif olmali", GameConfig.PROJECTILE_SPEEDS.getValue(p) > 0f)
+        }
+    }
+
+    /**
+     * Testci: "fuze rampasi var ama fuze atmiyor." Eski mermi RAILGUN_BEAM idi
+     * ve pratikte aninda variyordu. Fuze artik YOL ALIR — ve bu, hedef havada
+     * olurse ISRAF olmasi anlamina gelen gercek bir oynanis takasi.
+     */
+    @Test
+    fun theMissileSpendsRealTimeInTheAirUnlikeABeam() {
+        val flight = { p: ProjectileType -> 100f / GameConfig.PROJECTILE_SPEEDS.getValue(p) }
+        val missile = flight(ProjectileType.MISSILE)
+        assertTrue(
+            "fuze ucus suresi ${"%.2f".format(missile)} sn — kursundan " +
+                "(${"%.2f".format(flight(ProjectileType.BULLET))} sn) uzun olmali",
+            missile > flight(ProjectileType.BULLET)
+        )
+        assertTrue(
+            "fuze ucus suresi en az 0.5 sn olmali, yoksa 'israf olabilir' " +
+                "takasi oyuncu tarafindan HISSEDILMEZ",
+            missile >= 0.5f
+        )
+        assertTrue(
+            "top mermisi hâlâ en yavas mermi olmali (kor noktasinin kaynagi)",
+            flight(ProjectileType.CANNON_SHELL) > missile
+        )
+    }
+
+    // -------------------------------------------------------------- KULE KILIDI
+
+    @Test
+    fun towerUnlockLevelsAreSaneAndStaggered() {
+        val levels = GameConfig.TOWER_SPECS.values.map { it.unlockedAtLevel }
+        levels.forEach { lv ->
+            assertTrue(
+                "kilit bolumu 1..${GameConfig.CAMPAIGN_LEVEL_COUNT} araliginda olmali ($lv)",
+                lv in 1..GameConfig.CAMPAIGN_LEVEL_COUNT
+            )
+        }
+        assertEquals(
+            "iki kule ayni bolumde acilmamali — her kilit acilisi kendi 'yeni " +
+                "oyuncak' anini almali",
+            levels.size, levels.toSet().size
+        )
+        assertEquals(
+            "ilk bolumde YALNIZCA baslangic kulesi acik olmali",
+            listOf(TowerType.MACHINE_GUN), GameConfig.unlockedTowers(1)
+        )
+        assertEquals(
+            "baslangic kulesi bolum 1'de acik olmali",
+            1, spec(TowerType.MACHINE_GUN).unlockedAtLevel
+        )
+        val last = levels.max()
+        assertTrue(
+            "en son kule bolum $last'de aciliyor — Act I'in ilk yarisinda " +
+                "(<= 7) tamamlanmali, yoksa oyuncu kampanyanin yarisini eksik " +
+                "araclarla oynar",
+            last <= 7
+        )
+    }
+
+    @Test
+    fun unlockedTowersGrowMonotonicallyWithCampaignProgress() {
+        var previous = GameConfig.unlockedTowers(1).toSet()
+        for (level in 2..GameConfig.CAMPAIGN_LEVEL_COUNT) {
+            val current = GameConfig.unlockedTowers(level).toSet()
+            assertTrue(
+                "bolum $level: bir kule KAYBOLDU (once $previous, simdi $current)",
+                current.containsAll(previous)
+            )
+            previous = current
+        }
+        assertEquals(
+            "kampanyanin sonunda tum kuleler acik olmali",
+            TowerType.values().toSet(),
+            GameConfig.unlockedTowers(GameConfig.CAMPAIGN_LEVEL_COUNT).toSet()
+        )
+    }
+
+    @Test
+    fun isTowerUnlockedAgreesWithTheSpecTableAtEveryLevel() {
+        GameConfig.TOWER_SPECS.forEach { (type, s) ->
+            for (level in 1..GameConfig.CAMPAIGN_LEVEL_COUNT) {
+                assertEquals(
+                    "$type bolum $level: kilit durumu spec ile uyusmuyor",
+                    level >= s.unlockedAtLevel,
+                    GameConfig.isTowerUnlocked(type, level)
+                )
+            }
+        }
     }
 
     // ----------------------------------------------------------- dusman sozlesmesi

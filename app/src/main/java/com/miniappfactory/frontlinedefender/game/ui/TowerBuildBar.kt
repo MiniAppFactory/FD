@@ -1,15 +1,20 @@
 package com.miniappfactory.frontlinedefender.game.ui
 
 import androidx.compose.animation.*
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -28,6 +33,23 @@ import com.miniappfactory.frontlinedefender.game.model.GameConfig
 import com.miniappfactory.frontlinedefender.ui.theme.*
 
 /**
+ * ---------------------------------------------------------------------------
+ * Faz 10 — KILIT + BIRAKMA ONIZLEMESI
+ * ---------------------------------------------------------------------------
+ * 1. Kilitli kule GIZLENMEZ, pasif gosterilir ve hangi bolumde acilacagi
+ *    yazilir. Gizlemek oyuncuya hedef vermez; "bolum 7'de fuze rampasi
+ *    aciliyor" bilgisi ilerlemeyi anlamli kilar (testci: "ilk bolumden
+ *    itibaren her seyi acmak dogru degil").
+ *
+ * 2. Bir kart BASILI tutuldugunda secili pad'in etrafinda O KULENIN gercek
+ *    menzil halkasi cizilir (`GameEngine.previewTowerType`). Menziller artik
+ *    150 ile 270 ref-px arasinda degistigi icin tek bir notr halka yanlis
+ *    bilgi verirdi — ve Frost Field'in tum degeri genis kapsama alani.
+ *
+ * LOKALIZASYON: buradaki kilit etiketi ("LOCKED" / "Lv N") Ingilizce SABIT.
+ * `strings.xml` baska bir ajanin dosyasi; eklenecek anahtarlar
+ * docs/TOWER_REBALANCE.md'de listeli.
+ *
  * Faz 3'te iki sey degisti:
  *
  * 1. Kart ikonu artik soyut bir Material vektoru degil, kulenin OYNANISTA
@@ -47,6 +69,7 @@ fun TowerBuildBar(
 ) {
     val selectedBuildSpot by gameEngine.selectedBuildSpot.collectAsState()
     val gold by gameEngine.gold.collectAsState()
+    val levelId by gameEngine.currentLevelId.collectAsState()
 
     AnimatedVisibility(
         visible = selectedBuildSpot != null,
@@ -70,10 +93,21 @@ fun TowerBuildBar(
             ) {
                 GameConfig.TowerType.values().forEach { towerType ->
                     val spec = GameConfig.TOWER_SPECS[towerType]!!
+                    val unlocked = GameConfig.isTowerUnlocked(towerType, levelId)
                     TowerBuildCard(
                         spec = spec,
+                        unlocked = unlocked,
                         canAfford = gold >= spec.buildCost,
                         onBuild = { gameEngine.buildTower(towerType) },
+                        onPreview = { pressed ->
+                            if (pressed) {
+                                gameEngine.setPreviewTowerType(towerType)
+                            } else if (gameEngine.previewTowerType.value == towerType) {
+                                // Yalnizca KENDI onizlemesini kapatir: iki
+                                // parmakla iki karta basilirsa birbirini silmez.
+                                gameEngine.setPreviewTowerType(null)
+                            }
+                        },
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -102,21 +136,43 @@ fun TowerBuildBar(
 @Composable
 private fun TowerBuildCard(
     spec: GameConfig.TowerStats,
+    unlocked: Boolean,
     canAfford: Boolean,
     onBuild: () -> Unit,
+    onPreview: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val cardColor = if (canAfford) SleekSurfaceCard else SleekDarkBg
-    val borderColor = if (canAfford) SleekPrimaryGreen else SleekBorderDark
+    val buildable = unlocked && canAfford
+    val cardColor = if (buildable) SleekSurfaceCard else SleekDarkBg
+    val borderColor = when {
+        buildable -> SleekPrimaryGreen
+        !unlocked -> SleekBorderDark
+        else -> SleekBorderDark
+    }
     // Faz 6: ad GameConfig'ten DEGIL kaynaktan. GameConfig.TowerStats.name
     // kullanilmayan Ingilizce fallback olarak kaldi.
     val towerName = stringResource(spec.type.nameRes())
+
+    // Basili tutma = menzil onizlemesi. `collectIsPressedAsState` tap'i
+    // BOZMAZ: onClick yine calisir, sadece basili oldugu sure boyunca halka
+    // gorunur. Kilitli kartta onizleme de yok (kurulamayacak seyin halkasi
+    // yalan olur).
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    LaunchedEffect(pressed, buildable) {
+        onPreview(pressed && buildable)
+    }
 
     Row(
         modifier = modifier
             .background(cardColor, RoundedCornerShape(12.dp))
             .border(1.5.dp, borderColor, RoundedCornerShape(12.dp))
-            .clickable(enabled = canAfford, onClick = onBuild)
+            .clickable(
+                enabled = buildable,
+                interactionSource = interaction,
+                indication = LocalIndication.current,
+                onClick = onBuild
+            )
             .padding(horizontal = 8.dp, vertical = 6.dp)
             .testTag("build_card_${spec.type.name.lowercase()}"),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -126,7 +182,13 @@ private fun TowerBuildCard(
             id = towerSpriteRes(spec.type),
             size = 34.dp,
             contentDescription = towerName,
-            modifier = if (canAfford) Modifier else Modifier.alpha(0.4f)
+            // Kilitli kart daha da soluk: "param yetmiyor" ile "henuz acilmadi"
+            // ayni gorunmemeli.
+            modifier = when {
+                buildable -> Modifier
+                !unlocked -> Modifier.alpha(0.25f)
+                else -> Modifier.alpha(0.4f)
+            }
         )
         Column(
             modifier = Modifier.weight(1f),
@@ -138,7 +200,7 @@ private fun TowerBuildCard(
             // kucultulur (bkz. UiStrings.AutoShrinkText).
             AutoShrinkText(
                 text = towerName,
-                color = if (canAfford) SleekTextAccent else Color.Gray,
+                color = if (buildable) SleekTextAccent else Color.Gray,
                 fontWeight = FontWeight.Bold,
                 maxFontSize = 11.sp,
                 minFontSize = 8.sp,
@@ -146,21 +208,38 @@ private fun TowerBuildCard(
                 textAlign = TextAlign.Start,
                 modifier = Modifier.fillMaxWidth()
             )
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(3.dp)
-            ) {
-                SpriteIcon(
-                    id = R.drawable.spr_ic_coins,
-                    size = 11.dp,
-                    contentDescription = null
-                )
-                Text(
-                    text = stringResource(R.string.build_cost, spec.buildCost),
-                    color = if (canAfford) SleekGold else Color.Gray,
+            if (!unlocked) {
+                // LOKALIZE EDILECEK: build_locked_at_level ("Lv %1$d'de acilir").
+                // Bkz. docs/TOWER_REBALANCE.md — strings.xml baska ajanin dosyasi.
+                AutoShrinkText(
+                    text = "LOCKED · Lv ${spec.unlockedAtLevel}",
+                    color = Color(0xFF9AA5B1),
                     fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp
+                    maxFontSize = 11.sp,
+                    minFontSize = 8.sp,
+                    maxLines = 1,
+                    textAlign = TextAlign.Start,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("build_locked_${spec.type.name.lowercase()}")
                 )
+            } else {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    SpriteIcon(
+                        id = R.drawable.spr_ic_coins,
+                        size = 11.dp,
+                        contentDescription = null
+                    )
+                    Text(
+                        text = stringResource(R.string.build_cost, spec.buildCost),
+                        color = if (canAfford) SleekGold else Color.Gray,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    )
+                }
             }
         }
     }

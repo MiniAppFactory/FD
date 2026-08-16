@@ -131,72 +131,135 @@ object WaveDefinitions {
     // ACT I — Bölüm 1-11 (haritalar 01 -> 11, ileri sıra)
     // ======================================================================
 
+    // ----------------------------------------------------------------------
+    // Faz 10 — L1..L6 SIKILASTIRMASI
+    //
+    // Testci: "ilk 5 bolum asiri basitti", "6 kule parasi kazaniyorsun ama 2
+    // yetiyor". Ekonomi ajani ikinci sikayeti OLCTU ve topu buraya atti:
+    // L1'de toplam dusman cani 4.155 AEHP, bir Gatling 87.5 DPS -> tek kule
+    // bolumun 4 katindan fazla hasar veriyor. Yani Tedarik ne kadar kisilsa da
+    // bu can egrisiyle ucuncu kule ZORUNLU olmuyor.
+    //
+    // OLCUT: **BASKI = dalga AEHP'si / spawn penceresi (AEHP/sn).**
+    // Toplam can degil, BIRIM ZAMANDAKI can. Sebep kuyruk teorisi kadar basit:
+    // bir kulenin oldurme hizi sabittir (DPS/dusman cani); dusmanlar bundan
+    // hizli GELIYORSA fark birikir ve sizar — dalganin toplam cani ne olursa
+    // olsun. AEHP zaten "referans batarya hasari" biriminde tanimli
+    // (%50 kursun / %25 patlama / %25 delici), dolayisiyla baskiyi dogrudan
+    // kule DPS'ine bolebiliyoruz ve cikan sayi "kac kule gerekir"dir.
+    //
+    // TEPE BASKI (kule esdegeri) — once -> sonra:
+    //   L1 1.26 -> 1.82 | L2 1.29 -> 2.00 | L3 1.96 -> 2.26
+    //   L4 1.62 -> 2.25 | L5 1.79 -> 2.48 | L6 2.09 -> 2.53   (L7 zaten 2.62)
+    // 1.3 "iki kule fazlasiyla yeter" demekti; 2.3-2.5 ucuncu ve dorduncu
+    // kuleyi ZORUNLU kilar. Ustelik zirh 0.78/0.86 oldugu icin bu DPS'in
+    // dogru MUHIMMATTAN gelmesi gerekiyor (4 Gatling zirhli araca karsi
+    // nominal DPS'inin %22'sini verir) — yani cevap "ayni kuleden 4 tane" degil.
+    //
+    // NASIL: neredeyse tamamen SPAWN KADANSI (lightGap 0.55 -> 0.34..0.42) ve
+    // kompozisyon. Toplam can yalnizca %6-16 artti; HP sismesi YOK
+    // (LEVEL_DESIGN E). Sikisik kolon ayni zamanda Cannon'i odullendirir.
+    //
+    // KORUNAN KISITLAR (hepsi WaveDefinitionsDataTest'te):
+    //   · dalga sayilari degismedi · zirh L5 / tank L7 tanitimi ayni
+    //   · hicbir dalga o ana kadarki en agir dalganin 2.5 katini gecmiyor
+    //   · spawn araligi >= 0.25 sn, pencere 8..17 sn
+    //   · L1 hâlâ kampanyanin en hafif bolumu, L6 kasitli olarak L7'nin ALTINDA
+    //     (19.321 < 19.403): L7 hem TANK'i hem fuze rampasini getiriyor.
+    //
+    // KULE KILIDI ile tutarlilik (GameConfig.TOWER_SPECS.unlockedAtLevel):
+    //   L1 Gatling · L3 Heavy Cannon · L5 Frost Field · L7 Missile Battery.
+    // ARMORED_VEHICLE L5'te giriyor ve zirhi 0.78: kursun ise yaramaz. Cevabi
+    // bolum 3'te acilan CANNON'dir (splash zirhi bypass eder, DECISIONS B2) ve
+    // ayni bolumde acilan FROST FIELD hedefi kule menzilinde daha uzun tutar.
+    // Yani zorunlu mekanik oyuncunun ELINDE. Bunu yorum degil test garanti eder:
+    // WaveDefinitionsDataTest.noArmouredEnemyBecomesMandatoryBeforeItsCounterIsUnlocked
+    // ----------------------------------------------------------------------
+
     /** L1 · Harita 01 · Öğretici-A · yalnızca MACHINE_GUN mevcut. */
     private val LEVEL_01: List<WaveData> = listOf(
-        mix(1, "L01-W1 first-contact", inf = 6, lightGap = 1.20f),
-        mix(2, "L01-W2 probing-patrol", inf = 9, lightGap = 1.00f),
-        mix(3, "L01-W3 scout-trickle", fast = 7, lightGap = 0.90f),
-        mix(4, "L01-W4 mixed-foot", inf = 8, fast = 3, lightGap = 0.90f),
-        mix(5, "L01-W5 pressure-test", inf = 8, fast = 6, lightGap = 0.85f),
-        mix(6, "L01-W6 first-push", inf = 10, fast = 8, lightGap = 0.75f)
+        // W1-W3 ogretici temposunda BIRAKILDI: ilk temas hâlâ nazik olmali
+        // (baski 0.7-1.0 kule = tek Gatling yetisir, ki L1 Tedariki 80 ile
+        // oyuncunun elinde tam bir kule var).
+        mix(1, "L01-W1 first-contact", inf = 6, lightGap = 1.15f),
+        mix(2, "L01-W2 probing-patrol", inf = 10, lightGap = 0.90f),
+        mix(3, "L01-W3 scout-trickle", fast = 10, lightGap = 0.75f),
+        // W4'ten itibaren tek kule matematiksel olarak yetmez (baski > 1.0).
+        mix(4, "L01-W4 mixed-foot", inf = 12, fast = 4, lightGap = 0.62f),
+        mix(5, "L01-W5 pressure-test", inf = 14, fast = 8, lightGap = 0.50f),
+        mix(6, "L01-W6 first-push", inf = 18, fast = 10, lightGap = 0.40f)
     )
 
     /** L2 · Harita 02 · Öğretici-B · yükseltme öğretilir. */
     private val LEVEL_02: List<WaveData> = listOf(
-        mix(1, "L02-W1 warmup", inf = 8, lightGap = 1.10f),
-        mix(2, "L02-W2 runner-lesson", fast = 8, lightGap = 0.85f),
-        mix(3, "L02-W3 combined-foot", inf = 10, fast = 4, lightGap = 0.90f),
-        mix(4, "L02-W4 runner-rush", fast = 12, lightGap = 0.70f),
-        mix(5, "L02-W5 upgrade-check", inf = 12, fast = 6, lightGap = 0.80f),
-        mix(6, "L02-W6 sustained-foot", inf = 14, fast = 10, lightGap = 0.70f)
+        mix(1, "L02-W1 warmup", inf = 10, lightGap = 1.00f),
+        mix(2, "L02-W2 runner-lesson", fast = 12, lightGap = 0.70f),
+        mix(3, "L02-W3 combined-foot", inf = 12, fast = 6, lightGap = 0.65f),
+        mix(4, "L02-W4 runner-rush", fast = 18, lightGap = 0.50f),
+        // Yukseltme SINAVI: iki kademe-1 kule bu baskiyi (1.54) tutamaz,
+        // yukseltme ya da ucuncu kule sart.
+        mix(5, "L02-W5 upgrade-check", inf = 16, fast = 8, lightGap = 0.48f),
+        mix(6, "L02-W6 sustained-foot", inf = 20, fast = 12, lightGap = 0.36f)
     )
 
     /** L3 · Harita 03 · Karşı-koyma: kalabalık -> splash · CANNON açılır. */
     private val LEVEL_03: List<WaveData> = listOf(
-        mix(1, "L03-W1 opening", inf = 8, lightGap = 1.00f),
-        mix(2, "L03-W2 tight-column", inf = 12, lightGap = 0.60f),
-        mix(3, "L03-W3 scouts", fast = 10, lightGap = 0.80f),
-        mix(4, "L03-W4 packed-advance", inf = 14, lightGap = 0.55f),
-        mix(5, "L03-W5 mixed-press", inf = 10, fast = 8, lightGap = 0.70f),
-        mix(6, "L03-W6 mass-column", inf = 16, lightGap = 0.50f),
-        mix(7, "L03-W7 splash-exam", inf = 14, fast = 10, lightGap = 0.55f)
+        mix(1, "L03-W1 opening", inf = 10, lightGap = 0.95f),
+        // Sikisik kolonlar Cannon'in DERSI: 0.33-0.55 gap ile dusmanlar 78
+        // ref-px'lik patlamanin icine girecek kadar birbirine yakin dogar.
+        mix(2, "L03-W2 tight-column", inf = 16, lightGap = 0.55f),
+        mix(3, "L03-W3 scouts", fast = 14, lightGap = 0.65f),
+        mix(4, "L03-W4 packed-advance", inf = 20, lightGap = 0.45f),
+        mix(5, "L03-W5 mixed-press", inf = 14, fast = 10, lightGap = 0.50f),
+        mix(6, "L03-W6 mass-column", inf = 24, lightGap = 0.38f),
+        mix(7, "L03-W7 splash-exam", inf = 24, fast = 10, lightGap = 0.33f)
     )
 
     /** L4 · Harita 04 · Hız baskını (hafif) · satma/yeniden konumlandırma. */
     private val LEVEL_04: List<WaveData> = listOf(
-        mix(1, "L04-W1 opening", inf = 8, lightGap = 1.00f),
-        mix(2, "L04-W2 fast-probe", fast = 12, lightGap = 0.70f),
-        mix(3, "L04-W3 mixed", inf = 10, fast = 6, lightGap = 0.80f),
-        mix(4, "L04-W4 fast-rush", fast = 16, lightGap = 0.55f),
-        mix(5, "L04-W5 mixed-press", inf = 12, fast = 8, lightGap = 0.70f),
-        mix(6, "L04-W6 sprint-wave", fast = 20, lightGap = 0.45f),
-        mix(7, "L04-W7 combined-run", inf = 14, fast = 12, lightGap = 0.60f),
-        mix(8, "L04-W8 blitz", inf = 12, fast = 22, lightGap = 0.45f)
+        mix(1, "L04-W1 opening", inf = 12, lightGap = 0.90f),
+        mix(2, "L04-W2 fast-probe", fast = 18, lightGap = 0.60f),
+        mix(3, "L04-W3 mixed", inf = 14, fast = 8, lightGap = 0.60f),
+        mix(4, "L04-W4 fast-rush", fast = 26, lightGap = 0.45f),
+        mix(5, "L04-W5 mixed-press", inf = 18, fast = 10, lightGap = 0.45f),
+        // Kosucu selleri Cannon'in KOR NOKTASI: mermi 0.91 sn ucar, Scout
+        // Runner o surede patlama alanindan cikar. Bolumun dersi bu.
+        mix(6, "L04-W6 sprint-wave", fast = 34, lightGap = 0.32f),
+        mix(7, "L04-W7 combined-run", inf = 20, fast = 16, lightGap = 0.35f),
+        mix(8, "L04-W8 blitz", inf = 22, fast = 22, lightGap = 0.30f)
     )
 
-    /** L5 · Harita 05 · Zırh sınavı (giriş) · ARMORED_VEHICLE + ANTI_ARMOR bedava. */
+    /**
+     * L5 · Harita 05 · Zırh sınavı (giriş) · ARMORED_VEHICLE tanıtılır.
+     * Aynı bölümde FROST FIELD açılır (GameConfig.unlockedAtLevel = 5): zırhlı
+     * araç yavaşken Cannon'ın yavaş mermisi ve kısa menzilli Gatling ona çok
+     * daha uzun süre ateş eder — destek kulesinin dersi burada veriliyor.
+     */
     private val LEVEL_05: List<WaveData> = listOf(
-        mix(1, "L05-W1 opening", inf = 10, lightGap = 0.90f),
-        mix(2, "L05-W2 scouts", fast = 12, lightGap = 0.70f),
-        mix(3, "L05-W3 mixed", inf = 12, fast = 6, lightGap = 0.80f),
-        mix(4, "L05-W4 mass-foot", inf = 16, lightGap = 0.60f),
-        mix(5, "L05-W5 first-armor", inf = 8, arm = 2, lightGap = 0.80f, heavyGap = 1.60f),
-        mix(6, "L05-W6 armor-and-runners", fast = 12, arm = 2, lightGap = 0.65f, heavyGap = 1.60f),
-        mix(7, "L05-W7 combined-arms", inf = 12, fast = 8, arm = 3, lightGap = 0.70f, heavyGap = 1.50f),
-        mix(8, "L05-W8 armored-column", inf = 10, fast = 10, arm = 4, lightGap = 0.65f, heavyGap = 1.40f)
+        mix(1, "L05-W1 opening", inf = 12, lightGap = 0.85f),
+        mix(2, "L05-W2 scouts", fast = 16, lightGap = 0.62f),
+        mix(3, "L05-W3 mixed", inf = 14, fast = 8, lightGap = 0.60f),
+        mix(4, "L05-W4 mass-foot", inf = 20, lightGap = 0.45f),
+        mix(5, "L05-W5 first-armor", inf = 12, arm = 2, lightGap = 0.70f, heavyGap = 1.60f),
+        mix(6, "L05-W6 armor-and-runners", fast = 18, arm = 2, lightGap = 0.55f, heavyGap = 1.50f),
+        mix(7, "L05-W7 combined-arms", inf = 16, fast = 10, arm = 3, lightGap = 0.47f, heavyGap = 1.40f),
+        // Zirhli sayisi 4 -> 5: zirhlinin AEHP'si 379, yani agir birim baskiyi
+        // hafif dusmandan cok daha verimli yukseltir ve DOGRU muhimmat ister.
+        mix(8, "L05-W8 armored-column", inf = 16, fast = 12, arm = 5, lightGap = 0.38f, heavyGap = 1.20f)
     )
 
     /** L6 · Harita 06 · Kalabalık · hedefleme modları tanıtılır · ilk gerçek yenilgi riski. */
     private val LEVEL_06: List<WaveData> = listOf(
-        mix(1, "L06-W1 opening", inf = 12, lightGap = 0.80f),
-        mix(2, "L06-W2 scouts", fast = 14, lightGap = 0.60f),
-        mix(3, "L06-W3 packed-foot", inf = 16, lightGap = 0.55f),
-        mix(4, "L06-W4 combined", inf = 10, fast = 10, arm = 2, lightGap = 0.70f, heavyGap = 1.50f),
-        mix(5, "L06-W5 swarm", inf = 20, lightGap = 0.45f),
-        mix(6, "L06-W6 runner-swarm", fast = 20, arm = 2, lightGap = 0.50f, heavyGap = 1.50f),
-        mix(7, "L06-W7 targeting-exam", inf = 14, fast = 8, arm = 3, lightGap = 0.55f, heavyGap = 1.40f),
-        mix(8, "L06-W8 armor-press", inf = 12, fast = 8, arm = 4, lightGap = 0.60f, heavyGap = 1.30f),
-        mix(9, "L06-W9 overrun-attempt", inf = 18, fast = 12, arm = 3, lightGap = 0.45f, heavyGap = 1.30f)
+        mix(1, "L06-W1 opening", inf = 14, lightGap = 0.75f),
+        mix(2, "L06-W2 scouts", fast = 20, lightGap = 0.55f),
+        mix(3, "L06-W3 packed-foot", inf = 20, lightGap = 0.42f),
+        mix(4, "L06-W4 combined", inf = 14, fast = 10, arm = 2, lightGap = 0.55f, heavyGap = 1.45f),
+        mix(5, "L06-W5 swarm", inf = 24, lightGap = 0.36f),
+        mix(6, "L06-W6 runner-swarm", fast = 26, arm = 2, lightGap = 0.42f, heavyGap = 1.45f),
+        mix(7, "L06-W7 targeting-exam", inf = 18, fast = 10, arm = 3, lightGap = 0.45f, heavyGap = 1.35f),
+        mix(8, "L06-W8 armor-press", inf = 14, fast = 10, arm = 5, lightGap = 0.46f, heavyGap = 1.30f),
+        // Kampanyanin ilk gercek sinavi: 2.53 kule esdegeri baski + zirh.
+        mix(9, "L06-W9 overrun-attempt", inf = 20, fast = 12, arm = 4, lightGap = 0.34f, heavyGap = 1.25f)
     )
 
     /** L7 · Harita 07 · Zırh sınavı · TANK tanıtımı (W6). */
@@ -589,4 +652,50 @@ object WaveMetrics {
         0.5f + wave.spawns.dropLast(1).sumOf { it.delaySeconds.toDouble() }.toFloat()
 
     fun spawnCount(wave: WaveData): Int = wave.spawns.size
+
+    // ======================================================================
+    // Faz 10 — BASKI (sustained pressure)
+    //
+    // Toplam AEHP "bu bolum ne kadar uzun" sorusunu olcer; BASKI "kac kule
+    // gerekir" sorusunu olcer. Ikincisi olmadigi icin bir bolum toplamda agir
+    // gorunurken pratikte iki kuleyle gecilebiliyordu (testcinin sikayeti).
+    //
+    // Bir kulenin oldurme hizi sabittir: DPS / dusman cani. Dusmanlar bundan
+    // hizli geliyorsa fark BIRIKIR ve sizar — dalganin toplami ne olursa olsun.
+    // AEHP zaten referans batarya hasari biriminde oldugu icin (bkz. yukari)
+    // AEHP/sn dogrudan "gereken referans DPS"tir.
+    // ======================================================================
+
+    /** Dalganin surdurulebilir baskisi: AEHP / spawn penceresi (AEHP/sn). */
+    fun wavePressure(wave: WaveData): Float = waveAehp(wave) / spawnWindowSeconds(wave)
+
+    /** Bolumun en agir dalgasinin baskisi. */
+    fun peakPressure(waves: List<WaveData>): Float = waves.maxOf { wavePressure(it) }
+
+    /**
+     * Referans kule DPS'i = MACHINE_GUN kademe 1 (hasar / atis araligi).
+     *
+     * AEHP'nin referans bataryasi %50 kursun oldugu icin karsilastirma birimi
+     * olarak makinelinin DPS'i dogru secim. Kule tablosundan TURETILIR: atis
+     * araligi ya da hasar degistiginde olcut otomatik takip eder.
+     */
+    val referenceTowerDps: Float
+        get() = GameConfig.TOWER_SPECS.getValue(GameConfig.TowerType.MACHINE_GUN).level1Dps
+
+    /**
+     * Baski / referans kule DPS'i.
+     *
+     * **BU MUTLAK BIR "KAC KULE GEREKIR" SAYISI DEGILDIR** ve oyle okunmamali:
+     * spawn penceresini kullanir, yani dusmanlarin spawn bittikten sonra yolda
+     * gecirdigi sureyi (kulenin ates etmeye devam ettigi sure) SAYMAZ. Mutlak
+     * arz/talep orani `docs/tools/difficulty_audit.py` icinde hesaplanir; o
+     * model penceye yol suresini de ekler ve kadroyu isimlendirir.
+     *
+     * Buradaki sayinin isi KARSILASTIRMA: bolumler arasi rampa, dalga ici
+     * siralama ve "bu bolum eski hâline geri dondu mu" kontrolu. Kadans ya da
+     * kompozisyon degisirse bu sayi degisir; olcek degisikligi (or. tum canlar
+     * x3.5) TUM bolumleri ayni oranda etkiler ve rampayi bozmaz.
+     */
+    fun peakPressureRatio(waves: List<WaveData>): Float =
+        peakPressure(waves) / referenceTowerDps
 }

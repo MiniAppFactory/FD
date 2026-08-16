@@ -40,6 +40,8 @@ fun GameCanvas(
 
     val selectedBuildSpot by gameEngine.selectedBuildSpot.collectAsState()
     val selectedTower by gameEngine.selectedTower.collectAsState()
+    // Build cubugunda basili tutulan kart — birakma onizlemesi (bkz. asagi).
+    val previewTowerType by gameEngine.previewTowerType.collectAsState()
 
     // Faz 4b: harita arkaplani bolume gore. `currentLevelId` gozlemlenebilir
     // oldugu icin bolum degisince bu Composable recompose olur ve `activeMapId`
@@ -99,14 +101,22 @@ fun GameCanvas(
             // 3. Bos build pad isaretleri (fx_build_pad)
             drawBuildSpots(gameEngine, sprites, selectedBuildSpot, s)
 
-            // 4. Menzil gostergesi kulenin ALTINDA kalir ki sprite'i bogmasin
+            // 4. Menzil gostergesi kulenin ALTINDA kalir ki sprite'i bogmasin.
+            //    Menzil REFERANS tuvalde tanimli -> cizimde s ile olceklenir.
             selectedTower?.let { tower ->
-                drawRangeSprite(sprites.rangeGreen, tower.posX, tower.posY, tower.range, 0.85f)
+                drawRangeSprite(sprites.rangeGreen, tower.posX, tower.posY, tower.rangePx(s), 0.85f)
             }
             selectedBuildSpot?.let { spot ->
+                // BIRAKMA ONIZLEMESI: kart basili tutuluyorsa O KULENIN gercek
+                // menzili, degilse notr halka. Sabit halka artik yanlis bilgi
+                // olurdu (menziller 150..270 ref-px arasinda degisiyor) ve
+                // Frost Field'in tum satis noktasi genis kapsama alani.
+                // Meta menzil yukseltmesi DAHIL — motor tek karar noktasi.
+                val previewRangeRef = gameEngine.previewRangeRef(previewTowerType)
                 drawRangeSprite(
                     sprites.rangeBlue, spot.normX, spot.normY,
-                    GameConfig.BUILD_PREVIEW_RANGE_PX, 0.75f
+                    previewRangeRef * s,
+                    if (previewTowerType != null) 0.9f else 0.75f
                 )
             }
 
@@ -404,12 +414,23 @@ private fun DrawScope.drawProjectile(proj: ProjectileEntity, sprites: GameSprite
         ProjectileType.BULLET -> sprites.tracer to GameConfig.FX_TRACER_REF_PX
         ProjectileType.CANNON_SHELL -> sprites.cannonShell to GameConfig.FX_CANNON_SHELL_REF_PX
         // ANTI_ARMOR kulesi missile_launcher sprite'i kullaniyor -> mermisi de
-        // fuze. Eski "railgun isini" cizgisi kaldirildi.
-        ProjectileType.RAILGUN_BEAM -> sprites.missile to GameConfig.FX_MISSILE_REF_PX
+        // fuze. Sprite ucus yonunde doner (PROJECTILE_SPRITE_BASE_ANGLE_DEG = 0,
+        // yani nominal olarak saga bakiyor).
+        ProjectileType.MISSILE -> sprites.missile to GameConfig.FX_MISSILE_REF_PX
         ProjectileType.FROST_PULSE -> sprites.hitSpark to GameConfig.FX_HIT_SPARK_REF_PX
     }
 
-    drawSpriteAt(image, proj.posX, proj.posY, refWidth * s, headingDeg)
+    // Fuze YOL ALIR ve bunun gorunmesi lazim: kalkista biraz kucuk baslar,
+    // hizlanirken buyur (easeOutCubic). Isin aninda variyordu, fuzenin havada
+    // gecirdigi sure oyuncunun okumasi gereken bir OYNANIS bilgisi.
+    val widthPx = if (proj.type == ProjectileType.MISSILE) {
+        val p = proj.progress.coerceIn(0f, 1f)
+        refWidth * s * (0.72f + 0.28f * (1f - (1f - p) * (1f - p) * (1f - p)))
+    } else {
+        refWidth * s
+    }
+
+    drawSpriteAt(image, proj.posX, proj.posY, widthPx, headingDeg)
 }
 
 private fun DrawScope.drawVisualEffect(fx: VisualEffect, sprites: GameSprites, s: Float) {
@@ -429,17 +450,31 @@ private fun DrawScope.drawVisualEffect(fx: VisualEffect, sprites: GameSprites, s
             )
         }
         EffectType.CANNON_EXPLOSION -> {
+            // radiusPx doluysa patlama GERCEK splash alanini gosterir; 0 ise
+            // (yukseltme suslemesi) nominal sprite boyutu kullanilir.
+            val w = if (fx.radiusPx > 0f) {
+                fx.radiusPx * 2f * (0.72f + eased * 0.45f)
+            } else {
+                GameConfig.FX_LARGE_EXPLOSION_REF_PX * s * fx.scale * (0.5f + eased * 0.6f)
+            }
+            drawSpriteAt(sprites.largeExplosion, fx.posX, fx.posY, w, alpha = fade)
+        }
+        EffectType.MISSILE_IMPACT -> {
+            // Fuze carpmasi: buyuk patlama sprite'i. Gorsel fireball, hasarli
+            // alandan (40 ref-px) kasitli olarak BUYUK — fuze oyle gorunur.
             drawSpriteAt(
                 sprites.largeExplosion, fx.posX, fx.posY,
-                GameConfig.FX_LARGE_EXPLOSION_REF_PX * s * fx.scale * (0.5f + eased * 0.6f),
+                GameConfig.FX_LARGE_EXPLOSION_REF_PX * s * fx.scale * (0.45f + eased * 0.7f),
                 alpha = fade
             )
         }
-        EffectType.RAIL_BEAM_BURST -> {
-            drawSpriteAt(
-                sprites.smallExplosion, fx.posX, fx.posY,
-                GameConfig.FX_SMALL_EXPLOSION_REF_PX * s * fx.scale * (0.5f + eased * 0.7f),
-                alpha = fade
+        EffectType.FROST_PULSE_RING -> {
+            // Cryo darbesinin GERCEK sogutma alani. Halka disa dogru genisler
+            // ve sonerken tam alani doldurur -> oyuncu neyi sogutacagini gorur.
+            val d = fx.radiusPx * 2f * (0.45f + eased * 0.55f)
+            drawSprite(
+                sprites.rangeBlue, fx.posX - d / 2f, fx.posY - d / 2f, d, d,
+                alpha = fade * 0.9f
             )
         }
         EffectType.HIT_SPARK -> {

@@ -588,15 +588,53 @@ data class RequisitionGrant(
 )
 
 /**
+ * R1 dolu-reklam odulu (BAYRAK F-11, [EconomyConfig.R1_ADAPTIVE_REWARD_ENABLED]).
+ *
+ * Bayrak kapaliyken **her zaman** sabit [EconomyConfig.R1_REWARD_FILLED] doner —
+ * yani varsayilan davranis Faz 9 ile birebir aynidir.
+ *
+ * Bayrak acikken odul oyuncunun **siradaki meta rank'inin** fiyatina gore olceklenir:
+ * `clamp(round10(fiyat x 0,25), 150, 250)`. Taban sabit odule esittir, dolayisiyla
+ * olceklenme oyuncuyu ASLA bugunkunden kotu duruma dusurmez.
+ *
+ * **Enflasyon YOK:** gunluk toplam her iki durumda da [EconomyConfig.R1_COIN_BUDGET_PER_DAY]
+ * ile sinirli; olceklenme yalnizca ayni butceyi yeniden dagitir.
+ *
+ * @param nextRankPrice oyuncunun en ucuz satin alabilir rank'inin fiyati; bilinmiyorsa 0.
+ */
+fun requisitionFilledReward(nextRankPrice: Int = 0): Int {
+    if (!EconomyConfig.R1_ADAPTIVE_REWARD_ENABLED || nextRankPrice <= 0) {
+        return EconomyConfig.R1_REWARD_FILLED
+    }
+    val scaled = roundToTen(nextRankPrice * EconomyConfig.R1_SCALE_OF_NEXT_RANK)
+    return scaled.coerceIn(EconomyConfig.R1_REWARD_FILLED_MIN, EconomyConfig.R1_REWARD_FILLED_MAX)
+}
+
+/**
+ * Oyuncunun **en ucuz** siradaki rank fiyati; agac maksta `null`.
+ * [requisitionFilledReward] icin girdi; UI "1 reklam = siradaki yukseltmenin %X'i"
+ * mesajini da bundan uretir.
+ */
+fun cheapestNextRankPrice(upgrades: MetaUpgrades): Int? =
+    UpgradeLine.entries.mapNotNull { nextRankPrice(it, upgrades) }.minOrNull()
+
+/**
  * R1 odul dagitimi.
  *
- * - Dolu reklam: +150, gunluk dolu-gosterim hakkini tuketir.
+ * - Dolu reklam: +[requisitionFilledReward] (varsayilan 150), gunluk dolu-gosterim
+ *   hakkini tuketir.
  * - No-fill / kapatma / hata / timeout: +50, **gunluk hakki TUKETMEZ**, cooldown yok.
  * - Her iki dal da gunluk **coin butcesine** (450) tabidir — sonsuz +50 dongusunu
  *   kapatan tek kisit budur (BAYRAK F-6). Butce bittiginde buton hala tiklanabilir,
  *   hicbir ilerleme engellenmez; rezerv kilidi bolum kilidini zaten garanti eder.
+ *
+ * @param nextRankPrice yalnizca BAYRAK F-11 acikken kullanilir; 0 = sabit odul.
  */
-fun grantRequisition(state: RequisitionState, outcome: AdOutcome): RequisitionGrant {
+fun grantRequisition(
+    state: RequisitionState,
+    outcome: AdOutcome,
+    nextRankPrice: Int = 0,
+): RequisitionGrant {
     val remainingBudget = maxOf(0, EconomyConfig.R1_COIN_BUDGET_PER_DAY - state.coinsPaidToday)
     if (remainingBudget == 0) {
         return RequisitionGrant(
@@ -610,7 +648,7 @@ fun grantRequisition(state: RequisitionState, outcome: AdOutcome): RequisitionGr
 
     val rightsLeft = state.filledViewsToday < EconomyConfig.R1_VIEWS_PER_DAY
     return if (outcome.isFilled && rightsLeft) {
-        val amount = minOf(EconomyConfig.R1_REWARD_FILLED, remainingBudget)
+        val amount = minOf(requisitionFilledReward(nextRankPrice), remainingBudget)
         RequisitionGrant(
             coins = amount,
             consumedFilledView = true,

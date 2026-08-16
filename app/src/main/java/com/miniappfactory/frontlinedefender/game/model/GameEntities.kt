@@ -35,8 +35,26 @@ data class TowerEntity(
 ) {
     val stats: GameConfig.TowerStats get() = GameConfig.TOWER_SPECS[type]!!
 
+    /**
+     * Menzil **1920 REFERANS TUVALINDE** (DECISIONS B3) — ham canvas px DEGIL.
+     * Karsilastirma/panel/test icin dogru deger budur; oynanista mesafe
+     * kiyaslamak icin [rangePx] kullanilir.
+     */
     val range: Float
         get() = (if (level == 1) stats.level1Range else stats.level2Range) * rangeMultiplier
+
+    /**
+     * Menzil CANVAS px cinsinden.
+     *
+     * Faz 10 duzeltmesi: menzil ve dusman hizi eskiden dogrudan canvas px olarak
+     * kullaniliyordu. Oynanis dikdortgeni cihaza gore 1800 px (Galaxy S8) ile
+     * 2560 px (tablet) arasinda degistigi icin **ayni kule tablette haritanin
+     * %30 daha kucuk bir bolumunu kapatiyordu**: tablet ve telefon ayni oyunu
+     * oynamiyordu. Artik denge degerleri referans tuvalde tanimli ve cizim/
+     * simulasyon aninda `renderScale` ile olceklenir.
+     */
+    fun rangePx(renderScale: Float): Float = range * renderScale
+
     val damage: Float
         get() = (if (level == 1) stats.level1Damage else stats.level2Damage) * damageMultiplier
     val fireRate: Float get() = if (level == 1) stats.level1FireRate else stats.level2FireRate
@@ -80,10 +98,28 @@ data class EnemyEntity(
 enum class ProjectileType {
     BULLET,
     CANNON_SHELL,
-    RAILGUN_BEAM,
+    /**
+     * Faz 10: eski `RAILGUN_BEAM` (aninda varan camgobegi isin) FUZE oldu.
+     * Sprite `spr_fx_missile` zaten paketteydi ve kule sprite'i bir fuze
+     * rampasi, sesi `sfx_missile_launch` — mermi tek uyumsuz parcaydi.
+     *
+     * Oynanis farki KOZMETIK DEGIL: isin aninda varirdi, fuze YOL ALIR
+     * (0.69 sn). Hedef fuze havadayken olurse fuze BOSA GIDER — hicbir
+     * yonlendirme yapilmaz. Bu, ANTI_TANK rolunun bilincli zayifligi.
+     */
+    MISSILE,
     FROST_PULSE
 }
 
+/**
+ * @param splashRadius Cannon patlamasi — **CANVAS px** (fire aninda referans
+ *   tuvalden cevrilir). > 0 ise mermi splash mantigini kullanir ve zirhi
+ *   bypass eder (DECISIONS B2).
+ * @param impactRadius Fuze carpma alani — CANVAS px. Yalnizca ANTI_ARMOR.
+ * @param impactDamageFraction Fuzenin ikincil hedeflere gecen hasar orani.
+ * @param slowPulseRadius Cryo darbesinin sogutma yaricapi — CANVAS px.
+ *   Yalnizca SLOW. Darbe bu yaricaptaki HERKESI yavaslatir.
+ */
 data class ProjectileEntity(
     val id: String = UUID.randomUUID().toString(),
     val type: ProjectileType,
@@ -101,6 +137,9 @@ data class ProjectileEntity(
     val slowFactor: Float,
     val slowDuration: Float,
     val towerType: GameConfig.TowerType,
+    val impactRadius: Float = 0f,
+    val impactDamageFraction: Float = 0f,
+    val slowPulseRadius: Float = 0f,
     var progress: Float = 0f // 0.0 to 1.0 for interpolation
 )
 
@@ -108,13 +147,20 @@ enum class EffectType {
     /** Namlu alevi — YONLU (fx_muzzle_flash_short, saga bakan sprite). */
     MUZZLE_FLASH,
     CANNON_EXPLOSION,
-    RAIL_BEAM_BURST,
+    /** Faz 10: fuze carpmasi (eskiden RAIL_BEAM_BURST — isin patlamasi). */
+    MISSILE_IMPACT,
     FROST_WAVE,
     ENEMY_DEATH,
     /** Faz 3: kursun/isabet kivilcimi (fx_hit_spark) — eskiden MUZZLE_FLASH idi. */
     HIT_SPARK,
     /** Faz 3: toz/duman (fx_smoke_puff) — kule insasi, arac olumu. */
     SMOKE_PUFF,
+    /**
+     * Faz 10: cryo darbesinin ALAN halkasi. FROST_WAVE'den ayri, cunku o
+     * yukseltme suslemesi olarak sabit boyutta kullaniliyor; bu halka
+     * `radiusPx` ile GERCEK sogutma alanini cizer.
+     */
+    FROST_PULSE_RING,
     COIN_POPUP,
     DAMAGE_TEXT
 }
@@ -128,6 +174,16 @@ data class VisualEffect(
     val maxAgeSeconds: Float,
     val text: String? = null,
     val scale: Float = 1f,
+    /**
+     * Faz 10: efektin GERCEK oynanis yaricapi, CANVAS px. 0 = sprite kendi
+     * nominal boyutunu kullanir.
+     *
+     * Neden gerekli: patlama ve cryo darbesi artik gercek etki alanina gore
+     * cizilir. Onceden `scale = splashRadius / 35f` gibi bir sihirli sayi
+     * vardi, yani splash yaricapi degistiginde gorsel ile hasar alani sessizce
+     * ayrisiyordu — oyuncu patlamanin nereye vurdugunu GORSELDEN ogrenemezdi.
+     */
+    val radiusPx: Float = 0f,
     /**
      * Faz 3: yonlu sprite'lar (namlu alevi) icin bakis acisi. Ekran
      * koordinatlarinda atan2(dy, dx); 0 = sag. Radyal efektlerde kullanilmaz.

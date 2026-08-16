@@ -159,6 +159,21 @@ fun GameScreen(
     /** Cephanelik (meta yukseltme dukkani) acik mi — LEVEL_SELECT ustunde katman. */
     var shopOpen by remember { mutableStateOf(false) }
 
+    // Faz 10: YILDIZ ARBITRAJINI KAPATAN baglanti.
+    //
+    // "Us Tamiri" guclendiricisi kaybedilen us canini geri veriyor. Yildiz
+    // kalan can YUZDESINDEN hesaplandigi icin, baglanti olmadan oyuncu
+    // guclendiriciyle daha YUKSEK yildiz (ve daha fazla coin) satin alabilirdi.
+    // `starHealthFor` tamir edilen cani yildiz hesabindan duser: tamir
+    // HAYATTA KALMA satin alir, yildiz/coin asla.
+    //
+    // Motordaki seam'in varsayilani kimlik fonksiyonu — bu satir olmadan
+    // davranis Faz 9 ile birebir ayni, yani sessizce bozulmaz, sadece
+    // arbitraj acik kalirdi.
+    LaunchedEffect(campaignProgress) {
+        gameEngine.starHealthAdjuster = campaignProgress::starHealthFor
+    }
+
     // ----------------------------------------------------------------------
     // Faz 5 — REKLAM CAGRI YERLERI
     //

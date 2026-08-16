@@ -4,6 +4,7 @@ import androidx.compose.ui.geometry.Offset
 import com.miniappfactory.frontlinedefender.game.audio.AudioManager
 import com.miniappfactory.frontlinedefender.game.data.SaveManager
 import com.miniappfactory.frontlinedefender.game.economy.EconomyConfig
+import com.miniappfactory.frontlinedefender.game.economy.starsFor
 import com.miniappfactory.frontlinedefender.game.model.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -49,6 +50,34 @@ class GameEngine(
 
     private val _selectedTower = MutableStateFlow<TowerEntity?>(null)
     val selectedTower: StateFlow<TowerEntity?> = _selectedTower.asStateFlow()
+
+    /**
+     * BIRAKMA ONIZLEMESI. Build cubugunda bir kart basili tutuldugunda o kule
+     * tipi buraya yazilir ve `GameCanvas` secili pad'in etrafina O KULENIN
+     * gercek menzil halkasini cizer.
+     *
+     * Neden gerekli: menziller artik 150 (Gatling) ile 270 (Frost Field) ref-px
+     * arasinda degisiyor. Sabit 170'lik notr halka Frost Field icin acikca
+     * yanlis bilgi verirdi ve oyuncu kulenin kapsama alanini yalnizca kurup
+     * satarak ogrenebilirdi — "birakma sonucu her zaman gorunur olmali" kurali.
+     */
+    private val _previewTowerType = MutableStateFlow<GameConfig.TowerType?>(null)
+    val previewTowerType: StateFlow<GameConfig.TowerType?> = _previewTowerType.asStateFlow()
+
+    /** Kart basildi/birakildi. `null` = notr onizlemeye don. */
+    fun setPreviewTowerType(type: GameConfig.TowerType?) {
+        _previewTowerType.value = type
+    }
+
+    /**
+     * Onizleme halkasinin REFERANS menzili. META YUKSELTME DAHIL: panelde bir
+     * menzil gosterip sahada baskasini kullanmak, "14 hasar gosterip 17 vurmak"
+     * ile ayni sessiz tutarsizlik olurdu.
+     */
+    fun previewRangeRef(type: GameConfig.TowerType?): Float {
+        val spec = type?.let { GameConfig.TOWER_SPECS[it] } ?: return GameConfig.BUILD_PREVIEW_RANGE_PX
+        return spec.level1Range * metaRangeMultiplier
+    }
 
     private val _screenShake = MutableStateFlow(Offset.Zero)
     val screenShake: StateFlow<Offset> = _screenShake.asStateFlow()
@@ -105,6 +134,22 @@ class GameEngine(
     /** Aktif turun (Act) dusman carpanlari. */
     private var actHpMul: Float = 1f
     private var actRewardMul: Float = 1f
+
+    /**
+     * Yildiz hesabina girecek can. Varsayilan KIMLIK fonksiyonu, yani baglanmazsa
+     * davranis oncekiyle birebir ayni.
+     *
+     * Ekonomi katmani (`CampaignProgressImpl.starHealthFor`) Us Tamiri ile geri
+     * verilen cani dusmek zorunda — tamir hayatta kalma satin alir, yildiz ve
+     * coin ASLA. O bilgi ekonomi nesnesinde; motor onu tanimaz. Bu dikisi
+     * `GameScreen` tek satirla baglar:
+     *
+     *     gameEngine.starHealthAdjuster = campaignProgress::starHealthFor
+     *
+     * (GameScreen.kt bu ajanin dosyasi degil — bkz. docs/TOWER_REBALANCE.md
+     * "Baglanmasi gereken dikis".)
+     */
+    var starHealthAdjuster: (Int) -> Int = { it }
 
     /**
      * Etkiler `MetaUpgrades`'in KENDI turetilmis alanlarindan okunur, burada
@@ -305,7 +350,16 @@ class GameEngine(
         }
 
         activeLevel = LevelData.forMapId(activeMapId)
-        routes = LevelData.routesForMapId(activeMapId)
+        // IKINCI KOL yalnizca ogretme dilimi bittikten sonra (bolum 9+).
+        // Once burada kosulsuz `routesForMapId` cagriliyordu, yani harita 1/2/4
+        // catallanmasi OGRETICI bolumlerde de acikti — bkz.
+        // GameConfig.ALT_ROUTE_FIRST_LEVEL gerekcesi.
+        val allRoutes = LevelData.routesForMapId(activeMapId)
+        routes = if (GameConfig.usesAlternateRoutes(spec.levelId)) {
+            allRoutes
+        } else {
+            listOf(allRoutes.first())
+        }
         routeRng = Random(GameConfig.ROUTE_RNG_SEED_BASE + spec.levelId * 7919L)
 
         levelWaves = WaveDefinitions.wavesFor(spec.levelId)
@@ -441,24 +495,38 @@ class GameEngine(
     fun selectBuildSpot(spot: BuildSpot?) {
         _selectedTower.value = null
         _selectedBuildSpot.value = spot
+        // Onizleme YALNIZCA secili bir pad varken anlamli; eski secimden kalan
+        // tip yeni pad'in etrafinda yanlis halka cizdirirdi.
+        _previewTowerType.value = null
         audioManager.playSound(AudioManager.SoundEffect.UI_CLICK)
     }
 
     fun selectTower(tower: TowerEntity?) {
         _selectedBuildSpot.value = null
         _selectedTower.value = tower
+        _previewTowerType.value = null
         audioManager.playSound(AudioManager.SoundEffect.UI_CLICK)
     }
 
     fun deselectAll() {
         _selectedBuildSpot.value = null
         _selectedTower.value = null
+        _previewTowerType.value = null
     }
+
+    /** Bu kule AKTIF bolumde acik mi (GameConfig.TOWER_SPECS.unlockedAtLevel)? */
+    fun isTowerUnlocked(type: GameConfig.TowerType): Boolean =
+        GameConfig.isTowerUnlocked(type, levelSpec.levelId)
 
     fun buildTower(type: GameConfig.TowerType): Boolean {
         if (!acceptsBattlefieldInput()) return false
         val spot = _selectedBuildSpot.value ?: return false
         val spec = GameConfig.TOWER_SPECS[type] ?: return false
+
+        // KILIT: UI pasif kart cizse de motor son sozu soyler. Aksi halde bir
+        // gun baska bir cagiran (tutorial, test, ileride surukle-birak) kilidi
+        // sessizce atlar ve bolum 1'de fuze rampasi kurulabilirdi.
+        if (!isTowerUnlocked(type)) return false
 
         if (_gold.value < spec.buildCost) return false
 
@@ -489,6 +557,7 @@ class GameEngine(
 
         _selectedBuildSpot.value = null
         _selectedTower.value = newTower
+        _previewTowerType.value = null
         return true
     }
 
@@ -551,18 +620,26 @@ class GameEngine(
         audioManager.playSound(AudioManager.SoundEffect.UI_CLICK)
     }
 
-    // Core Frame Update Tick
-    fun tick(deltaSeconds: Float) {
-        // Beyaz liste: yeni bir GameState eklendiginde simulasyon KAZAYLA
-        // kosmaya devam etmesin (LEVEL_SELECT eklenirken kara liste kirilgandi).
-        when (_gameState.value) {
-            GameState.PREPARATION, GameState.WAVE_RUNNING -> {}
-            else -> return
-        }
-
-        val dt = deltaSeconds * _gameSpeed.value
-
-        // Update Screen Shake
+    /**
+     * Kozmetik yaslanma: sarsinti sonumlemesi + gorsel efektler.
+     *
+     * SIMULASYONDAN AYRI TUTULMASININ SEBEBI GERCEK BIR BUG (cihazda kullanici
+     * tarafindan bulundu): *"son vurusta +28g yazan yer takili kaliyor."*
+     *
+     * Kok sebep: `tick` en basta bir DURUM BEYAZ LISTESI ile erken donuyordu
+     * (yalnizca PREPARATION / WAVE_RUNNING). Bolumun son dusmani olunce ayni
+     * karede once `onEnemyKilled` COIN_POPUP efektini uretiyor, hemen ardindan
+     * dalga tamamlama kontrolu state'i VICTORY yapiyor. Sonraki karede tick
+     * beyaz listede takilip donuyor, yani efekt BIR DAHA HIC YASLANMIYOR ve
+     * "+4g" yazisi zafer modalinin arkasinda KALICI olarak duruyor. Ayni sey
+     * DEFEAT'te de oluyordu.
+     *
+     * Bu yuzden kozmetik yaslanma VICTORY / DEFEAT'te de kosar — efektler
+     * oynanisi etkilemez, sonmeleri gerekir. PAUSED bilincli olarak HARIC:
+     * duraklatilmis oyunda her seyin donmasi oyuncunun bekledigi davranistir
+     * (devam edince efekt kaldigi yerden soner).
+     */
+    private fun ageCosmetics(dt: Float) {
         if (screenShakeDuration > 0f) {
             screenShakeDuration -= dt
             val intensity = (screenShakeDuration * 15f).coerceAtMost(10f)
@@ -574,14 +651,6 @@ class GameEngine(
             _screenShake.value = Offset.Zero
         }
 
-        // Gorsel efektlerin yaslanmasi — HER FAZDA kosar.
-        //
-        // BUG (cihazda bulundu): bu blok eskiden "5. Visual Effects Updating"
-        // adiminda, asagidaki PREPARATION erken-return'unun ALTINDAYDI. Dalganin
-        // son patlamasi olusuyor, hemen ardindan dalga bitip state PREPARATION'a
-        // geciyor ve efekt bir daha hic yaslanmadigi icin EKRANDA DONUP KALIYORDU
-        // (sonraki dalga baslayana kadar). Efektler tamamen kozmetik; simulasyon
-        // dursa da sonmeleri gerekir.
         val effectIterator = visualEffects.iterator()
         while (effectIterator.hasNext()) {
             val fx = effectIterator.next()
@@ -590,6 +659,26 @@ class GameEngine(
                 effectIterator.remove()
             }
         }
+    }
+
+    // Core Frame Update Tick
+    fun tick(deltaSeconds: Float) {
+        val dt = deltaSeconds * _gameSpeed.value
+
+        // Beyaz liste: yeni bir GameState eklendiginde simulasyon KAZAYLA
+        // kosmaya devam etmesin (LEVEL_SELECT eklenirken kara liste kirilgandi).
+        when (_gameState.value) {
+            GameState.PREPARATION, GameState.WAVE_RUNNING -> {}
+            // Bolum bitti: SIMULASYON durur ama kozmetik efektler soner
+            // (bkz. ageCosmetics — takili kalan "+4g" bugunun kok sebebi).
+            GameState.VICTORY, GameState.DEFEAT -> {
+                ageCosmetics(dt)
+                return
+            }
+            else -> return
+        }
+
+        ageCosmetics(dt)
 
         // Preparation phase
         if (_gameState.value == GameState.PREPARATION) {
@@ -746,12 +835,18 @@ class GameEngine(
                 // yanlis yildiz veriyordu: 30 canli bir bolumu 18 canla bitirmek
                 // %60 iken 3 yildiz sayiliyordu.
                 val maxLives = levelSpec.maxBaseLives.coerceAtLeast(1)
-                val livesFraction = _lives.value.toFloat() / maxLives
-                val stars = when {
-                    livesFraction >= GameConfig.STAR3_LIVES_FRACTION -> 3
-                    livesFraction >= GameConfig.STAR2_LIVES_FRACTION -> 2
-                    else -> 1
-                }
+                // Faz 10: yildiz formulu ARTIK KOPYALANMIYOR. Motor ekonomi
+                // katmanindaki tek gercek fonksiyonu (`starsFor`) cagirir; iki
+                // yerde ayni esikleri tutmak zaten AEHP hatasinin sebebiydi.
+                //
+                // `starHealthAdjuster`: Us Tamiri guclendiricisiyle geri alinan
+                // can yildiza SAYILMAMALI (ekonomi: tamir hayatta kalma satin
+                // alir, yildiz ve coin ASLA). Duzeltmeyi ekonomi katmani biliyor
+                // (CampaignProgressImpl.starHealthFor), motor bilmez — bu yuzden
+                // burada bir DIKIS var; varsayilani kimlik oldugu icin baglanmasa
+                // da davranis Faz 9 ile birebir ayni kalir.
+                val starHealth = starHealthAdjuster(_lives.value)
+                val stars = starsFor(starHealth, maxLives)
                 _lastEarnedStars.value = stars
                 // Bolum ID'si de sabit `1` yaziliydi: hangi bolum bitirilirse
                 // bitirilsin yildiz bolum 1'e kaydediliyordu.
@@ -761,7 +856,8 @@ class GameEngine(
             } else {
                 // Next wave preparation
                 _currentWaveIndex.value = completedIdx + 1
-                _gold.value += 35 // Wave completion bonus
+                // Faz 10: ciplak 35 kaldirildi (ekonomi tek-kaynak kurali).
+                _gold.value += GameConfig.WAVE_CLEAR_SUPPLY_BONUS
                 setupWave(_currentWaveIndex.value)
                 _gameState.value = GameState.PREPARATION
                 _preparationTimer.value = GameConfig.PREPARATION_TIME_SECONDS.toFloat()
@@ -799,7 +895,12 @@ class GameEngine(
                 // yasagi); odul HP ile birlikte artar ki ekonomi tempo tutsun.
                 hp = spec.maxHp * actHpMul,
                 maxHp = spec.maxHp * actHpMul,
-                baseSpeed = spec.baseSpeed,
+                // HIZ da REFERANS tuvalde tanimli bir denge degeridir. Ham px
+                // olarak kullanildiginda yol tablette 2560 px, telefonda 1800 px
+                // uzunlugundaydi ama dusman ayni px/sn ile yuruyordu: tablette
+                // her dusman %42 daha uzun sure sahada kaliyor, yani ayni bolum
+                // farkli bir oyun oluyordu.
+                baseSpeed = spec.baseSpeed * renderScale,
                 armor = spec.armor,
                 rewardGold = (spec.rewardGold * actRewardMul).toInt().coerceAtLeast(1),
                 radius = spec.sizeRadius
@@ -808,7 +909,8 @@ class GameEngine(
     }
 
     private fun findTargetEnemyForTower(tower: TowerEntity): EnemyEntity? {
-        val range = tower.range
+        // Menzil REFERANS tuvalde tanimli; mesafe kiyasi canvas px'te yapilir.
+        val range = tower.rangePx(renderScale)
         val candidateEnemies = enemies.filter { enemy ->
             val dx = enemy.posX - tower.posX
             val dy = enemy.posY - tower.posY
@@ -829,7 +931,7 @@ class GameEngine(
         val pType = when (tower.type) {
             GameConfig.TowerType.MACHINE_GUN -> ProjectileType.BULLET
             GameConfig.TowerType.CANNON -> ProjectileType.CANNON_SHELL
-            GameConfig.TowerType.ANTI_ARMOR -> ProjectileType.RAILGUN_BEAM
+            GameConfig.TowerType.ANTI_ARMOR -> ProjectileType.MISSILE
             GameConfig.TowerType.SLOW -> ProjectileType.FROST_PULSE
         }
 
@@ -855,13 +957,13 @@ class GameEngine(
             )
         )
 
-        val projSpeed = when (tower.type) {
-            GameConfig.TowerType.MACHINE_GUN -> 280f
-            GameConfig.TowerType.CANNON -> 160f
-            GameConfig.TowerType.ANTI_ARMOR -> 450f
-            GameConfig.TowerType.SLOW -> 300f
-        }
+        // Mermi hizlari GameConfig'te; renderer'a ya da motora gomulmezler.
+        // DIKKAT: motorun ilerletme formulu `progress += dt * speed / 100f`
+        // oldugu icin bu deger px/sn DEGIL, ucus suresi = 100/speed sn.
+        val projSpeed = GameConfig.PROJECTILE_SPEEDS[pType] ?: 300f
 
+        // Referans tuvalde tanimli yaricaplar burada BIR KEZ canvas px'e cevrilir.
+        val s = renderScale
         projectiles.add(
             ProjectileEntity(
                 type = pType,
@@ -874,80 +976,161 @@ class GameEngine(
                 targetY = target.posY,
                 damage = tower.damage,
                 speed = projSpeed,
-                splashRadius = tower.stats.splashRadius,
+                splashRadius = tower.stats.splashRadius * s,
                 armorPierce = tower.stats.armorPierce,
                 slowFactor = tower.stats.slowFactor,
                 slowDuration = tower.stats.slowDuration,
-                towerType = tower.type
+                towerType = tower.type,
+                impactRadius = tower.stats.missileImpactRadius * s,
+                impactDamageFraction = tower.stats.missileImpactDamageFraction,
+                slowPulseRadius = tower.stats.slowPulseRadius * s
             )
         )
     }
 
+    /**
+     * Carpma. Dort ayri kimlik, dort ayri dal — hepsi ayni karede ses + gorsel
+     * + (varsa) sarsinti tetikler.
+     */
     private fun onProjectileImpact(proj: ProjectileEntity) {
-        if (proj.splashRadius > 0f) {
-            // Area of effect explosion
-            triggerScreenShake(0.25f)
-            audioManager.playSound(AudioManager.SoundEffect.EXPLOSION)
+        when {
+            proj.splashRadius > 0f -> impactCannonShell(proj)
+            proj.slowPulseRadius > 0f -> impactFrostPulse(proj)
+            proj.type == ProjectileType.MISSILE -> impactMissile(proj)
+            else -> impactSingleShot(proj)
+        }
+    }
 
-            visualEffects.add(
-                VisualEffect(
-                    type = EffectType.CANNON_EXPLOSION,
-                    posX = proj.targetX,
-                    posY = proj.targetY,
-                    maxAgeSeconds = 0.4f,
-                    scale = proj.splashRadius / 35f
-                )
+    /** Yakinda bulunan dusmanlar (canvas px yaricap). */
+    private fun enemiesWithin(x: Float, y: Float, radiusPx: Float): List<EnemyEntity> {
+        val rSq = radiusPx * radiusPx
+        return enemies.filter {
+            val dx = it.posX - x
+            val dy = it.posY - y
+            (dx * dx + dy * dy) <= rSq
+        }
+    }
+
+    /** CANNON — genis patlama, zirhi bypass eder (DECISIONS B2). */
+    private fun impactCannonShell(proj: ProjectileEntity) {
+        triggerScreenShake(0.25f)
+        audioManager.playSound(AudioManager.SoundEffect.EXPLOSION)
+
+        visualEffects.add(
+            VisualEffect(
+                type = EffectType.CANNON_EXPLOSION,
+                posX = proj.targetX,
+                posY = proj.targetY,
+                maxAgeSeconds = 0.4f,
+                // Patlama artik GERCEK etki alanina gore cizilir: oyuncu top
+                // mermisinin nereyi kapsadigini gorselden ogrenebilir.
+                radiusPx = proj.splashRadius
             )
+        )
 
-            // Damage all enemies in splash radius
-            val splashSq = proj.splashRadius * proj.splashRadius
-            val affected = enemies.filter { enemy ->
-                val dx = enemy.posX - proj.targetX
-                val dy = enemy.posY - proj.targetY
-                (dx * dx + dy * dy) <= splashSq
-            }
+        enemiesWithin(proj.targetX, proj.targetY, proj.splashRadius).forEach { enemy ->
+            applyDamageToEnemy(
+                enemy, proj.damage, proj.armorPierce,
+                proj.slowFactor, proj.slowDuration, isSplash = true
+            )
+        }
+    }
 
-            affected.forEach { enemy ->
-                applyDamageToEnemy(
-                    enemy, proj.damage, proj.armorPierce,
-                    proj.slowFactor, proj.slowDuration, isSplash = true
-                )
+    /**
+     * SLOW — ALAN kontrolu.
+     *
+     * Faz 10 duzeltmesi: cryo darbesi eskiden `applyDamageToEnemy` ile YALNIZCA
+     * hedeflenen tek dusmani yavaslatiyordu. 20 kisilik bir suruye karsi
+     * 0.65 sn'de bir tek dusman = pratikte hicbir sey; testcinin "kullanmanin
+     * anlami olmuyor" demesinin gercek sebebi menzil kadar bu da.
+     */
+    private fun impactFrostPulse(proj: ProjectileEntity) {
+        // Ses BURADA CALINMAZ: cryo sesi atis aninda (fireTower) caliyor. Iki
+        // yerde calmak 0.38 sn arayla ayni ornegi ust uste bindirir ve alan
+        // darbesi "cift tetiklenmis" gibi duyulur.
+        visualEffects.add(
+            VisualEffect(
+                type = EffectType.FROST_PULSE_RING,
+                posX = proj.targetX,
+                posY = proj.targetY,
+                maxAgeSeconds = 0.35f,
+                radiusPx = proj.slowPulseRadius
+            )
+        )
+        enemiesWithin(proj.targetX, proj.targetY, proj.slowPulseRadius).forEach { enemy ->
+            applyDamageToEnemy(
+                enemy, proj.damage, proj.armorPierce,
+                proj.slowFactor, proj.slowDuration
+            )
+        }
+    }
+
+    /**
+     * ANTI_ARMOR — FUZE.
+     *
+     * Isin aninda varirdi; fuze yol alir. Hedef fuze havadayken oldu ise fuze
+     * BOSA GIDER: hicbir yeniden yonlendirme yapilmaz, yalnizca carpma
+     * noktasindaki kucuk alan hasari (delici muhimmat olarak, zirhi BYPASS
+     * ETMEZ) yakindakileri yakalayabilir. Bu, ANTI_TANK rolunun bedeli.
+     */
+    private fun impactMissile(proj: ProjectileEntity) {
+        triggerScreenShake(0.12f)
+        audioManager.playSound(AudioManager.SoundEffect.EXPLOSION)
+        visualEffects.add(
+            VisualEffect(
+                type = EffectType.MISSILE_IMPACT,
+                posX = proj.targetX,
+                posY = proj.targetY,
+                maxAgeSeconds = 0.35f,
+                scale = 0.85f
+            )
+        )
+
+        val primary = enemies.find { it.id == proj.targetEnemyId }
+        primary?.let {
+            applyDamageToEnemy(it, proj.damage, proj.armorPierce, proj.slowFactor, proj.slowDuration)
+        }
+
+        if (proj.impactRadius > 0f && proj.impactDamageFraction > 0f) {
+            val splashDamage = proj.damage * proj.impactDamageFraction
+            enemiesWithin(proj.targetX, proj.targetY, proj.impactRadius).forEach { enemy ->
+                if (enemy.id == primary?.id) return@forEach
+                applyDamageToEnemy(enemy, splashDamage, proj.armorPierce, 0f, 0f)
             }
-        } else {
-            // Single target impact
-            val target = enemies.find { it.id == proj.targetEnemyId } ?: enemies.minByOrNull {
+        }
+    }
+
+    /** MACHINE_GUN — tek hedef, isabet kivilcimi. */
+    private fun impactSingleShot(proj: ProjectileEntity) {
+        // Hedef olduyse: SINIRLI tolerans icinde en yakin dusmana yonlenir.
+        // Onceden sinir yoktu ve olen hedefe giden kursun haritanin obur
+        // ucundaki dusmana hasar tasiyordu.
+        val tolerance = GameConfig.PROJECTILE_REDIRECT_TOLERANCE_REF_PX * renderScale
+        val target = enemies.find { it.id == proj.targetEnemyId }
+            ?: enemiesWithin(proj.targetX, proj.targetY, tolerance).minByOrNull {
                 val dx = it.posX - proj.targetX
                 val dy = it.posY - proj.targetY
                 dx * dx + dy * dy
             }
 
-            target?.let { enemy ->
-                applyDamageToEnemy(enemy, proj.damage, proj.armorPierce, proj.slowFactor, proj.slowDuration)
-            }
+        // ISABET YOKSA GERI BILDIRIM DE YOK. Eskiden hedef bulunamasa bile
+        // isabet sesi ve kivilcim ciziliyordu: oyuncu vurdugunu sanip can
+        // barinin kimildamadigini goruyordu — yanlis geri bildirim.
+        val enemy = target ?: return
+        applyDamageToEnemy(enemy, proj.damage, proj.armorPierce, proj.slowFactor, proj.slowDuration)
 
-            // Faz 3: tek hedef isabetinde artik NAMLU ALEVI degil, isabet
-            // kivilcimi cizilir. Namlu alevi yalnizca ates aninda kullanilir.
-            val fxType = when (proj.towerType) {
-                GameConfig.TowerType.ANTI_ARMOR -> EffectType.RAIL_BEAM_BURST
-                GameConfig.TowerType.SLOW -> EffectType.FROST_WAVE
-                else -> EffectType.HIT_SPARK
-            }
-            if (proj.towerType == GameConfig.TowerType.ANTI_ARMOR) {
-                audioManager.playSound(AudioManager.SoundEffect.EXPLOSION)
-            } else {
-                audioManager.playSound(AudioManager.SoundEffect.ENEMY_HIT)
-            }
-
-            visualEffects.add(
-                VisualEffect(
-                    type = fxType,
-                    posX = proj.targetX,
-                    posY = proj.targetY,
-                    maxAgeSeconds = 0.25f,
-                    angleRad = atan2(proj.targetY - proj.startY, proj.targetX - proj.startX)
-                )
+        // Faz 3: tek hedef isabetinde artik NAMLU ALEVI degil, isabet
+        // kivilcimi cizilir. Namlu alevi yalnizca ates aninda kullanilir.
+        audioManager.playSound(AudioManager.SoundEffect.ENEMY_HIT)
+        visualEffects.add(
+            VisualEffect(
+                type = EffectType.HIT_SPARK,
+                posX = proj.targetX,
+                posY = proj.targetY,
+                maxAgeSeconds = 0.25f,
+                angleRad = atan2(proj.targetY - proj.startY, proj.targetX - proj.startX)
             )
-        }
+        )
     }
 
     /**
@@ -976,9 +1159,19 @@ class GameEngine(
         enemy.hp -= finalDamage
         enemy.hitFlashTimerSeconds = 0.12f
 
-        // Apply slow if present
+        // Yavaslatmayi tazele. Mevcut etki DAHA GUCLU ise korunur: alan darbesi
+        // artik ayni dusmani ust uste vurdugu icin, kor bir atama ileride ikinci
+        // bir yavaslatma kaynagi eklendiginde guclu etkiyi zayifla ezerdi.
         if (slowFactor > 0f) {
-            enemy.activeSlow = SlowStatus(slowFactor, slowDuration)
+            val existing = enemy.activeSlow
+            enemy.activeSlow = if (existing == null) {
+                SlowStatus(slowFactor, slowDuration)
+            } else {
+                SlowStatus(
+                    factor = max(existing.factor, slowFactor),
+                    durationRemainingSeconds = max(existing.durationRemainingSeconds, slowDuration)
+                )
+            }
         }
 
         if (enemy.isDead) {

@@ -220,6 +220,36 @@ object EconomyConfig {
      */
     const val R1_COIN_BUDGET_PER_DAY: Int = R1_REWARD_FILLED * R1_VIEWS_PER_DAY
 
+    /**
+     * BAYRAK F-11 (ECONOMY_SPEC C.4) — **R1 ODULUNUN SIRADAKI RANK'A GORE
+     * OLCEKLENMESI. VARSAYILAN KAPALI.**
+     *
+     * Soru: "150 coin, 13.900'luk agacta gec oyunda hicbir sey ifade etmez."
+     * Analiz (ECONOMY_SPEC C.4) bunun **olcum hatasi** oldugunu gosteriyor: dogru
+     * kiyas 13.900 (tum agac) degil, o anki SIRADAKI rank'in fiyatidir. 450 coin/gun,
+     * en pahali rank'in (850) %53'udur — anlamsiz degil.
+     *
+     * Yine de olceklenme tanimlanmistir: dolu odul =
+     * `clamp(round10(siradakiRank x R1_SCALE_OF_NEXT_RANK), MIN, MAX)`.
+     *
+     * **Neden varsayilan KAPALI:** [R1_COIN_BUDGET_PER_DAY] sabit (enflasyon yasagi).
+     * Odul/gosterim buyudugunde gunluk gosterim sayisi kacinilmaz olarak duser
+     * (850 rank -> 210+210+30), yani ucuncu gosterim 30 coin oder. Bu, hem oyuncu icin
+     * kotu bir his hem de reklam gosterim sayisinda dusustur. Gec oyunda rewarded'i
+     * degerli tutan dogru araclar R3 "Cift Odeme" (L22'de 1.230 coin, kendiliginden
+     * olcekleniyor) ve guclendirici reklamlaridir (coin odemez, enflasyon 0).
+     *
+     * Acmak icin tek satir: `= true`; davranis zaten testli.
+     */
+    const val R1_ADAPTIVE_REWARD_ENABLED: Boolean = false
+
+    /** Adaptif odulun siradaki rank fiyatina orani. */
+    const val R1_SCALE_OF_NEXT_RANK: Double = 0.25
+
+    /** Adaptif odul taban ve tavani. Taban = sabit odul, yani olceklenme ASLA azaltmaz. */
+    const val R1_REWARD_FILLED_MIN: Int = R1_REWARD_FILLED
+    const val R1_REWARD_FILLED_MAX: Int = 250
+
     /** R2 "Takviye" — yenilgide us canini bu degere getirir, savas devam eder. */
     const val R2_REVIVE_HEALTH: Int = 5
     const val R2_USES_PER_BATTLE: Int = 1
@@ -236,6 +266,110 @@ object EconomyConfig {
 
     /** "Reklamlari Kaldir" IAP hediyesi (GDD D.2). v1.0'da IAP YOK; sabit hazir bekler. */
     const val REMOVE_ADS_GIFT: Int = 500
+
+    // =================================================================================
+    // Faz 10 — GUCLENDIRICILER (savas ici tek kullanimlik)
+    //
+    // Tasarim, gerekce ve arbitraj analizi: `BoosterSystem.kt` dosya basi + ECONOMY_SPEC B.
+    // Hepsi BAYRAK: GDD'de yoktur, tek satirla kapatilir, oynanis dengesine GIRMEZ
+    // (her bolum sifir guclendiriciyle gecilebilir olmali).
+    // =================================================================================
+
+    /** BAYRAK F-8 — Acil Tedarik (yalnizca rewarded). Kapatmak icin `= false`. */
+    const val EMERGENCY_SUPPLY_ENABLED: Boolean = true
+
+    /** BAYRAK F-9 — Hava Destegi (Tedarik fiyatli). */
+    const val AIR_SUPPORT_ENABLED: Boolean = true
+
+    /**
+     * BAYRAK F-10 — Us Tamiri (Coin fiyatli).
+     *
+     * **ON KOSUL:** motor yildizi `effectiveStarHealth(...)` uzerinden hesaplamalidir.
+     * Bu devir yapilmadan `true` kalmasi "tamir et -> yildiz atla -> kar et" arbitrajini
+     * acar. Bkz. ECONOMY_SPEC 9 devir listesi maddesi 4.
+     */
+    const val BASE_REPAIR_ENABLED: Boolean = true
+
+    // ---- Acilma bolumleri --------------------------------------------------------
+    //
+    // Acil Tedarik en once acilir CUNKU ilk 6 bolumde oyuncunun hic coini yoktur ve
+    // rewarded'in tek anlamli degeri odur (ECONOMY_SPEC C.1). Us Tamiri ilk UCRETLI
+    // bolumle (7) eslenir: oradan once us kaybi zaten nadir ve oyuncunun coini yok.
+
+    const val EMERGENCY_SUPPLY_UNLOCK_LEVEL: Int = 2
+    const val AIR_SUPPORT_UNLOCK_LEVEL: Int = 4
+    const val BASE_REPAIR_UNLOCK_LEVEL: Int = 7
+
+    // ---- Hava Destegi ------------------------------------------------------------
+
+    /**
+     * Tedarik fiyati = BASE + STEP x (L - 1). L4 = 120, L22 = 264.
+     *
+     * Kalibrasyon: fiyat, o bolumun baslangic Tedarikinin (`EARLY_STARTING_SUPPLY` /
+     * `BASE_STARTING_SUPPLY`) yaklasik %85-100'u kadardir, yani **bir acilis kulesinden
+     * vazgecmek** demektir. "Hemen alinabilir ama anlamsiz derecede ucuz degil"
+     * bandinin Tedarik tarafindaki karsiligi budur.
+     */
+    const val AIR_SUPPORT_SUPPLY_BASE: Int = 96
+    const val AIR_SUPPORT_SUPPLY_STEP: Int = 8
+
+    /**
+     * Ekrandaki her dusmandan silinen MAKS CAN orani. **1,0'dan kucuk olmak ZORUNDA:**
+     * hava destegi tek basina tam canli bir dusmani oldurmez, dolayisiyla "dalga
+     * temizleme butonu" degildir (pay-to-win kalkani).
+     */
+    const val AIR_SUPPORT_DAMAGE_FRACTION: Double = 0.60
+
+    /** Iki hava destegi arasinda zorunlu bekleme. "Uzun bekleme" gereksinimi. */
+    const val AIR_SUPPORT_COOLDOWN_MS: Long = 45_000L
+
+    // ---- Acil Tedarik ------------------------------------------------------------
+
+    /**
+     * Verilen Tedarik = round10(BASE + STEP x (L - 1)). L1 = 60, L6 = 80, L22 = 140.
+     *
+     * Kalibrasyon: her zaman **yaklasik bir temel kule** kadar. Daha fazlasi
+     * ECONOMY_SPEC A sikilastirmasini geri alir; daha azi butona basmaya deger olmaz.
+     */
+    const val EMERGENCY_SUPPLY_BASE: Int = 60
+    const val EMERGENCY_SUPPLY_STEP: Int = 4
+
+    const val EMERGENCY_SUPPLY_COOLDOWN_MS: Long = 0L
+
+    // ---- Us Tamiri ---------------------------------------------------------------
+
+    /**
+     * Coin fiyati = BASE + STEP x (L - 1). L7 = 240, L22 = 540.
+     *
+     * UC KISIT BIRDEN (hepsi testli):
+     * 1. `> 150` (en ucuz meta rank) — yoksa agac yerine tamir farming'i cazip olur.
+     * 2. `< R(L)` (1 yildiz odulu) — yoksa yenilgiyi zafere cevirmek NET ZARAR olur ve
+     *    guclendirici olu yatirim haline gelir.
+     * 3. `>= R(L,3) - R(L,1)` (kampanyadaki en buyuk yildiz atlama farki) — yildiz
+     *    notrlugu ([effectiveStarHealth]) bir gun kaldirilsa BILE tamirle yildiz
+     *    satin almak karli olmasin. STEP 15 yerine 20 secilmesinin nedeni budur:
+     *    yildiz farki 18/bolum buyudugu icin 15 adimla L14'ten sonra kisit kirilir.
+     */
+    const val BASE_REPAIR_COIN_BASE: Int = 120
+    const val BASE_REPAIR_COIN_STEP: Int = 20
+
+    /** Geri verilen can = ceil(maksCan x oran), kaybedilen candan fazla degil. 20 -> 8. */
+    const val BASE_REPAIR_HEALTH_RATIO: Double = 0.40
+
+    const val BASE_REPAIR_COOLDOWN_MS: Long = 60_000L
+
+    // ---- Guclendirici rewarded butcesi -------------------------------------------
+
+    /**
+     * Gunluk guclendirici-reklam hakki (tum tipler ORTAK havuz), savas basina en fazla
+     * her tipten [BoosterType.adUsesPerBattle].
+     *
+     * **Coin butcesi YOK ve gerekmiyor:** guclendirici reklami hicbir coin odemez,
+     * yalnizca savas ici etki verir. Bu yuzden R1'in [R1_COIN_BUDGET_PER_DAY]
+     * enflasyon korumasi burada gereksizdir — enflasyona katkisi tam olarak 0'dir.
+     * Sinirlayan sey oynanis (savas basina 1 kullanim), para degil.
+     */
+    const val BOOSTER_AD_VIEWS_PER_DAY: Int = 4
 
     // =================================================================================
     // Saat manipulasyonu (GDD E.4)

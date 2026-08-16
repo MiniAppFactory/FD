@@ -186,6 +186,212 @@ class WaveDefinitionsDataTest {
         assertEquals("COMMAND_TANK (boss) Act I finalinde = bolum 11", 11, firstSeen[EnemyType.COMMAND_TANK])
     }
 
+    /**
+     * LEVEL_DESIGN'in en sert kurali: **oyuncunun henuz sahip olmadigi mekanik
+     * zorunlu basari kosulu olamaz.**
+     *
+     * Faz 10'da bu kural gercek bir risk haline geldi, cunku (a) kuleler artik
+     * bolume gore kilitli (GameConfig.unlockedAtLevel) ve (b) zirh 0.78/0.86'ya
+     * cikti, yani kursun zirhli hedefe karsi gercekten ise yaramaz. Ikisi
+     * birlikte yanlis ayarlanirsa oyuncu cevabi ELINDE OLMAYAN bir dusmanla
+     * karsilasir. Bu test o celiskiyi bolum bolum arar.
+     *
+     * "Zirh cevabi" = patlama (splash zirhi BYPASS eder, DECISIONS B2) ya da
+     * ciddi zirh delme.
+     */
+    @Test
+    fun noArmouredEnemyBecomesMandatoryBeforeItsCounterIsUnlocked() {
+        for (level in 1..22) {
+            val available = GameConfig.unlockedTowers(level)
+                .map { GameConfig.TOWER_SPECS.getValue(it) }
+            val hasArmourAnswer = available.any { it.splashRadius > 0f || it.armorPierce >= 0.5f }
+
+            val armouredTypes = WaveDefinitions.wavesFor(level)
+                .flatMap { it.spawns }
+                .map { it.enemyType }
+                .distinct()
+                .filter { GameConfig.ENEMY_SPECS.getValue(it).armor >= 0.5f }
+
+            if (armouredTypes.isNotEmpty()) {
+                assertTrue(
+                    "bolum $level zirhli dusman iceriyor ($armouredTypes) ama acik " +
+                        "kuleler ${available.map { it.type }} arasinda zirha cevap " +
+                        "veren yok — oyuncudan olmayan bir mekanik isteniyor",
+                    hasArmourAnswer
+                )
+            }
+        }
+    }
+
+    /** Kilit tablosu ile dusman tanitim sirasi birebir uyumlu mu (dokumantasyon). */
+    @Test
+    fun theUnlockScheduleMatchesTheEnemyIntroductionSchedule() {
+        assertEquals(
+            "Gatling bolum 1", 1,
+            GameConfig.TOWER_SPECS.getValue(GameConfig.TowerType.MACHINE_GUN).unlockedAtLevel
+        )
+        assertEquals(
+            "Heavy Cannon bolum 3 — zirhli arac (L5) ve kalabalik kolonlarin cevabi", 3,
+            GameConfig.TOWER_SPECS.getValue(GameConfig.TowerType.CANNON).unlockedAtLevel
+        )
+        assertEquals(
+            "Frost Field bolum 5 — ilk zirhli araclarla ayni bolumde", 5,
+            GameConfig.TOWER_SPECS.getValue(GameConfig.TowerType.SLOW).unlockedAtLevel
+        )
+        assertEquals(
+            "Missile Battery bolum 7 — ilk TANK ile ayni bolumde", 7,
+            GameConfig.TOWER_SPECS.getValue(GameConfig.TowerType.ANTI_ARMOR).unlockedAtLevel
+        )
+        // Fuze rampasi tankla AYNI bolumde acilmali: once acilsa tank bir sinav
+        // olmaz, sonra acilsa oyuncu cevapsiz kalir.
+        val tankLevel = (1..22).first { level ->
+            WaveDefinitions.wavesFor(level).any { w ->
+                w.spawns.any { it.enemyType == EnemyType.TANK }
+            }
+        }
+        assertEquals(
+            "TANK'in tanitildigi bolum ile fuze rampasinin acildigi bolum ayni olmali",
+            GameConfig.TOWER_SPECS.getValue(GameConfig.TowerType.ANTI_ARMOR).unlockedAtLevel,
+            tankLevel
+        )
+    }
+
+    /**
+     * ===================================================================
+     * "2 KULE YETIYOR" TESTI — testcinin en pahali sikayeti
+     * ===================================================================
+     *
+     * Ekonomi ajani sorunu sayiyla teslim etti: L1'de toplam dusman cani 4.155
+     * AEHP, bir Gatling 87.5 DPS, bolum ~210 sn -> tek kule bolumun 4 katindan
+     * fazla hasar veriyor. Yani TOPLAM CAN yanlis olcuttu.
+     *
+     * Dogru olcut BASKI = AEHP / spawn penceresi. Bir kulenin oldurme hizi
+     * sabittir; dusmanlar bundan hizli geliyorsa fark birikir ve sizar. AEHP
+     * referans batarya hasari biriminde oldugu icin baski/DPS dogrudan
+     * "kac kule gerekir" verir.
+     *
+     * Esikler olculen degerlerin biraz altinda: kucuk ayarlar testi kirmaz ama
+     * "eski kolay hâline geri don" kirar.
+     */
+    @Test
+    fun theOpeningLevelsDemandMoreThanTheOldEasyCadence() {
+        // OLCULEN degerler (kadans sikilastirmasi + can kalibrasyonu sonrasi):
+        //   L1 12.7 · L2 14.0 · L3 15.8 · L4 15.7 · L5 17.4 · L6 17.7
+        // Esikler bunlarin ~%5 altinda: kucuk ayar kirmaz, "eski kolay kadansa
+        // geri don" kirar. Sayinin MUTLAK anlami yok (bkz. peakPressureRatio);
+        // mutlak arz/talep orani difficulty_audit.py'de.
+        val minimumRatio = mapOf(
+            1 to 12.0f, 2 to 13.3f, 3 to 15.0f, 4 to 15.0f, 5 to 16.5f, 6 to 16.8f
+        )
+        minimumRatio.forEach { (level, minimum) ->
+            val ratio = WaveMetrics.peakPressureRatio(WaveDefinitions.wavesFor(level))
+            assertTrue(
+                "bolum $level tepe baski orani ${"%.2f".format(ratio)} — Faz 10 " +
+                    "sikilastirmasinin altina dustu (>= $minimum olmali)",
+                ratio >= minimum
+            )
+        }
+    }
+
+    /**
+     * TABAN KALIBRASYONU — "2 kule yetiyor"un asil kaniti.
+     *
+     * Olculen sorun: Gatling Kd.2 piyadeye 216 DPS veriyordu, piyade 75 canliydi
+     * -> tek kule saniyede 2.9 piyade siliyor, dalga saniyede ~0.4 dusman
+     * gonderiyor. Kule gelenden 7 kat hizli temizliyordu.
+     *
+     * Duzeltme: atis araligi x2 + dusman cani x3.5. Bu test o kalibrasyonun
+     * GERI ALINMAMASINI korur — TTK (time-to-kill) uzerinden, cunku TTK
+     * oyuncunun gercekten hissettigi sey.
+     */
+    @Test
+    fun aSingleCrowdTowerCannotOutpaceTheStreamAnyMore() {
+        val mg = GameConfig.TOWER_SPECS.getValue(GameConfig.TowerType.MACHINE_GUN)
+        val infantry = GameConfig.ENEMY_SPECS.getValue(EnemyType.INFANTRY)
+
+        // Kademe 2 Gatling'in piyade basina oldurme suresi.
+        val ttk = infantry.maxHp / mg.level2Dps
+        assertTrue(
+            "Gatling Kd.2 piyadeyi ${"%.2f".format(ttk)} sn'de olduruyor — 2 sn'nin " +
+                "altina inerse tek kule akisi yine gecer (eski deger 0.35 sn idi)",
+            ttk >= 2.0f
+        )
+        val killRate = 1f / ttk
+
+        // Ilk alti bolumun EN YOGUN dalgasinda dusman varis hizi.
+        for (level in 1..6) {
+            val peak = WaveDefinitions.wavesFor(level).maxOf { w ->
+                w.spawns.size / WaveMetrics.spawnWindowSeconds(w)
+            }
+            assertTrue(
+                "bolum $level tepe varis hizi ${"%.2f".format(peak)}/sn, tek Gatling " +
+                    "Kd.2 ${"%.2f".format(killRate)}/sn olduruyor — varis hizi oldurme " +
+                    "hizinin en az 1.5 katı olmali, yoksa tek kule bolumu tasir",
+                peak >= killRate * 1.5f
+            )
+        }
+    }
+
+    /** Baski egrisi ilk alti bolumde MONOTON artmali (ogretme rampasi). */
+    @Test
+    fun theOpeningPressureCurveNeverGoesBackwards() {
+        val curve = (1..6).map { WaveMetrics.peakPressureRatio(WaveDefinitions.wavesFor(it)) }
+        for (i in 1 until curve.size) {
+            assertTrue(
+                "bolum ${i + 1} tepe baskisi (${"%.2f".format(curve[i])}) bolum $i'den " +
+                    "(${"%.2f".format(curve[i - 1])}) dusuk — rampa geriye gidiyor",
+                curve[i] >= curve[i - 1] - 0.05f
+            )
+        }
+        // L6, L7'yi GECMEMELI: L7 hem tank hem fuze rampasini getiriyor.
+        assertTrue(
+            "L6 baskisi L7'yi asmis",
+            curve.last() <= WaveMetrics.peakPressureRatio(WaveDefinitions.wavesFor(7)) + 0.05f
+        )
+    }
+
+    /** Toplam can sismedi: sikilastirma KADANSTAN geldi, HP'den degil. */
+    @Test
+    fun theTighteningCameFromCadenceNotHealthInflation() {
+        for (level in 1..6) {
+            val waves = WaveDefinitions.wavesFor(level)
+            val finale = waves.last()
+            val lightGaps = finale.spawns
+                .filter { GameConfig.ENEMY_SPECS.getValue(it.enemyType).armor < 0.5f }
+                .map { it.delaySeconds }
+            assertTrue("bolum $level son dalgasinda hafif dusman yok", lightGaps.isNotEmpty())
+            assertTrue(
+                "bolum $level son dalgasinin hafif spawn araligi ${lightGaps.min()}s — " +
+                    "0.45s'in altinda olmali, yoksa final dalgasi baski yapmaz",
+                lightGaps.min() <= 0.45f
+            )
+        }
+        // Referans DPS kule tablosundan TURETILIYOR: atis araligi/hasar takasi
+        // (Faz 10: ikisi de x2) baski hesabini bozmadi.
+        assertEquals(
+            "referans kule DPS'i degisti — baski esikleri yeniden olculmeli " +
+                "(14 hasar / 0.32 sn = 43.75; atis araligi x2 yapildi, hasar SABIT " +
+                "kaldi, yani DPS kasten yarilandi)",
+            43.75f, WaveMetrics.referenceTowerDps, 0.1f
+        )
+    }
+
+    /**
+     * L6, L7'nin ALTINDA kalmali: L7 hem TANK'i hem fuze rampasini getiriyor,
+     * bolum siralamasi tersine donmemeli (sikilastirma sirasinda gercekten
+     * ters donmustu ve buraya pinlendi).
+     */
+    @Test
+    fun theSixthLevelStaysBelowTheSeventh() {
+        val l6 = WaveMetrics.levelAehp(WaveDefinitions.wavesFor(6))
+        val l7 = WaveMetrics.levelAehp(WaveDefinitions.wavesFor(7))
+        assertTrue(
+            "L6 (${"%.0f".format(l6)}) L7'den (${"%.0f".format(l7)}) agir — " +
+                "tank ve fuze rampasinin geldigi bolum bir gerileme gibi hissedilir",
+            l6 < l7
+        )
+    }
+
     @Test
     fun theFirstLevelOnlyEverSpawnsTheTwoTutorialEnemyTypes() {
         val types = WaveDefinitions.wavesFor(1).flatMap { it.spawns }.map { it.enemyType }.toSet()

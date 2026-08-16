@@ -12,6 +12,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.ImageShader
+import androidx.compose.ui.graphics.ShaderBrush
+import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -32,12 +37,31 @@ fun MainMenuOverlay(
     val highScore = gameEngine.saveManager.highScore
     var soundEnabled by remember { mutableStateOf(gameEngine.saveManager.soundEnabled) }
 
+    // KAMUFLAJ ZEMIN.
+    //
+    // 512x512 SARMALI (seamless) desen, tekrarli shader ile tum ekrana dosenir —
+    // tam ekran bir bitmap yerine 2.7 KB'lik tek karo. Desen prosedurel
+    // uretildi ve uretici korunuyor: docs/tools/camo_pattern.py (seed sabit,
+    // ayni deseni tekrar uretir).
+    //
+    // Uzerine KOYU PERDE biner: kamuflaj kasitli olarak dusuk kontrast ve
+    // koyu tutuldu ki baslik ve butonlar okunur kalsin. Dekor, oynanis
+    // okunabilirliginin onune gecmez.
+    val camo = ImageBitmap.imageResource(R.drawable.bg_camo)
+    val camoBrush = remember(camo) {
+        ShaderBrush(ImageShader(camo, TileMode.Repeated, TileMode.Repeated))
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .background(camoBrush)
             .background(
                 Brush.verticalGradient(
-                    colors = listOf(SleekSurfaceHeader, SleekDarkBg)
+                    colors = listOf(
+                        SleekSurfaceHeader.copy(alpha = 0.82f),
+                        SleekDarkBg.copy(alpha = 0.94f)
+                    )
                 )
             ),
         contentAlignment = Alignment.Center

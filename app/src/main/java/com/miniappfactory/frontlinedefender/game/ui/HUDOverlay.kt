@@ -32,6 +32,7 @@ fun HUDOverlay(
     val gold by gameEngine.gold.collectAsState()
     val lives by gameEngine.lives.collectAsState()
     val waveIndex by gameEngine.currentWaveIndex.collectAsState()
+    val totalWaves by gameEngine.totalWaves.collectAsState()
     val speed by gameEngine.gameSpeed.collectAsState()
     val gameState by gameEngine.gameState.collectAsState()
     val prepTimer by gameEngine.preparationTimer.collectAsState()
@@ -66,12 +67,13 @@ fun HUDOverlay(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        // Faz 6: "WAVE 1/6" metni kaynaga tasindi. Toplam dalga
-                        // sayisinin kaynagi DEGISTIRILMEDI (GameConfig.WAVES);
-                        // gameEngine.totalWaves'e gecis lokalizasyon kapsami
-                        // disi, docs/LOCALIZATION.md acik maddesi.
-                        @Suppress("DEPRECATION")
-                        val totalWaves = GameConfig.WAVES.size
+                        // BUG (cihazda goruldu: "DALGA 9/6"). Toplam dalga sayisi
+                        // `GameConfig.WAVES.size`den okunuyordu; o liste eski
+                        // TEK-BOLUM listesi ve sabit 6 eleman. Kampanyada dalga
+                        // sayisi bolume gore 6..18 arasinda degisiyor, bu yuzden
+                        // 9. dalgada "9/6" gibi imkansiz bir deger cikiyordu.
+                        // Tek dogruluk kaynagi motorun aktif bolum icin
+                        // hesapladigi `totalWaves` akisi.
                         Text(
                             text = stringResource(
                                 R.string.hud_wave_label,

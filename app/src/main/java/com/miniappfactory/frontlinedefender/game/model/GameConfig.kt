@@ -58,7 +58,17 @@ object GameConfig {
     /** Dokunma yakalama yaricapi (referans tuvalde). Denge degil, etkilesim. */
     const val TAP_RADIUS_REF_PX = 46f
 
-    /** Bos build pad secilince gosterilen on-izleme menzili (canvas px). */
+    /**
+     * Bos build pad secilince, HENUZ bir kule karti secilmemisken gosterilen
+     * notr on-izleme menzili (REFERANS tuvalde; cizimde renderScale ile carpilir).
+     *
+     * Faz 10: kule menzilleri artik 150 ile 270 ref-px arasinda degisiyor, yani
+     * TEK bir sabit halka artik yalan soyluyor — oyuncu Frost Field'in kapsama
+     * alanini ancak kuleyi kurup satarak ogrenebiliyordu. Bu yuzden build
+     * cubugundaki bir kart BASILI tutuldugunda `GameEngine.previewTowerType`
+     * doluyor ve halka O KULENIN gercek menzilini gosteriyor
+     * (bkz. GameCanvas: birakma onizlemesi her zaman gorunur olmali).
+     */
     const val BUILD_PREVIEW_RANGE_PX = 170f
 
     /** Letterbox / tuval zemini. */
@@ -201,12 +211,64 @@ object GameConfig {
         WEAKEST     // Lowest current HP
     }
 
+    /**
+     * ------------------------------------------------------------------------
+     * Faz 10 — KULE UZMANLASMASI (testci: "bir de her kule hepsinde ise yariyor")
+     * ------------------------------------------------------------------------
+     * Rol bir ETIKET degil, MAKINEYLE DOGRULANAN bir sozlesme: her rol tam bir
+     * kule tarafindan doldurulur ve `BalanceConsistencyTest` her rolun kendi
+     * hedef sinifinda EN IYI, baska bir sinifta BELIRGIN SEKILDE EN KOTU
+     * oldugunu sayisal olarak kontrol eder. Boylece ileride biri "Gatling'i
+     * biraz guclendirelim" derse ve kule her seye yeterli hale gelirse test
+     * kirilir — regresyon sessizce geri gelemez.
+     */
+    enum class TowerRole {
+        /** Kalabalik/hizli piyade. Zirha karsi neredeyse ise yaramaz. */
+        CROWD,
+        /** Kumelenmis ve YAVAS hedef; patlama zirhi bypass eder. Tek hizli hedefe kotu. */
+        SIEGE,
+        /** Tek agir zirhli hedef. Kalabaliga karsi verimsiz (cok yavas atis). */
+        ANTI_TANK,
+        /** Hasar vermez, ALAN KONTROLU yapar: digerlerinin penceresini acar. */
+        SUPPORT
+    }
+
+    /**
+     * @param role Kulenin oynanistaki kimligi (bkz. TowerRole).
+     * @param unlockedAtLevel Bu kule kacinci KAMPANYA bolumunden itibaren insa
+     *   edilebilir. Testci: "ilk bolumden itibaren her seyi acmak dogru degil."
+     *   LEVEL_DESIGN kurali: oyuncunun henuz sahip olmadigi mekanik zorunlu
+     *   basari kosulu OLAMAZ — bu yuzden her yeni dusman tipinin cevabi, o tip
+     *   ilk gorundugu bolumde ZATEN acik olmali. Kilit tablosunun dalga
+     *   tanimlariyla tutarliligi `WaveDefinitionsDataTest` tarafindan
+     *   dogrulanir, yorumla degil.
+     * @param level1Range Menzil **1920 REFERANS TUVALINDE** (DECISIONS B3), ham
+     *   canvas px DEGIL. Motor `TowerEntity.rangePx(renderScale)` ile cevirir;
+     *   aksi halde tablet ile telefon ayni oyunu oynamaz.
+     * @param splashRadius > 0 YALNIZCA Cannon'da (referans tuvalde). Splash
+     *   bileseni zirhi bypass eder (DECISIONS B2).
+     * @param armorPierce 0..1, YALNIZCA Anti-Armor.
+     * @param slowPulseRadius > 0 YALNIZCA Slow'da (referans tuvalde).
+     *   **Bu alan olmadan Frost Field bir DESTEK kulesi degildi**: cryo darbesi
+     *   yalnizca hedeflenen TEK dusmani yavaslatiyordu, yani 20 kisilik bir
+     *   suruye karsi 0.65 sn'de bir 1 dusman -> oyuncunun "kullanmanin anlami
+     *   yok" demesinin gercek sebebi buydu. Artik darbe bu yaricaptaki HERKESI
+     *   soguturr.
+     * @param missileImpactRadius > 0 YALNIZCA Anti-Armor (referans tuvalde).
+     *   Fuzenin carpma noktasindaki KUCUK alan hasari. Kasitli olarak
+     *   Cannon'in splash yaricapindan cok kucuk ve hasari kesirli, ustelik
+     *   zirhi bypass ETMEZ (delici muhimmat olarak hesaplanir) — boylece
+     *   Cannon'in "kalabalik/kalkanli" kimligini golgelemez.
+     * @param missileImpactDamageFraction Ikincil hedeflere giden hasar orani.
+     */
     data class TowerStats(
         val type: TowerType,
+        val role: TowerRole,
+        val unlockedAtLevel: Int,
         val name: String,
         val description: String,
         val buildCost: Int,
-        val level1Range: Float,       // In game units (pixels relative to map scale)
+        val level1Range: Float,       // 1920 referans tuvalde ref-px
         val level1Damage: Float,
         val level1FireRate: Float,    // Seconds between shots
         val level2UpgradeCost: Int,
@@ -216,8 +278,23 @@ object GameConfig {
         val splashRadius: Float = 0f,  // > 0 for Cannon
         val armorPierce: Float = 0f,   // 0.0 to 1.0 for Anti-Armor
         val slowFactor: Float = 0f,    // 0.0 to 1.0 (e.g. 0.5 = 50% speed) for Slow Tower
-        val slowDuration: Float = 0f   // Duration of slow in seconds
-    )
+        val slowDuration: Float = 0f,  // Duration of slow in seconds
+        val slowPulseRadius: Float = 0f,          // > 0 for Slow
+        val missileImpactRadius: Float = 0f,      // > 0 for Anti-Armor
+        val missileImpactDamageFraction: Float = 0f
+    ) {
+        /** Sürekli hasar (hasar/sn) — rol karsilastirmalarinin olcum birimi. */
+        val level1Dps: Float get() = level1Damage / level1FireRate
+        val level2Dps: Float get() = level2Damage / level2FireRate
+    }
+
+    /** Bu kule bu bolumde insa edilebilir mi? Tek karar noktasi. */
+    fun isTowerUnlocked(type: TowerType, levelId: Int): Boolean =
+        levelId >= (TOWER_SPECS[type]?.unlockedAtLevel ?: 1)
+
+    /** Bolum secme/insa cubugu icin: bu bolumde acik olan kuleler. */
+    fun unlockedTowers(levelId: Int): List<TowerType> =
+        TowerType.values().filter { isTowerUnlocked(it, levelId) }
 
     data class EnemyStats(
         val type: EnemyType,
@@ -250,102 +327,288 @@ object GameConfig {
         val spawns: List<WaveEnemySpawn>
     )
 
-    // Tower Definitions
+    // ========================================================================
+    // Faz 10 — KULE TABLOSU
+    //
+    // Her sayinin GEREKCESI docs/TOWER_REBALANCE.md'de tablo halinde duruyor.
+    // Ozet (etkin DPS = hasar/sn x zirh carpani):
+    //
+    //                zirhsiz  zirhli(0.78)  tank(0.86)  5'li kume   maliyet
+    //   MACHINE_GUN    43.8        9.6          6.1        43.8        60
+    //   CANNON         18.4       18.4*        18.4*       92.0*       95
+    //   ANTI_ARMOR     30.6       27.0         26.6        ~50        115
+    //   SLOW            2.3        0.5          0.3        ~12        100
+    //   (*) splash zirhi BYPASS eder (DECISIONS B2) ve TUM kumeye vurur.
+    //   (DPS'ler atis araligi x2 sonrasi; ORANLAR degismedi, yani rol
+    //    uzmanlasmasi birebir korunuyor — bkz. asagidaki tempo blogu.)
+    //
+    // Yani: kalabalikta MACHINE_GUN, kumede CANNON, zirhta ANTI_ARMOR acik ara
+    // onde; her kulenin bariz bir KOR NOKTASI var. Bu tablo elle okunmak icin
+    // degil test icin yazildi: BalanceConsistencyTest ayni oranlari yeniden
+    // hesaplayip zorunlu kiliyor.
+    //
+    // ------------------------------------------------------------------------
+    // ATIS TEMPOSU + TABAN KALIBRASYONU
+    //
+    // Iki ayri sebep ayni yerde birlesiyor:
+    //
+    // (1) Kullanici: "vurus hizlari %50 dusurulsun, cok hizli ates ediyorlar."
+    //     `fireRate` SANIYE CINSINDEN ARALIKTIR, hiz degil -> aralik x2:
+    //       MACHINE_GUN 0.16 -> 0.32 · 0.12 -> 0.24
+    //       CANNON      1.25 -> 2.50 · 1.10 -> 2.20
+    //       SLOW        0.65 -> 1.30 · 0.55 -> 1.10
+    //       ANTI_ARMOR  1.80 -> 3.60 · 1.55 -> 3.10
+    //
+    // (2) ATIS BASINA HASAR **DEGISMEDI**, yani her kulenin DPS'i KASTEN
+    //     yarilandi. Once hasari x2 ile telafi etmeyi denedik; yanlisti, cunku
+    //     DPS'i korumak sorunun tamamini korur:
+    //
+    //     docs/tools/difficulty_audit.py olcumu (bolum 7, oyuncu LEHINE ust
+    //     sinir): iki kulenin teslim edebilecegi hasar / dalgalarin toplam cani
+    //     = **8.23**. Yani iki kule gerekenin sekiz katini veriyordu; "her kule
+    //     hepsinde ise yariyor" ve "2 kule yetiyor" sikayetlerinin ortak kok
+    //     sebebi buydu. Gatling Kd.2 piyadeye 216 DPS veriyor, piyade 75 canli:
+    //     tek kule saniyede 2.9 piyade siliyor, dalga saniyede 0.4 dusman
+    //     gonderiyor.
+    //
+    //     Duzeltme iki carpandan olusuyor: atis araligi x2 (bu blok) ve dusman
+    //     cani x3.5 (bkz. ENEMY_SPECS). 8.23 / 2 / 3.5 = **1.18** -> hedef
+    //     bant 1.15..1.40.
+    //
+    // UZMANLASMA KORUNUYOR (dogrulandi): Gatling Kd.2 tanka atis basina 3.64
+    // hasar veriyor (26 x 0.14), 0.24 sn araliktan 15.2 DPS; 2030 canli tanki
+    // tek basina **134 saniyede** olduruyor. Yani hâlâ tamamen ise yaramaz ve
+    // Agir Top / Fuze zorunlu kaliyor.
+    //
+    // Yan fayda: makineli tufek sesinin minIntervalMs'i 70 ms. 0.16 sn (160 ms)
+    // araliginda ses neredeyse surekli bir gurultuydu; 0.32 sn'de her atis
+    // ayri duyulur, namlu alevi (0.13 sn) ile de artik ortusmuyor.
+    // ------------------------------------------------------------------------
     val TOWER_SPECS: Map<TowerType, TowerStats> = mapOf(
+        // KALABALIK. Menzil 160 -> 150: en kisa menzilli kule olmasi kimliginin
+        // parcasi (bogaza yerlestir, uzaktan tarama yok) ve destek kulesinin
+        // menzil ustunlugunu okunur kiliyor. Hasar/atis hizi DEGISMEDI: zirha
+        // karsi ise yaramazligi kule zayiflatilarak degil DUSMAN ZIRHI
+        // yukseltilerek saglandi (bkz. ENEMY_SPECS) — boylece piyadeye karsi
+        // hissedilen guc aynen korunuyor.
         TowerType.MACHINE_GUN to TowerStats(
             type = TowerType.MACHINE_GUN,
+            role = TowerRole.CROWD,
+            unlockedAtLevel = 1,
             name = "Gatling Gun",
-            description = "Rapid firing, low-medium damage. Excellent against infantry.",
+            description = "Shreds infantry and runners. Bullets barely scratch armour.",
             buildCost = 60,
-            level1Range = 160f,
-            level1Damage = 14f,
-            level1FireRate = 0.16f,
+            level1Range = 150f,
+            level1Damage = 14f,      // DEGISMEDI
+            level1FireRate = 0.32f,  // 0.16 x2 -> DPS 87.5 -> 43.8 (yarilandi, KASITLI)
             level2UpgradeCost = 65,
-            level2Range = 190f,
-            level2Damage = 26f,
-            level2FireRate = 0.12f
+            level2Range = 180f,
+            level2Damage = 26f,      // DEGISMEDI
+            level2FireRate = 0.24f   // 0.12 x2 -> DPS 216.7 -> 108.3
         ),
+        // KUSATMA. Tek hedef DPS'i 45.5 -> 36.8 dusuruldu ama splash yaricapi
+        // 65 -> 78 buyudu: kimlik "tek hedefe vuran top" degil "kumeyi silen
+        // top". Mermi hizi 160 -> 110 (ucus 0.63 -> 0.91 sn): Scout Runner o
+        // surede 105 ref-px yol alir, yani 78'lik patlamanin DISINA cikar ->
+        // top hizli hedefi ISKALAR. Bu bilincli zayiflik ayni zamanda oyuna
+        // gercek bir kombo veriyor: Frost Field'in yavaslattigi kosucu 61
+        // ref-px yol alir ve top ONU VURUR.
         TowerType.CANNON to TowerStats(
             type = TowerType.CANNON,
+            role = TowerRole.SIEGE,
+            unlockedAtLevel = 3,
             name = "Heavy Cannon",
-            description = "High splash damage explosion. Destroys grouped enemies.",
-            buildCost = 90,
-            level1Range = 180f,
-            level1Damage = 50f,
-            level1FireRate = 1.1f,
+            description = "Slow shell, wide blast. Ignores armour, misses fast movers.",
+            buildCost = 95,
+            level1Range = 175f,
+            level1Damage = 46f,      // DEGISMEDI
+            level1FireRate = 2.50f,  // 1.25 x2 -> DPS 36.8 -> 18.4
             level2UpgradeCost = 90,
-            level2Range = 210f,
-            level2Damage = 95f,
-            level2FireRate = 0.95f,
-            splashRadius = 65f
+            level2Range = 205f,
+            level2Damage = 88f,      // DEGISMEDI
+            level2FireRate = 2.20f,  // 1.10 x2 -> DPS 80.0 -> 40.0
+            splashRadius = 78f
         ),
+        // ZIRH KIRICI. Atis araligi 1.4 -> 1.8 sn (kalabaliga karsi kasitli
+        // verimsizlik: saniyede 0.55 atis) ve atis basina hasar 85 -> 110
+        // (tek agir hedefe yikici). Artik gercekten FUZE atiyor: mermi yol
+        // alir, hedef havadayken olurse fuze BOSA gider (yonlendirme yok) —
+        // testcinin "fuze rampasi var ama fuze atmiyor" maddesi bu.
         TowerType.ANTI_ARMOR to TowerStats(
             type = TowerType.ANTI_ARMOR,
-            name = "Railgun",
-            description = "Long range, high-velocity armor penetrating beam.",
-            buildCost = 110,
-            level1Range = 240f,
-            level1Damage = 85f,
-            level1FireRate = 1.4f,
-            level2UpgradeCost = 110,
-            level2Range = 280f,
-            level2Damage = 160f,
-            level2FireRate = 1.2f,
-            armorPierce = 0.85f
+            role = TowerRole.ANTI_TANK,
+            unlockedAtLevel = 7,
+            name = "Missile Battery",
+            description = "Armour-piercing missile. Devastating on heavies, wasted on swarms.",
+            buildCost = 115,
+            level1Range = 250f,
+            level1Damage = 110f,     // DEGISMEDI
+            level1FireRate = 3.60f,  // 1.80 x2 -> DPS 61.1 -> 30.6
+            level2UpgradeCost = 115,
+            level2Range = 290f,
+            level2Damage = 205f,     // DEGISMEDI
+            level2FireRate = 3.10f,  // 1.55 x2 -> DPS 132.3 -> 66.1
+            armorPierce = 0.85f,
+            missileImpactRadius = 40f,
+            missileImpactDamageFraction = 0.35f
         ),
+        // DESTEK. Menzil 150 -> 270 (+%80): testci hakliydi, destek kulesinin
+        // menzili MACHINE_GUN'dan kisaydi, yani sahada hicbir sey degistirmiyor
+        // gibi duruyordu. Karsiligi odendi: hasar 6 -> 3 (artik gercekten hasar
+        // vermez) ve yavaslatma %50 -> %42. Buna ragmen kule cok daha guclu,
+        // cunku asil duzeltme MENZIL DEGIL: cryo darbesi artik 105 ref-px
+        // yaricapindaki HERKESI sogutuyor (onceden yalnizca hedeflenen tek
+        // dusmani). Fiyat 80 -> 100: hicbir hasar vermeyen ama bataryanin
+        // penceresini 1.7 katina cikaran bir kule ucuz olamaz.
         TowerType.SLOW to TowerStats(
             type = TowerType.SLOW,
+            role = TowerRole.SUPPORT,
+            unlockedAtLevel = 5,
             name = "Frost Field",
-            description = "Emits cryo pulses that slow enemy movement by up to 50%.",
-            buildCost = 80,
-            level1Range = 150f,
-            level1Damage = 6f,
-            level1FireRate = 0.7f,
-            level2UpgradeCost = 75,
-            level2Range = 180f,
-            level2Damage = 12f,
-            level2FireRate = 0.55f,
-            slowFactor = 0.50f,
-            slowDuration = 2.5f
+            description = "Wide cryo pulses chill every enemy in the blast. Deals almost no damage.",
+            buildCost = 100,
+            level1Range = 270f,
+            level1Damage = 3f,       // DEGISMEDI
+            level1FireRate = 1.30f,  // 0.65 x2 -> DPS 4.6 -> 2.3
+            level2UpgradeCost = 85,
+            level2Range = 320f,
+            level2Damage = 7f,       // DEGISMEDI
+            level2FireRate = 1.10f,  // 0.55 x2 -> DPS 12.7 -> 6.4
+            slowFactor = 0.42f,
+            slowDuration = 2.2f,
+            slowPulseRadius = 105f
         )
     )
 
-    // Enemy Definitions
+    /**
+     * Mermi "hizi". Motor `progress += dt * speed / 100f` isletiyor, yani
+     * **ucus suresi = 100 / speed saniye ve MESAFEDEN BAGIMSIZ**. Bu yuzden bu
+     * sayilar px/sn DEGIL; asagidaki yorumlarda gercek anlami olan ucus suresi
+     * yazili. Renderer'a gomulmezler, denge burada durur.
+     */
+    val PROJECTILE_SPEEDS: Map<ProjectileType, Float> = mapOf(
+        ProjectileType.BULLET to 300f,        // 0.33 sn
+        ProjectileType.CANNON_SHELL to 110f,  // 0.91 sn — hizli hedefi iskalamasinin sebebi
+        ProjectileType.MISSILE to 145f,       // 0.69 sn — "yol alir", israf olabilir
+        ProjectileType.FROST_PULSE to 260f    // 0.38 sn
+    )
+
+    /**
+     * Tek hedefli mermi carptiginda hedefi olmusse: isabet noktasinin bu kadar
+     * REF-px yakinindaki en yakin dusmana yonlenir.
+     *
+     * Onceden sinir YOKTU (`enemies.minByOrNull { mesafe }`): olen hedefe giden
+     * bir kursun haritanin obur ucundaki dusmana hasar tasiyordu. Fuze bu
+     * yonlendirmeyi HIC kullanmaz (bkz. GameEngine.onProjectileImpact) — israf
+     * olmasi kimliginin parcasi.
+     */
+    const val PROJECTILE_REDIRECT_TOLERANCE_REF_PX = 45f
+
+    /**
+     * Dalga temizleme ikramiyesi (Tedarik).
+     *
+     * Faz 10: motorda ciplak `35` olarak duruyordu — ekonominin tek-kaynak
+     * kuralini ihlal ediyordu ve bolum uzunluguyla sessizce buyuyordu (L1'de
+     * 175, L8'de 315). Ekonomi ajaninin olcumune gore 18'e cekildi
+     * (SupplyBudgetModel.WAVE_CLEAR_SUPPLY_BONUS ile ayni olmasi
+     * BalanceConsistencyTest'te kilitli).
+     */
+    const val WAVE_CLEAR_SUPPLY_BONUS = 18
+
+    // ========================================================================
+    // Faz 10 — DUSMAN ODULLERI x1/3 (ECONOMY_SPEC 9 madde 2)
+    //
+    // Ekonomi ajaninin teshisi: baskin kaldirac baslangic Tedariki DEGIL,
+    // oldurme geliriydi. Gatling 60 Tedarik, piyade 12 oduyordu -> **5 oldurme
+    // = 1 kule**; bir dalga 6-14 piyade getirdigi icin her dalga 1-3 kule
+    // finanse ediyordu. Yeni tabloda bir kule ~15 oldurme eder.
+    //
+    // Olcek TAM OLARAK 1/3 secildi (0.375 degil): boylece her odul 3'e tam ya
+    // da tama yakin bolunur ve dusmanlarin BIRBIRINE GORELI degeri korunur
+    // (piyade 1.00 / kosucu 1.25 / tank 5.00 birebir ayni). 0.375 zirhliyi
+    // piyadeye gore %18 degerlendirip hedef secimini sessizce bozardi.
+    //
+    // Kule kimlikleri ve hedef secimi DEGISMEZ; yalnizca akis hizi duser.
+    //
+    // ------------------------------------------------------------------------
+    // Faz 10 — DUSMAN CANI x3.5 (TABAN KALIBRASYONU)
+    //
+    // INFANTRY 75->260 · FAST 45->160 · SHIELDED 150->525
+    // ARMORED 220->770 · TANK 580->2030 · COMMAND_TANK 2600->9100
+    //
+    // "ZORLUGU HP SISIREREK YUKSELTME" YASAGIYLA CELISMIYOR — ve bu ayrim
+    // onemli oldugu icin burada duruyor:
+    //
+    // LEVEL_DESIGN E'nin yasakladigi sey **bolumler arasi** artisi HP ile
+    // yapmaktir: 8. bolumu 7'den zor yapmak icin ayni dusmani sismanlatmak
+    // tembelliktir, cunku oyuncuya yeni bir problem vermez. O kural aynen
+    // gecerli ve kampanya egrisi hâlâ KOMPOZISYONLA yurutuluyor (bkz.
+    // WaveDefinitions: tanitim sirasi, kadans, zirh karisimi).
+    //
+    // Buradaki sorun bambaska: **taban olcek yanlis kalibre edilmisti.** Kule
+    // DPS'i ile dusman cani arasinda ~7 katlik uyumsuzluk olculdu
+    // (docs/tools/difficulty_audit.py: bolum 7 arz/talep = 8.23). Bu bir zorluk
+    // egrisi karari degil, olcu birimi hatasi; TEK SEFERLIK ve TUM dusmanlara
+    // AYNI carpanla uygulanan bir duzeltme. Uniform oldugu icin:
+    //   · dusmanlarin birbirine goreli tehdidi DEGISMEZ (AEHP siralamasi ayni),
+    //   · kule uzmanlasmasi DEGISMEZ (oranlar korunur),
+    //   · bolumler arasi egri DEGISMEZ (hepsi ayni carpanla olcekleniyor).
+    //
+    // Zirh, hiz, odul ve boyut DEGISMEDI.
+    // ------------------------------------------------------------------------
+    // ========================================================================
     val ENEMY_SPECS: Map<EnemyType, EnemyStats> = mapOf(
         EnemyType.INFANTRY to EnemyStats(
             type = EnemyType.INFANTRY,
             name = "Infantry Squad",
-            maxHp = 75f,
+            maxHp = 260f,   // 75 x3.5 (kalibrasyon)
             baseSpeed = 65f,
             armor = 0.0f,
-            rewardGold = 12,
+            rewardGold = 4,   // 12 -> 4 (x1/3, ECONOMY_SPEC 9.2)
             sizeRadius = 14f
         ),
         EnemyType.FAST_SOLDIER to EnemyStats(
             type = EnemyType.FAST_SOLDIER,
             name = "Scout Runner",
-            maxHp = 45f,
+            maxHp = 160f,   // 45 x3.5 (asagi yuvarlandi)
             baseSpeed = 115f,
             armor = 0.0f,
-            rewardGold = 15,
+            rewardGold = 5,   // 15 -> 5 (hiz primi korunuyor: piyadenin 1.25 kati)
             sizeRadius = 12f
         ),
+        // --------------------------------------------------------------------
+        // Faz 10 — ZIRH YUKSELTILDI (0.55 -> 0.78 ve 0.70 -> 0.86).
+        //
+        // Testci: "her kule hepsinde ise yariyor." Olculen sebep buydu: eski
+        // zirhla Gatling zirhli araca 39 DPS veriyordu ve **altin basina** en
+        // iyi secenek olmaya devam ediyordu (0.66 DPS/altin, fuzenin 0.51'ine
+        // karsi) — yani zirhli dusman bir KARSI-KOYMA degil sadece daha kalin
+        // bir piyadeydi. Yeni degerlerle Gatling 19.3 DPS'e duser (0.32/altin),
+        // fuze 54.0'a cikar (0.47/altin): oyuncu can barinin kursun altinda
+        // KIMILDAMADIGINI gorur ve muhimmat degistirir.
+        //
+        // maxHp ve hiz DEGISMEDI: zorluk "HP sismesi" ile degil kompozisyon
+        // zorunlulugu ile artiyor (LEVEL_DESIGN E). Cannon splash'i zirhi
+        // bypass ettigi icin (DECISIONS B2) bolum 3'te acilan Cannon, bolum
+        // 5'te gelen zirhli araca gecerli bir cevap olarak KALIR — kilit
+        // tablosunun tutarliligi bunun uzerine kurulu.
+        // --------------------------------------------------------------------
         EnemyType.ARMORED_VEHICLE to EnemyStats(
             type = EnemyType.ARMORED_VEHICLE,
             name = "Armored Car",
-            maxHp = 220f,
+            maxHp = 770f,   // 220 x3.5
             baseSpeed = 50f,
-            armor = 0.55f, // 55% normal damage mitigation
-            rewardGold = 28,
+            armor = 0.78f, // kursun %22'sini gecirir -> Gatling'e karsi duvar
+            rewardGold = 9,   // 28 -> 9 (piyadenin ~2.25 kati)
             sizeRadius = 20f
         ),
         EnemyType.TANK to EnemyStats(
             type = EnemyType.TANK,
             name = "Heavy Tank",
-            maxHp = 580f,
+            maxHp = 2030f,  // 580 x3.5
             baseSpeed = 32f,
-            armor = 0.70f, // 70% normal damage mitigation
-            rewardGold = 60,
+            armor = 0.86f, // kursun %14 -> yalnizca patlama/delici ise yarar
+            rewardGold = 20,  // 60 -> 20 (piyadenin 5 kati, oran birebir korundu)
             sizeRadius = 26f
         ),
         // --------------------------------------------------------------------
@@ -356,20 +619,22 @@ object GameConfig {
         EnemyType.SHIELDED_TROOPER to EnemyStats(
             type = EnemyType.SHIELDED_TROOPER,
             name = "Shielded Trooper",
-            maxHp = 150f,
+            maxHp = 525f,   // 150 x3.5
             baseSpeed = 58f,
             armor = 0.62f,             // kursun neredeyse ise yaramaz
-            rewardGold = 22,
+            rewardGold = 7,            // 22 -> 7 (x1/3, asagi yuvarlandi)
             sizeRadius = 16f,
             splashVulnerability = 1.6f // ...ama patlama zirhi bypass eder ve 1.6x vurur
         ),
         EnemyType.COMMAND_TANK to EnemyStats(
             type = EnemyType.COMMAND_TANK,
             name = "Command Tank",
-            maxHp = 2600f,
+            maxHp = 9100f,  // 2600 x3.5
             baseSpeed = 30f,
-            armor = 0.72f,
-            rewardGold = 180,
+            // Boss zirhi TANK'in USTUNDE kalmak zorunda (BalanceConsistencyTest),
+            // tank 0.86'ya cikinca bu da 0.88'e cikti.
+            armor = 0.88f,
+            rewardGold = 60,  // 180 -> 60 (x1/3)
             sizeRadius = 38f
         )
     )
@@ -509,6 +774,30 @@ object GameConfig {
     const val ROUTE_RNG_SEED_BASE = 0x5F1D3A7L
 
     /**
+     * IKINCI KOL (catallanma) kacinci bolumden itibaren KULLANILIR.
+     *
+     * BULGU (beklenenin tersi): ikinci kol "kampanyada kullanilmiyor" degildi —
+     * `LevelData.routesForMapId` gercek catallanan haritalar icin (1, 2, 4, 11)
+     * iki rotayi da donduruyor ve motor spawn basina seed'li secim yapiyordu.
+     * Yani ikinci kol ZATEN acikti, ustelik **ogretici bolumlerde de** (harita
+     * 1, 2, 4 = bolum 1, 2, 4).
+     *
+     * Bu yanlisti: iki koldan eszamanli akis, tek kulenin kapsamasinin fiziksel
+     * olarak yetmedigi durum — yani bir BECERI sinavi. Oyuncu daha tek kolu
+     * savunmayi ogrenmeden bu sinava sokulmamali; ustelik ilk bolumlerde
+     * Tedarik yalnizca bir kuleye yetiyor, dolayisiyla ikinci kol "ogret" degil
+     * "cezalandir" oluyordu.
+     *
+     * Bu yuzden ilk 8 bolum TEK KOL (ogretme dilimi), 9. bolumden itibaren
+     * catallanma devreye girer. Secim hâlâ seed'li ve deterministik: RNG tek
+     * basina bir yenilgi sebebi olamaz, ayni bolum her oynanista ayni dizidir.
+     */
+    const val ALT_ROUTE_FIRST_LEVEL = 9
+
+    /** Bu bolumde catallanma (ikinci kol) devrede mi? */
+    fun usesAlternateRoutes(levelId: Int): Boolean = levelId >= ALT_ROUTE_FIRST_LEVEL
+
+    /**
      * Act II krater kisiti — LEVEL_DESIGN.md F.3 algoritmasi geometri uzerinde
      * BIR KEZ kosturuldu ve F.4 uyarinca donduruldu. Uretici betik ve dogrulama
      * tablosu: docs/CAMPAIGN_INTEGRATION.md.
@@ -534,6 +823,22 @@ object GameConfig {
         22 to listOf(3, 5, 9)             // harita 01 · 10 pad ->  7 kalir (%30)
     )
 
+    /**
+     * Faz 10 — BOLUM BAZINDA BASLANGIC TEDARIKI (ECONOMY_SPEC 9 madde 1).
+     *
+     * Eskiden 22 bolum de 150 ile basliyordu. Ilk bolumlerde bu, oyuncuya
+     * hazirlik fazinda **iki-uc kule birden** kurma imkani veriyordu; yani
+     * "hangi kuleyi once kurayim" karari hic olusmuyordu. Yeni tabloda L1'de
+     * tam bir Gatling parasi var: ikinci kule KAZANILIR.
+     *
+     * Ilk 6 bolum dısında (L7+) taban 150 olarak kalir — o noktada oyuncu meta
+     * yukseltmeleri ve daha pahali kadrolarla oynuyor.
+     *
+     * `SupplyBudgetModel.startingSupply(level)` ile ayni olmasi
+     * BalanceConsistencyTest ve SupplyBudgetTest'te KILITLI.
+     */
+    private val EARLY_STARTING_SUPPLY = listOf(80, 90, 110, 120, 140, 150)
+
     /** Bolum no -> konfigurasyon. Sira LEVEL_DESIGN.md B tablosu ile birebir. */
     val CAMPAIGN: List<LevelSpec> = buildList {
         // ---- ACT I: harita 01 -> 11, kisitsiz pad, gunduz -------------------
@@ -544,7 +849,8 @@ object GameConfig {
                     levelId = lv,
                     mapId = lv,
                     act = 1,
-                    deploymentCost = actIDeploymentCost[lv - 1]
+                    deploymentCost = actIDeploymentCost[lv - 1],
+                    startingSupply = EARLY_STARTING_SUPPLY.getOrElse(lv - 1) { INITIAL_GOLD }
                 )
             )
         }
