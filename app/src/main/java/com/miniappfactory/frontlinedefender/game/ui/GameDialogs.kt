@@ -128,24 +128,42 @@ fun MainMenuOverlay(
             }
 
             // Sound Toggle
-            IconButton(
-                onClick = {
-                    soundEnabled = !soundEnabled
-                    gameEngine.saveManager.soundEnabled = soundEnabled
-                    gameEngine.audioManager.isSoundEnabled = soundEnabled
-                },
-                modifier = Modifier
-                    .size(48.dp)
-                    .background(SleekSurfaceCard, CircleShape)
-                    .border(1.dp, SleekBorderLight, CircleShape)
-                    .testTag("sound_toggle_button")
-            ) {
-                // icon_settings: ses acik/kapali durumu alfa ile ayrisir
-                SpriteIcon(
-                    id = R.drawable.spr_ic_settings,
-                    size = 26.dp,
-                    contentDescription = stringResource(R.string.dialog_sound_toggle_desc),
-                    modifier = if (soundEnabled) Modifier else Modifier.alpha(0.35f)
+            //
+            // BUG (kullanici bildirdi): "baslangicta settings'e basamadim".
+            // Dugme calisiyordu ama DISLI ikonu bir ayarlar EKRANI bekletiyor ve
+            // tek geri bildirim ikonun soluklasmasiydi -> basildigi anlasilmiyordu.
+            // Cozum: durumu YAZIYLA soyle. Renk tek ayrim kanali olamaz
+            // (game-art erisilebilirlik kurali) — metin hem durumu hem islevi
+            // belirsizlige yer birakmadan veriyor.
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                IconButton(
+                    onClick = {
+                        soundEnabled = !soundEnabled
+                        gameEngine.saveManager.soundEnabled = soundEnabled
+                        gameEngine.audioManager.isSoundEnabled = soundEnabled
+                    },
+                    modifier = Modifier
+                        .size(48.dp)
+                        .background(SleekSurfaceCard, CircleShape)
+                        .border(1.dp, SleekBorderLight, CircleShape)
+                        .testTag("sound_toggle_button")
+                ) {
+                    SpriteIcon(
+                        id = R.drawable.spr_ic_settings,
+                        size = 26.dp,
+                        contentDescription = stringResource(R.string.dialog_sound_toggle_desc),
+                        modifier = if (soundEnabled) Modifier else Modifier.alpha(0.35f)
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = stringResource(
+                        if (soundEnabled) R.string.dialog_sound_on else R.string.dialog_sound_off
+                    ),
+                    color = if (soundEnabled) SleekTextAccent else SleekTextAccent.copy(alpha = 0.45f),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1
                 )
             }
         }
@@ -160,11 +178,12 @@ fun VictoryModal(
     val lives by gameEngine.lives.collectAsState()
     val score by gameEngine.score.collectAsState()
 
-    val stars = when {
-        lives >= 18 -> 3
-        lives >= 10 -> 2
-        else -> 1
-    }
+    // BUG: burada yildiz MUTLAK esikle (lives >= 18 / >= 10) YENIDEN
+    // hesaplaniyordu. Motor tarafi yuzdeye cevrildi (GDD B.3: %90/%50/>0) cunku
+    // us cani bolume ve meta yukseltmelere gore degisiyor. Iki ayri hesap
+    // oldugu icin modal, KAYDEDILEN yildizdan farkli bir sayi gosterebiliyordu.
+    // Tek dogru kaynak motor: hesabi tekrarlamak yerine sonucu okuyoruz.
+    val stars by gameEngine.lastEarnedStars.collectAsState()
 
     Box(
         modifier = Modifier

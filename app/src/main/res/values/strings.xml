@@ -171,4 +171,19 @@
     <string name="ad_reinforce_failed">Reinforcements could not deploy. Your progress is safe.</string>
     <string name="ad_reinforce_full">Reinforcements deployed: base restored to %1$d lives.</string>
     <string name="ad_reinforce_noad">No ad was available, but reinforcements deployed anyway: base restored to %1$d lives.</string>
+
+    <!-- Faz 10: rewarded teklif popup metinleri -->
+    <string name="ad_sheet_watch">WATCH AD</string>
+    <string name="ad_sheet_skip">NO THANKS</string>
+    <string name="ad_sheet_supply_title">SUPPLY REQUISITION</string>
+    <string name="ad_sheet_supply_body">Watch a short ad and HQ sends %1$d coin. If no ad is available you still get %2$d coin and your daily requisition is kept.</string>
+    <string name="ad_sheet_supply_remaining">%1$d of %2$d left today</string>
+    <string name="ad_sheet_double_title">DOUBLE PAYOUT</string>
+    <string name="ad_sheet_double_body">Watch a short ad to double this operation\'s coin payout. Your base payout is already banked either way.</string>
+    <string name="ad_sheet_reinforce_title">CALL REINFORCEMENTS</string>
+    <string name="ad_sheet_reinforce_body">Watch a short ad to restore your base to %1$d lives and continue this battle from the current wave.</string>
+
+    <!-- Faz 10: ses durumu etiketi (disli ikonu yanilticiydi) -->
+    <string name="dialog_sound_on">SOUND ON</string>
+    <string name="dialog_sound_off">SOUND OFF</string>
 </resources>

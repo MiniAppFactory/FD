@@ -140,4 +140,19 @@
     <string name="ad_reinforce_failed">Takviye gönderilemedi. İlerlemen güvende.</string>
     <string name="ad_reinforce_full">Takviye indi: üs canı %1$d oldu.</string>
     <string name="ad_reinforce_noad">Reklam bulunamadı ama takviye yine indi: üs canı %1$d oldu.</string>
+
+    <!-- Faz 10: rewarded teklif popup metinleri -->
+    <string name="ad_sheet_watch">REKLAMI İZLE</string>
+    <string name="ad_sheet_skip">GEREK YOK</string>
+    <string name="ad_sheet_supply_title">TEDARİK TALEBİ</string>
+    <string name="ad_sheet_supply_body">Kısa bir reklam izle, karargâh %1$d coin gönderir. Reklam bulunamazsa yine %2$d coin alırsın ve günlük hakkın harcanmaz.</string>
+    <string name="ad_sheet_supply_remaining">bugün %1$d / %2$d hak</string>
+    <string name="ad_sheet_double_title">ÇİFT ÖDEME</string>
+    <string name="ad_sheet_double_body">Kısa bir reklam izle, bu harekâtın coin ödülü ikiye katlanır. Taban ödülün her durumda hesabında.</string>
+    <string name="ad_sheet_reinforce_title">TAKVİYE ÇAĞIR</string>
+    <string name="ad_sheet_reinforce_body">Kısa bir reklam izle, üs canın %1$d olur ve savaş bulunduğun dalgadan devam eder.</string>
+
+    <!-- Faz 10: ses durumu etiketi (disli ikonu yanilticiydi) -->
+    <string name="dialog_sound_on">SES AÇIK</string>
+    <string name="dialog_sound_off">SES KAPALI</string>
 </resources>

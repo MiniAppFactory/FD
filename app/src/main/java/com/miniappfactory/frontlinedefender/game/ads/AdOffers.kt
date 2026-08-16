@@ -69,8 +69,8 @@ fun RewardedOfferSheet(
     body: String,
     onDismiss: () -> Unit,
     applyResult: (RewardedResult) -> String,
-    watchLabel: String = "WATCH AD",
-    skipLabel: String = "NO THANKS",
+    watchLabel: String = stringResource(R.string.ad_sheet_watch),
+    skipLabel: String = stringResource(R.string.ad_sheet_skip),
     remainingLabel: String? = null
 ) {
     val activity = LocalContext.current.findActivity()

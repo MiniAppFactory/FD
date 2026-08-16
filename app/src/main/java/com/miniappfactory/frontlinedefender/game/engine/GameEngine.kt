@@ -533,6 +533,23 @@ class GameEngine(
             _screenShake.value = Offset.Zero
         }
 
+        // Gorsel efektlerin yaslanmasi — HER FAZDA kosar.
+        //
+        // BUG (cihazda bulundu): bu blok eskiden "5. Visual Effects Updating"
+        // adiminda, asagidaki PREPARATION erken-return'unun ALTINDAYDI. Dalganin
+        // son patlamasi olusuyor, hemen ardindan dalga bitip state PREPARATION'a
+        // geciyor ve efekt bir daha hic yaslanmadigi icin EKRANDA DONUP KALIYORDU
+        // (sonraki dalga baslayana kadar). Efektler tamamen kozmetik; simulasyon
+        // dursa da sonmeleri gerekir.
+        val effectIterator = visualEffects.iterator()
+        while (effectIterator.hasNext()) {
+            val fx = effectIterator.next()
+            fx.ageSeconds += dt
+            if (fx.ageSeconds >= fx.maxAgeSeconds) {
+                effectIterator.remove()
+            }
+        }
+
         // Preparation phase
         if (_gameState.value == GameState.PREPARATION) {
             _preparationTimer.value -= dt
@@ -672,15 +689,8 @@ class GameEngine(
             }
         }
 
-        // 5. Visual Effects Updating
-        val effectIterator = visualEffects.iterator()
-        while (effectIterator.hasNext()) {
-            val fx = effectIterator.next()
-            fx.ageSeconds += dt
-            if (fx.ageSeconds >= fx.maxAgeSeconds) {
-                effectIterator.remove()
-            }
-        }
+        // 5. Gorsel efektler YUKARIDA, PREPARATION erken-return'unun USTUNDE
+        //    guncelleniyor (bkz. oradaki bug notu).
 
         // 6. Wave Completion Check
         if (pendingWaveSpawns.isEmpty() && enemies.isEmpty() && _gameState.value == GameState.WAVE_RUNNING) {

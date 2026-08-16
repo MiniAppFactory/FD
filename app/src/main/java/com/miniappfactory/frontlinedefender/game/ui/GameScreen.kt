@@ -9,6 +9,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
+import com.miniappfactory.frontlinedefender.R
 import androidx.compose.ui.unit.dp
 import com.miniappfactory.frontlinedefender.game.model.GameConfig
 import androidx.lifecycle.Lifecycle
@@ -305,14 +307,17 @@ fun GameScreen(
                     RewardedOfferSheet(
                         adHost = adHost,
                         placement = RewardedPlacement.SUPPLY_DROP,
-                        title = "SUPPLY REQUISITION",
-                        body = "Watch a short ad and HQ sends " +
-                            "${AdPolicyConfig.SUPPLY_DROP_FULL_COIN} coin. " +
-                            "If no ad is available you still get " +
-                            "${AdPolicyConfig.SUPPLY_DROP_REDUCED_COIN} coin and your " +
-                            "daily requisition is kept.",
-                        remainingLabel = "$supplyRemaining of " +
-                            "${AdPolicyConfig.SUPPLY_DROP_DAILY_LIMIT} left today",
+                        title = stringResource(R.string.ad_sheet_supply_title),
+                        body = stringResource(
+                            R.string.ad_sheet_supply_body,
+                            AdPolicyConfig.SUPPLY_DROP_FULL_COIN,
+                            AdPolicyConfig.SUPPLY_DROP_REDUCED_COIN
+                        ),
+                        remainingLabel = stringResource(
+                            R.string.ad_sheet_supply_remaining,
+                            supplyRemaining,
+                            AdPolicyConfig.SUPPLY_DROP_DAILY_LIMIT
+                        ),
                         applyResult = { applySupplyDrop(context, it, rewardBridge) },
                         onDismiss = {
                             supplyDropOfferOpen = false
@@ -375,10 +380,8 @@ fun GameScreen(
                                 RewardedOfferSheet(
                                     adHost = adHost,
                                     placement = RewardedPlacement.DOUBLE_PAYOUT,
-                                    title = "DOUBLE PAYOUT",
-                                    body = "Watch a short ad to double this operation's " +
-                                        "coin payout. Your base payout is already banked " +
-                                        "either way.",
+                                    title = stringResource(R.string.ad_sheet_double_title),
+                                    body = stringResource(R.string.ad_sheet_double_body),
                                     applyResult = { applyDoublePayout(context, it, rewardBridge) },
                                     onDismiss = {
                                         doublePayoutOfferOpen = false
@@ -405,10 +408,11 @@ fun GameScreen(
                                 RewardedOfferSheet(
                                     adHost = adHost,
                                     placement = RewardedPlacement.REINFORCEMENT,
-                                    title = "CALL REINFORCEMENTS",
-                                    body = "Watch a short ad to restore your base to " +
-                                        "${AdPolicyConfig.REINFORCEMENT_LIVES} lives and " +
-                                        "continue this battle from the current wave.",
+                                    title = stringResource(R.string.ad_sheet_reinforce_title),
+                                    body = stringResource(
+                                        R.string.ad_sheet_reinforce_body,
+                                        AdPolicyConfig.REINFORCEMENT_LIVES
+                                    ),
                                     applyResult = { applyReinforcement(context, it, rewardBridge) },
                                     onDismiss = {
                                         reinforcementOfferOpen = false
