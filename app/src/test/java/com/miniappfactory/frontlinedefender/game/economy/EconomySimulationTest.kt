@@ -190,14 +190,31 @@ class EconomySimulationTest {
         PlayerWallet(coins = coins, unlockedLevels = unlocked, clearedLevels = cleared)
 
     @Test
-    fun reserveEqualsNextLockedLevelCost() {
+    fun reserveOnlyHoldsBackWhatFutureLevelRewardsCannotCover() {
+        // KURAL DEGISTI (cihazda bulunan denge hatasi):
+        //
+        // Eskiden rezerv = siradaki kilit bedeli, oyuncunun NEREDE oldugundan
+        // bagimsiz. `unlockedLevels` bastan 1..6 oldugu icin taze cuzdanda bile
+        // gate=7 ve rezerv=100 cikiyordu; oyuncu 2. bolumde 100 coin'le
+        // Cephanelik'i acinca BES KARTIN HEPSI "coin eksik" gosteriyordu.
+        //
+        // Rezervin korudugu sey "oyuncu kapiya vardiginda parasi olsun". Kapiya
+        // kadar temizlenecek her bolum en az REWARD_BASE oder, yani garantili
+        // gelirdir. Rezerv = kapi bedeli - bu garantili gelir.
         val fresh = PlayerWallet()
         assertEquals(7, firstLockedLevel(fresh.unlockedLevels))
-        assertEquals(100, reserveFor(fresh))
+        // 6 bolum temizlenmemis x 140 = 840 >= 100 -> hicbir sey tutulmaz.
+        assertEquals("kapi 5 bolum uzaktayken rezerv 0 olmali", 0, reserveFor(fresh))
 
-        val upTo12 = walletAt(0, (1..12).toSet())
-        assertEquals(13, firstLockedLevel(upTo12.unlockedLevels))
-        assertEquals(165, reserveFor(upTo12))
+        // Kapinin HEMEN oncesinde projeksiyon 0'a duser, rezerv tam bedele cikar.
+        val atGate = walletAt(0, (1..6).toSet(), (1..6).toSet())
+        assertEquals(7, firstLockedLevel(atGate.unlockedLevels))
+        assertEquals("kapinin onunde tam bedel tutulur", 100, reserveFor(atGate))
+
+        // Yuksek kapi, tek bolum kalmis: 350 - 140 = 210 tutulur.
+        val nearL22 = walletAt(0, (1..21).toSet(), (1..20).toSet())
+        assertEquals(22, firstLockedLevel(nearL22.unlockedLevels))
+        assertEquals(lockCost(22) - EconomyConfig.REWARD_BASE, reserveFor(nearL22))
     }
 
     @Test

@@ -3,6 +3,7 @@ package com.miniappfactory.frontlinedefender.game.engine
 import androidx.compose.ui.geometry.Offset
 import com.miniappfactory.frontlinedefender.game.audio.AudioManager
 import com.miniappfactory.frontlinedefender.game.data.SaveManager
+import com.miniappfactory.frontlinedefender.game.economy.EconomyConfig
 import com.miniappfactory.frontlinedefender.game.model.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -88,6 +89,37 @@ class GameEngine(
 
     /** Aktif bolumun OLCULMUS harita geometrisi (normalize koordinatlar). */
     private var activeLevel: LevelData = LevelData.forMapId(GameConfig.MAP_FALLBACK_ID)
+
+    // ------------------------------------------------------------------------
+    // META YUKSELTMELER — kalici ilerlemenin oynanisa YANSIDIGI yer.
+    //
+    // Bunlar olmadan yukseltme dukkanini acmak, calismayan bir sey satmak
+    // olurdu. Bolum yuklenirken BIR KEZ okunur; savas icinde degismez.
+    // ------------------------------------------------------------------------
+    private var metaDamageMultiplier: Float = 1f
+    private var metaRangeMultiplier: Float = 1f
+    private var metaSalvageRate: Float = 0.70f
+    private var metaSupplyBonus: Int = 0
+    private var metaLivesBonus: Int = 0
+
+    /** Aktif turun (Act) dusman carpanlari. */
+    private var actHpMul: Float = 1f
+    private var actRewardMul: Float = 1f
+
+    /**
+     * Etkiler `MetaUpgrades`'in KENDI turetilmis alanlarindan okunur, burada
+     * yeniden hesaplanmaz. Ayni matematigi iki yerde tutmak tam olarak AEHP
+     * hatasinin sebebiydi (tablo elle yaziliydi, karar degisti, tablo kaldi).
+     */
+    private fun refreshMetaUpgrades() {
+        val m = saveManager.loadMetaUpgrades()
+        metaDamageMultiplier = m.damageMultiplier.toFloat()
+        metaRangeMultiplier = m.rangeMultiplier.toFloat()
+        metaSalvageRate = m.salvageRatio.toFloat()
+        // Taban degerler LevelSpec'ten geliyor; burada yalnizca EK kismi lazim.
+        metaSupplyBonus = m.startingSupply - EconomyConfig.BASE_STARTING_SUPPLY
+        metaLivesBonus = m.maxBaseHealth - EconomyConfig.BASE_MAX_HEALTH
+    }
 
     /** Aktif bolumun dalga listesi — WaveDefinitions.CAMPAIGN'den. */
     private var levelWaves: List<GameConfig.WaveData> = emptyList()
@@ -261,6 +293,11 @@ class GameEngine(
         levelSpec = spec
         _currentLevelId.value = spec.levelId
 
+        // Kalici ilerleme + tur olceklendirmesi bolum basinda okunur.
+        refreshMetaUpgrades()
+        actHpMul = GameConfig.actHpMultiplier(spec.act)
+        actRewardMul = GameConfig.actRewardMultiplier(spec.act)
+
         activeMapId = if (spec.mapId in GameConfig.SHIPPED_MAP_IDS) {
             spec.mapId
         } else {
@@ -290,8 +327,9 @@ class GameEngine(
 
         loadLevel(GameConfig.levelSpec(levelNo))
 
-        _gold.value = levelSpec.startingSupply
-        _lives.value = levelSpec.maxBaseLives
+        // Meta yukseltmeler taban degerin USTUNE biner.
+        _gold.value = levelSpec.startingSupply + metaSupplyBonus
+        _lives.value = levelSpec.maxBaseLives + metaLivesBonus
         _score.value = 0
         _currentWaveIndex.value = 0
         _gameSpeed.value = 1.0f
@@ -430,7 +468,10 @@ class GameEngine(
             buildSpotId = spot.id,
             posX = spot.normX,
             posY = spot.normY,
-            totalInvestedGold = spec.buildCost
+            totalInvestedGold = spec.buildCost,
+            damageMultiplier = metaDamageMultiplier,
+            rangeMultiplier = metaRangeMultiplier,
+            salvageRate = metaSalvageRate
         )
         towers.add(newTower)
 
@@ -752,11 +793,15 @@ class GameEngine(
                 posX = spawnPt.x,
                 posY = spawnPt.y,
                 routeIndex = routeIndex,
-                hp = spec.maxHp,
-                maxHp = spec.maxHp,
+                // ACT OLCEKLENDIRMESI: ikinci turda ayni harita tekrar
+                // gorunuyor, dusman da guclenmeli yoksa tekrar gibi hissedilir.
+                // HIZ olceklenmez (okunabilirlik + "sadece HP/hiz artirma"
+                // yasagi); odul HP ile birlikte artar ki ekonomi tempo tutsun.
+                hp = spec.maxHp * actHpMul,
+                maxHp = spec.maxHp * actHpMul,
                 baseSpeed = spec.baseSpeed,
                 armor = spec.armor,
-                rewardGold = spec.rewardGold,
+                rewardGold = (spec.rewardGold * actRewardMul).toInt().coerceAtLeast(1),
                 radius = spec.sizeRadius
             )
         )

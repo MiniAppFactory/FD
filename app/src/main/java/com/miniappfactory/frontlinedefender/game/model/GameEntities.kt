@@ -16,15 +16,32 @@ data class TowerEntity(
     var targetingMode: GameConfig.TargetingMode = GameConfig.TargetingMode.FIRST,
     var recoilOffsetPx: Float = 0f,
     var killsCount: Int = 0,
-    var totalDamageDealt: Float = 0f
+    var totalDamageDealt: Float = 0f,
+
+    // ------------------------------------------------------------------------
+    // META YUKSELTME CARPANLARI (kalici ilerleme).
+    //
+    // Kule insa edilirken motor tarafindan BIR KEZ verilir. Carpanlari
+    // getter'larin ICINE koymak bilincli: boylece hem simulasyon hem de kule
+    // paneli (SelectedTowerInspector) AYNI degeri okur. Kullanim yerlerinde
+    // carpmak, oyuncuya panelde 14 hasar gosterip aslinda 17 vurmak gibi
+    // sessiz tutarsizliklar uretirdi.
+    //
+    // Varsayilan 1.0 / 0.70: yukseltme yoksa davranis oncekiyle BIREBIR ayni.
+    // ------------------------------------------------------------------------
+    val damageMultiplier: Float = 1f,
+    val rangeMultiplier: Float = 1f,
+    val salvageRate: Float = 0.70f
 ) {
     val stats: GameConfig.TowerStats get() = GameConfig.TOWER_SPECS[type]!!
 
-    val range: Float get() = if (level == 1) stats.level1Range else stats.level2Range
-    val damage: Float get() = if (level == 1) stats.level1Damage else stats.level2Damage
+    val range: Float
+        get() = (if (level == 1) stats.level1Range else stats.level2Range) * rangeMultiplier
+    val damage: Float
+        get() = (if (level == 1) stats.level1Damage else stats.level2Damage) * damageMultiplier
     val fireRate: Float get() = if (level == 1) stats.level1FireRate else stats.level2FireRate
     val upgradeCost: Int? get() = if (level == 1) stats.level2UpgradeCost else null
-    val sellValue: Int get() = (totalInvestedGold * 0.70f).toInt()
+    val sellValue: Int get() = (totalInvestedGold * salvageRate).toInt()
 }
 
 data class SlowStatus(

@@ -11,6 +11,17 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import com.miniappfactory.frontlinedefender.R
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
+import com.miniappfactory.frontlinedefender.ui.theme.SleekGold
 import androidx.compose.ui.unit.dp
 import com.miniappfactory.frontlinedefender.game.model.GameConfig
 import androidx.lifecycle.Lifecycle
@@ -144,6 +155,9 @@ fun GameScreen(
      * Taban odul reklamdan ONCE yatirilir (GDD G.4), bu yuzden burada tutuyoruz.
      */
     var lastClearResult by remember { mutableStateOf<LevelClearResult?>(null) }
+
+    /** Cephanelik (meta yukseltme dukkani) acik mi — LEVEL_SELECT ustunde katman. */
+    var shopOpen by remember { mutableStateOf(false) }
 
     // ----------------------------------------------------------------------
     // Faz 5 — REKLAM CAGRI YERLERI
@@ -292,6 +306,24 @@ fun GameScreen(
                             onPlayLevel = { levelNo -> gameEngine.startNewGame(levelNo) },
                             onBack = { gameEngine.returnToMainMenu() }
                         )
+                        // CEPHANELIK girisi — coin'in gidecek gorunur yeri.
+                        // Sag ust kosede, coin bakiyesinin hemen ALTINDA:
+                        // "param var" ile "harcayacak yer" yan yana duruyor.
+                        Text(
+                            text = stringResource(R.string.shop_open),
+                            color = SleekGold,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 13.sp,
+                            maxLines = 1,
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(top = 62.dp, end = 20.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Color(0x334C7A2E))
+                                .clickable { shopOpen = true }
+                                .padding(horizontal = 14.dp, vertical = 7.dp)
+                                .testTag("open_armory")
+                        )
                     }
                     // R1 seridi banner ile bolum kartlari ARASINDA: hicbir
                     // oynanis/navigasyon butonu reklama bitisik durmaz.
@@ -301,6 +333,15 @@ fun GameScreen(
                         onRequest = { supplyDropOfferOpen = true }
                     )
                     BannerAdSlot(enabled = bannerEnabled, guardGapDp = 12.dp)
+                }
+
+                // Cephanelik TAM EKRAN katman: acikken bolum kartlari ve R1
+                // seridi erisilemez olur, boylece kazara sevk/reklam olmaz.
+                if (shopOpen) {
+                    UpgradeShopScreen(
+                        progress = campaignProgress,
+                        onBack = { shopOpen = false }
+                    )
                 }
 
                 if (supplyDropOfferOpen) {

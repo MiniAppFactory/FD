@@ -464,6 +464,34 @@ object GameConfig {
     const val MAP_ID_MIN = 1
     const val MAP_ID_MAX = 11
 
+    // ========================================================================
+    // ACT (TUR) OLCEKLENDIRMESI
+    //
+    // Kampanya 11 haritayi IKI TUR oynatir (22 bolum). Ikinci turda ayni harita
+    // tekrar gorunur; sadece gece overlay'i ve kapali pad'lerle degil, DUSMANIN
+    // KENDISI de guclenmelidir, yoksa Act II bir tekrar gibi hissedilir.
+    //
+    // Yalnizca HP ve ODUL olceklenir. Hiz olceklenmez: hiz artisi hem
+    // okunabilirligi bozar hem de "zorlugu sadece HP/hiz artirarak yukseltme"
+    // yasagini ihlal eder (LEVEL_DESIGN E). Odul HP ile birlikte artar ki
+    // Act II'de ekonomi ayni tempoda kalsin.
+    //
+    // AEHP olcumleri TABAN degerlerden hesaplanir; buradaki carpan olcume
+    // girmez, yalnizca calisma aninda uygulanir.
+    // ========================================================================
+    fun actHpMultiplier(act: Int): Float = when {
+        act <= 1 -> 1.0f
+        act == 2 -> 1.55f
+        else -> 1.55f + 0.45f * (act - 2)   // Act III+ (v1.1) icin hazir
+    }
+
+    fun actRewardMultiplier(act: Int): Float = when {
+        act <= 1 -> 1.0f
+        act == 2 -> 1.30f
+        else -> 1.30f + 0.20f * (act - 2)
+    }
+
+
     /**
      * Yildiz esikleri **YUZDE** cinsindendir, mutlak can degil. Us cani bolume ve
      * meta yukseltmelere gore degistigi icin (`LevelSpec.maxBaseLives`, GDD: 20 ->

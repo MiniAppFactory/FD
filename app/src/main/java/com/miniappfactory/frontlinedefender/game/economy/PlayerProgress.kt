@@ -286,7 +286,35 @@ fun firstLockedLevel(unlockedLevels: Set<Int>): Int? =
 fun reserveFor(nextLockedLevel: Int?): Int =
     if (nextLockedLevel == null) 0 else lockCost(nextLockedLevel)
 
-fun reserveFor(wallet: PlayerWallet): Int = reserveFor(firstLockedLevel(wallet.unlockedLevels))
+/**
+ * Cuzdana gore rezerv — **yalnizca gercekten gereken kadar**.
+ *
+ * SORUN (cihazda goruldu): `unlockedLevels` bastan 1..6'yi iceriyor, dolayisiyla
+ * `firstLockedLevel` daha ilk dakikada 7 donuyordu ve rezerv 100 oluyordu.
+ * Oyuncu 2. bolumdeyken 100 coin'i varken harcanabilir bakiye 0 cikiyor, dukkanin
+ * BES KARTI da "coin eksik" gosteriyordu. Rezervin korudugu sey "oyuncu kapiya
+ * geldiginde parasi olsun"; kapi bes bolum uzaktayken tum bakiyeyi kilitlemek
+ * hicbir sey korumuyor, sadece ekonomiyi olduruyor.
+ *
+ * DOGRU HESAP: kapiya varmadan once kesin kazanilacak coin projeksiyonu
+ * dusulur. Her bolum en az [EconomyConfig.REWARD_BASE] oder (1 yildiz,
+ * gorev/reklam yok), dolayisiyla kapiya kadar temizlenecek her bolum garantili
+ * gelirdir. Rezerv = kapi bedeli − bu garantili gelir.
+ *
+ * Soft-lock garantisi KORUNUR ve daha da siki: projeksiyon TABAN odul uzerinden
+ * yapiliyor, gercek odul her zaman >= bu. Kapinin hemen oncesinde projeksiyon
+ * sifira dustugu icin rezerv tam bedele cikar.
+ */
+fun reserveFor(wallet: PlayerWallet): Int {
+    val gate = firstLockedLevel(wallet.unlockedLevels) ?: return 0
+    val bedel = lockCost(gate)
+
+    // Kapiya kadar HENUZ TEMIZLENMEMIS bolumler: her biri garantili gelir.
+    val kalanBolum = (1 until gate).count { it !in wallet.clearedLevels }
+    val garantiliGelir = kalanBolum * EconomyConfig.REWARD_BASE
+
+    return (bedel - garantiliGelir).coerceAtLeast(0)
+}
 
 /** Dukkanda gosterilen "harcanabilir bakiye". Negatife dusmez. */
 fun spendableBalance(coins: Int, reserve: Int): Int = maxOf(0, coins - reserve)

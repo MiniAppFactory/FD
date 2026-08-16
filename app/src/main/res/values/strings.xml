@@ -186,4 +186,26 @@
     <!-- Faz 10: ses durumu etiketi (disli ikonu yanilticiydi) -->
     <string name="dialog_sound_on">SOUND ON</string>
     <string name="dialog_sound_off">SOUND OFF</string>
+
+    <!-- Faz 11: yukseltme dukkani (Cephanelik) -->
+    <string name="shop_open">ARMORY</string>
+    <string name="shop_title">ARMORY</string>
+    <string name="shop_reserve">Reserve: %1$d</string>
+    <string name="shop_reserve_hint">Locked for the next operation — cannot be spent.</string>
+    <string name="shop_rank">RANK %1$d / %2$d</string>
+    <string name="shop_buy">UPGRADE  %1$d</string>
+    <string name="shop_max">MAX</string>
+    <string name="shop_short">NEED %1$d MORE</string>
+    <string name="shop_reserve_blocked">RESERVE</string>
+    <string name="shop_gated">CLEAR LEVEL %1$d</string>
+    <string name="shop_line_firepower">Firepower</string>
+    <string name="shop_line_firepower_fx">All tower damage +%1$d%%</string>
+    <string name="shop_line_optics">Optics</string>
+    <string name="shop_line_optics_fx">All tower range +%1$d%%</string>
+    <string name="shop_line_supply">Starting Supply</string>
+    <string name="shop_line_supply_fx">Battle starts with %1$d supply</string>
+    <string name="shop_line_fortification">Fortification</string>
+    <string name="shop_line_fortification_fx">Base integrity %1$d</string>
+    <string name="shop_line_salvage">Salvage</string>
+    <string name="shop_line_salvage_fx">Sell refund %1$d%%</string>
 </resources>
