@@ -321,20 +321,32 @@ class WaveDefinitionsDataTest {
     }
 
     @Test
-    fun noSingleWaveIsMoreThanTwiceAsHeavyAsThePreviousWaveInTheSameLevel() {
-        // Ani zorluk zıplamasi oyuncuyu hazirliksiz yakalar. Boss dalgalari
-        // MUAFTIR (boss'un tamami tek dusmanda toplaniyor).
+    fun noSingleWaveIsMoreThanTwiceAsHeavyAsAnythingSeenEarlierInTheSameLevel() {
+        // Bu testin korudugu sey: oyuncunun ANI BIR DUVARA carpmamasi.
+        //
+        // Olcut "onceki dalga" DEGIL, "o ana kadar gorulen EN AGIR dalga".
+        // Sebep gercek bir yanlis pozitif: L2 dalgalari 600 -> 360 -> 930 ilerliyor
+        // ve W2 kasitli olarak hafif bir "kosucu dersi" (az HP, yuksek hiz).
+        // Onceki-dalga olcutu bunu 2.6x ziplama diye raporluyordu, oysa oyuncu
+        // 930'dan once zaten 600'u karsilamisti — duvar yok. Kasitli nefes
+        // dalgasini cezalandirmak, tasarimi metrige uydurmak olurdu.
+        //
+        // Boss dalgalari MUAF (boss'un tamami tek dusmanda toplaniyor).
         WaveDefinitions.CAMPAIGN.forEach { (level, waves) ->
+            var seenMax = WaveMetrics.waveAehp(waves.first())
             for (i in 1 until waves.size) {
-                val hasBoss = waves[i].spawns.any { it.enemyType == EnemyType.COMMAND_TANK }
-                if (hasBoss) continue
-                val prev = WaveMetrics.waveAehp(waves[i - 1])
                 val curr = WaveMetrics.waveAehp(waves[i])
-                assertTrue(
-                    "bolum $level dalga ${i + 1}: AEHP ${"%.0f".format(prev)} -> " +
-                        "${"%.0f".format(curr)} (${"%.1f".format(curr / prev)}x zıplama)",
-                    curr <= prev * 2.5f
-                )
+                val hasBoss = waves[i].spawns.any { it.enemyType == EnemyType.COMMAND_TANK }
+                if (!hasBoss) {
+                    assertTrue(
+                        "bolum $level dalga ${i + 1}: o ana kadarki en agir dalga " +
+                            "${"%.0f".format(seenMax)} iken bu dalga " +
+                            "${"%.0f".format(curr)} (${"%.1f".format(curr / seenMax)}x) — " +
+                            "oyuncu hazirliksiz bir duvara carpiyor",
+                        curr <= seenMax * 2.5f
+                    )
+                }
+                if (curr > seenMax) seenMax = curr
             }
         }
     }

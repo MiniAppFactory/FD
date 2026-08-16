@@ -541,14 +541,41 @@ object WaveDefinitions {
  */
 object WaveMetrics {
 
-    val AEHP: Map<EnemyType, Float> = mapOf(
-        EnemyType.INFANTRY to 75f,
-        EnemyType.FAST_SOLDIER to 45f,
-        EnemyType.SHIELDED_TROOPER to 184f,
-        EnemyType.ARMORED_VEHICLE to 388f,
-        EnemyType.TANK to 1292f,
-        EnemyType.COMMAND_TANK to 6005f
-    )
+    /**
+     * Referans bataryanin hasar dagilimi (docs/LEVEL_DESIGN.md E.1):
+     * %50 kursun (MG), %25 patlama (Cannon), %25 delici (Fuze).
+     */
+    private const val W_BULLET = 0.50f
+    private const val W_EXPLOSIVE = 0.25f
+    private const val W_PIERCING = 0.25f
+
+    /**
+     * Zorluk olcumu icin ETKIN HP (Armor-Effective HP).
+     *
+     * ELLE YAZILMIYOR — `ENEMY_SPECS`'ten TURETILIYOR. Sebep gercek bir hata:
+     * tablo elle yazildiginda `ARMORED_VEHICLE` icin 388 diyordu; bu deger
+     * DECISIONS B2'den (patlama zirhi BYPASS eder) ONCE hesaplanmisti. B2 top
+     * mermisini zirha karsi etkili yapinca dogru deger 312.3'e dustu, ama tablo
+     * guncellenmedi ve `LEVEL_DESIGN.md`'nin butun zorluk egrisi zirhli
+     * dusmanlari oldugundan **%24 daha agir** sandi.
+     *
+     * Turetilmis oldugu icin artik `ENEMY_SPECS` degistiginde otomatik takip
+     * eder ve bir daha sessizce kayamaz.
+     */
+    val AEHP: Map<EnemyType, Float> by lazy {
+        val pierce = GameConfig.TOWER_SPECS
+            .getValue(GameConfig.TowerType.ANTI_ARMOR).armorPierce
+        EnemyType.values().associateWith { type ->
+            val spec = GameConfig.ENEMY_SPECS.getValue(type)
+            val bullet = 1f - spec.armor                        // zirh tam etkili
+            val explosive = spec.splashVulnerability            // zirhi bypass eder (B2)
+            val piercing = 1f - spec.armor * (1f - pierce)      // zirhin %85'i asilir
+            val multiplier = W_BULLET * bullet +
+                W_EXPLOSIVE * explosive +
+                W_PIERCING * piercing
+            spec.maxHp / multiplier
+        }
+    }
 
     fun waveAehp(wave: WaveData): Float =
         wave.spawns.sumOf { (AEHP[it.enemyType] ?: 0f).toDouble() }.toFloat()

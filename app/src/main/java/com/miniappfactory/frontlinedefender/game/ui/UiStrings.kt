@@ -123,11 +123,27 @@ fun actLabelRes(act: Int): Int =
  * kelimenin yarisini yiyor -> "KILIDI A…" anlamsiz. Cozum: metni kismak yerine
  * **olcegi** kucultmek.
  *
- * Calisma sekli: metin verilen `maxFontSize` ile cizilir; `onTextLayout`
- * tasma bildirdikce punto `stepSp` kadar dusurulur, `minFontSize`'da durur.
- * Olcum bitene kadar cizim bastirilir (`drawReady`), boylece buyuk-sonra-kucuk
- * ziplamasi gorunmez. Metin sonradan UZARSA (ornegin imha sayaci 9 -> 100)
- * dongu yeniden tetiklenir; punto monoton azalir.
+ * Calisma sekli: metin `maxFontSize` ile cizilir; `onTextLayout` tasma
+ * bildirdikce punto `stepSp` kadar dusurulur ve `minFontSize`'da durur. Metin
+ * sonradan UZARSA (ornegin imha sayaci 9 -> 100) dongu yeniden tetiklenir;
+ * punto monoton azalir.
+ *
+ * CIHAZDA OGRENILEN IKI TUZAK (docs/LOCALIZATION.md) — ikisi de burada
+ * bilincli olarak cozuldu, "duzeltme" diye geri alinmamali:
+ *
+ * 1. **`softWrap = false` KULLANILMAZ.** Compose'un `TextDelegate`'i softWrap
+ *    kapaliyken paragrafi SINIRSIZ genislikte olcer; `didOverflowWidth` o
+ *    zaman metin sigsa bile true doner ve etiket gereksizce en kucuk puntoya
+ *    iner. softWrap acikken tek satir siniri `didExceedMaxLines` uzerinden
+ *    `didOverflowHeight`'a yansir — dogru ve guvenilir sinyal budur.
+ *
+ * 2. **Olcum bitene kadar cizimi bastirmak (drawWithContent kapisi) YASAK.**
+ *    `onTextLayout` LAYOUT fazinda kosar; oradan yazilan bir state'i DRAW
+ *    fazinda okumak, bolum secme gibi kendiliginden kare uretmeyen DURAGAN
+ *    ekranlarda son gecersiz kilmanin kaybolmasina yol acti ve metin kalici
+ *    olarak GORUNMEZ kaldi (yer ayrildi, piksel cizilmedi — bkz.
+ *    docs/device_evidence/faz6_tr_01_mainmenu.png ilk cekim). Cizim her zaman
+ *    yapilir; en kotu durum kucultme oncesi tek karelik buyuk gorunumdur.
  *
  * @param resetKey punto hesabinin sifirlanma anahtari. Varsayilan `text`
  *   (statik etiketler icin dogru). Icinde surekli degisen sayi olan metinlerde
@@ -147,7 +163,6 @@ fun AutoShrinkText(
     stepSp: Float = 0.5f
 ) {
     var fontSize by remember(resetKey, maxFontSize) { mutableStateOf(maxFontSize) }
-    var drawReady by remember(resetKey, maxFontSize) { mutableStateOf(false) }
 
     Text(
         text = text,
@@ -156,16 +171,13 @@ fun AutoShrinkText(
         fontWeight = fontWeight,
         maxLines = maxLines,
         textAlign = textAlign,
-        softWrap = maxLines > 1,
         // Ellipsis DEGIL: tasmayi punto ile cozuyoruz, kirparak degil.
         overflow = TextOverflow.Clip,
-        modifier = modifier.drawWithContent { if (drawReady) drawContent() },
+        modifier = modifier,
         onTextLayout = { result ->
             val overflows = result.didOverflowWidth || result.didOverflowHeight
             if (overflows && fontSize.value - stepSp >= minFontSize.value) {
                 fontSize = (fontSize.value - stepSp).sp
-            } else {
-                drawReady = true
             }
         }
     )

@@ -157,4 +157,18 @@
     <string name="map_name_09">Rampart Slope</string>
     <string name="map_name_10">River Fork</string>
     <string name="map_name_11">Village Outskirts</string>
+
+    <!-- Faz 9: reklam teklif metinleri (AdOffers.kt) -->
+    <string name="ad_supply_bar_button">REQUEST SUPPLY DROP  (%1$d left today)</string>
+    <string name="ad_supply_bar_used">Supply requisition used up — resets at midnight</string>
+    <string name="ad_contacting_hq">Contacting HQ…</string>
+    <string name="ad_supply_full">Supply drop secured: +%1$d coin.</string>
+    <string name="ad_supply_reduced">HQ sent what it had: +%1$d coin. Your daily requisition was not used.</string>
+    <string name="ad_supply_unavailable">Supply lines are busy right now. Your daily requisition is still available.</string>
+    <string name="ad_double_full">Double payout approved: this operation\'s coin payout is x%1$d.</string>
+    <string name="ad_double_reduced">No ad was available. Your operation payout is already banked.</string>
+    <string name="ad_double_claimed">Double payout already claimed for this operation.</string>
+    <string name="ad_reinforce_failed">Reinforcements could not deploy. Your progress is safe.</string>
+    <string name="ad_reinforce_full">Reinforcements deployed: base restored to %1$d lives.</string>
+    <string name="ad_reinforce_noad">No ad was available, but reinforcements deployed anyway: base restored to %1$d lives.</string>
 </resources>

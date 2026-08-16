@@ -30,6 +30,8 @@ import com.miniappfactory.frontlinedefender.game.ads.applyReinforcement
 import com.miniappfactory.frontlinedefender.game.ads.applySupplyDrop
 import com.miniappfactory.frontlinedefender.game.ads.findActivity
 import com.miniappfactory.frontlinedefender.game.audio.AudioManager
+import com.miniappfactory.frontlinedefender.game.economy.CampaignProgressImpl
+import com.miniappfactory.frontlinedefender.game.economy.LevelClearResult
 import com.miniappfactory.frontlinedefender.game.data.SaveManager
 import com.miniappfactory.frontlinedefender.game.engine.GameEngine
 import com.miniappfactory.frontlinedefender.game.engine.GameState
@@ -128,7 +130,18 @@ fun GameScreen(
     // Faz 4 — kampanya ilerlemesi. Yildizlar SaveManager uzerinden KALICI;
     // coin bakiyesi ve coin ile kilit acma su an BELLEK-ICI (ekonomi ajani
     // kalici implementasyonu baglayacak, `CampaignProgress` sozlesmesi hazir).
-    val campaignProgress = remember(saveManager) { InMemoryCampaignProgress(saveManager) }
+    // Faz 9: KALICI ekonomi. `InMemoryCampaignProgress` iskelesi kaldirildi —
+    // coin bakiyesi, kilit durumu, meta yukseltmeler ve gorevler artik
+    // SaveManager uzerinden surece dayanikli. `CampaignProgressImpl` ayni
+    // `CampaignProgress` sozlesmesini uyguluyor, ustune ekonomi API'si ekliyor
+    // (onLevelCleared / grantSupplyDrop / gorevler).
+    val campaignProgress = remember(saveManager) { CampaignProgressImpl(saveManager) }
+
+    /**
+     * Son bolum sonucu — R3 Cift Odeme odulu bunun uzerine EK katman koyar.
+     * Taban odul reklamdan ONCE yatirilir (GDD G.4), bu yuzden burada tutuyoruz.
+     */
+    var lastClearResult by remember { mutableStateOf<LevelClearResult?>(null) }
 
     // ----------------------------------------------------------------------
     // Faz 5 — REKLAM CAGRI YERLERI
@@ -176,6 +189,15 @@ fun GameScreen(
                 // Sonuc ekrani gorunurken sessiz on-yukleme (GDD §G.4).
                 adHost.preload(appContext)
                 if (gameState == GameState.VICTORY) {
+                    // Faz 9: COIN ODULU BURADA yatirilir — reklamdan ONCE
+                    // (GDD G.4). `battleActive` bayragi bu blogun savas basina
+                    // YALNIZCA BIR KEZ kosmasini garantiler; recomposition
+                    // odulu tekrarlamaz.
+                    lastClearResult = campaignProgress.onLevelCleared(
+                        levelId = gameEngine.levelSpec.levelId,
+                        livesLeft = gameEngine.lives.value,
+                        maxLives = gameEngine.levelSpec.maxBaseLives
+                    )
                     doublePayoutOfferOpen =
                         adHost.isRewardedOffered(RewardedPlacement.DOUBLE_PAYOUT)
                 } else {
@@ -291,7 +313,7 @@ fun GameScreen(
                             "daily requisition is kept.",
                         remainingLabel = "$supplyRemaining of " +
                             "${AdPolicyConfig.SUPPLY_DROP_DAILY_LIMIT} left today",
-                        applyResult = { applySupplyDrop(it, rewardBridge) },
+                        applyResult = { applySupplyDrop(context, it, rewardBridge) },
                         onDismiss = {
                             supplyDropOfferOpen = false
                             rewardTick++
@@ -357,7 +379,7 @@ fun GameScreen(
                                     body = "Watch a short ad to double this operation's " +
                                         "coin payout. Your base payout is already banked " +
                                         "either way.",
-                                    applyResult = { applyDoublePayout(it, rewardBridge) },
+                                    applyResult = { applyDoublePayout(context, it, rewardBridge) },
                                     onDismiss = {
                                         doublePayoutOfferOpen = false
                                         rewardTick++
@@ -387,7 +409,7 @@ fun GameScreen(
                                     body = "Watch a short ad to restore your base to " +
                                         "${AdPolicyConfig.REINFORCEMENT_LIVES} lives and " +
                                         "continue this battle from the current wave.",
-                                    applyResult = { applyReinforcement(it, rewardBridge) },
+                                    applyResult = { applyReinforcement(context, it, rewardBridge) },
                                     onDismiss = {
                                         reinforcementOfferOpen = false
                                         rewardTick++

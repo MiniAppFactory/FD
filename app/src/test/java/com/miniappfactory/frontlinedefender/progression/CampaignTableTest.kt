@@ -292,16 +292,23 @@ class CampaignTableTest {
             assertTrue("SHIPPED_MAP_IDS gecersiz harita $id iceriyor", id in 1..11)
         }
 
+        // Faz 4b: 11 harita bitmap'inin TAMAMI pakete girdi
+        // (bg_level_01..11.webp, 1920px WebP q80, toplam 3.34 MB).
+        // Bu assertion bir GUARD: harita envanteri degisirse haber verir.
         assertEquals(
             "APK'daki harita bitmap sayisi degisti — res/drawable-nodpi ile " +
                 "karsilastir ve docs/QA_REPORT.md B-05'i guncelle",
-            setOf(1), GameConfig.SHIPPED_MAP_IDS
+            (1..11).toSet(), GameConfig.SHIPPED_MAP_IDS
         )
 
+        // Artik HICBIR bolum yedek haritaya dusmuyor: her bolum kendi
+        // haritasinin bitmap'ini ciziyor. Yedek mekanizmasi yerinde kaliyor
+        // ama tetiklenmemesi gerekiyor.
         val playedOnFallback = campaign.count { it.mapId !in GameConfig.SHIPPED_MAP_IDS }
         assertEquals(
-            "yedek haritaya dusen bolum sayisi degisti",
-            20, playedOnFallback
+            "yedek haritaya dusen bolum sayisi 0 OLMALI — bir bolum yedege " +
+                "dusuyorsa o haritanin bitmap'i eksik",
+            0, playedOnFallback
         )
     }
 

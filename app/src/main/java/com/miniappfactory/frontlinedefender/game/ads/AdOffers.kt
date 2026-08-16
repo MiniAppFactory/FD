@@ -26,6 +26,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import android.content.Context
+import com.miniappfactory.frontlinedefender.R
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -167,7 +170,7 @@ fun RewardedOfferSheet(
                     // Suresiz spinner YOK: RewardedAdManager 5 sn'de kendi
                     // reklamsiz dalina duser (AdPolicyConfig.LOAD_TIMEOUT_MS).
                     Text(
-                        text = "Contacting HQ...",
+                        text = stringResource(R.string.ad_contacting_hq),
                         color = Color(0xFFDCE8CC),
                         fontSize = 12.sp
                     )
@@ -258,7 +261,7 @@ fun SupplyDropBar(
                     .testTag("supply_drop_button")
             ) {
                 Text(
-                    text = "REQUEST SUPPLY DROP  ($remaining left today)",
+                    text = stringResource(R.string.ad_supply_bar_button, remaining),
                     color = Color(0xFFF2FFE4),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Black,
@@ -268,7 +271,7 @@ fun SupplyDropBar(
             }
         } else {
             Text(
-                text = "Supply requisition used up — resets at midnight",
+                text = stringResource(R.string.ad_supply_bar_used),
                 color = Color(0x99C5D6B4),
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold
@@ -283,35 +286,33 @@ fun SupplyDropBar(
 // ---------------------------------------------------------------------------
 
 /** R1 Tedarik Talebi. */
-fun applySupplyDrop(result: RewardedResult, bridge: AdRewardBridge): String =
+fun applySupplyDrop(context: Context, result: RewardedResult, bridge: AdRewardBridge): String =
     when (result.outcome) {
         RewardedOutcome.FULL_REWARD -> {
             bridge.grantCoins(AdPolicyConfig.SUPPLY_DROP_FULL_COIN, "rewarded_supply_drop_full")
-            "Supply drop secured: +${AdPolicyConfig.SUPPLY_DROP_FULL_COIN} coin."
+            context.getString(R.string.ad_supply_full, AdPolicyConfig.SUPPLY_DROP_FULL_COIN)
         }
         RewardedOutcome.REDUCED_REWARD -> {
             bridge.grantCoins(AdPolicyConfig.SUPPLY_DROP_REDUCED_COIN, "rewarded_supply_drop_reduced")
-            "HQ sent what it had: +${AdPolicyConfig.SUPPLY_DROP_REDUCED_COIN} coin. " +
-                "Your daily requisition was not used."
+            context.getString(R.string.ad_supply_reduced, AdPolicyConfig.SUPPLY_DROP_REDUCED_COIN)
         }
         // Arbitraj tavani doldu (veya hak tukendi): ilerleme kaybi YOK,
         // yalnizca bugun daha fazla azaltilmis odul verilmez.
         RewardedOutcome.UNAVAILABLE ->
-            "Supply lines are busy right now. Your daily requisition is still available."
+            context.getString(R.string.ad_supply_unavailable)
     }
 
 /** R3 Cift Odeme. Taban odul reklamdan ONCE verilmis olmalidir (GDD §G.4). */
-fun applyDoublePayout(result: RewardedResult, bridge: AdRewardBridge): String =
+fun applyDoublePayout(context: Context, result: RewardedResult, bridge: AdRewardBridge): String =
     when (result.outcome) {
         RewardedOutcome.FULL_REWARD -> {
             bridge.grantDoublePayout(AdPolicyConfig.DOUBLE_PAYOUT_MULTIPLIER)
-            "Double payout approved: this operation's coin payout is " +
-                "x${AdPolicyConfig.DOUBLE_PAYOUT_MULTIPLIER}."
+            context.getString(R.string.ad_double_full, AdPolicyConfig.DOUBLE_PAYOUT_MULTIPLIER)
         }
         RewardedOutcome.REDUCED_REWARD ->
-            "No ad was available. Your operation payout is already banked."
+            context.getString(R.string.ad_double_reduced)
         RewardedOutcome.UNAVAILABLE ->
-            "Double payout already claimed for this operation."
+            context.getString(R.string.ad_double_claimed)
     }
 
 /**
@@ -321,15 +322,13 @@ fun applyDoublePayout(result: RewardedResult, bridge: AdRewardBridge): String =
  * SURDURUR, fark yalnizca canin geri gelip gelmedigi degil — reklam yoksa da
  * can verilir (GDD §G.4: "Savas YINE devam eder").
  */
-fun applyReinforcement(result: RewardedResult, bridge: AdRewardBridge): String {
+fun applyReinforcement(context: Context, result: RewardedResult, bridge: AdRewardBridge): String {
     val applied = bridge.grantReinforcement(AdPolicyConfig.REINFORCEMENT_LIVES)
     return when {
-        !applied -> "Reinforcements could not deploy. Your progress is safe."
+        !applied -> context.getString(R.string.ad_reinforce_failed)
         result.outcome == RewardedOutcome.FULL_REWARD ->
-            "Reinforcements deployed: base restored to " +
-                "${AdPolicyConfig.REINFORCEMENT_LIVES} lives."
+            context.getString(R.string.ad_reinforce_full, AdPolicyConfig.REINFORCEMENT_LIVES)
         else ->
-            "No ad was available, but reinforcements deployed anyway: base " +
-                "restored to ${AdPolicyConfig.REINFORCEMENT_LIVES} lives."
+            context.getString(R.string.ad_reinforce_noad, AdPolicyConfig.REINFORCEMENT_LIVES)
     }
 }
