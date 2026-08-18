@@ -59,6 +59,28 @@ object AdPolicyConfig {
     const val EXIT_WATCHDOG_MS: Long = 15_000L
 
     /**
+     * **BANNER KAPALI** — urun karari (kullanici, 2026-08-18, cihazda test
+     * sirasinda).
+     *
+     * Gerekce olculdu: oyun `sensorLandscape` ve test cihazinda (Galaxy S8)
+     * yatay yukseklik **360 dp**. Adaptif banner ~50 dp, yani ekranin
+     * **%14'u**. Savas ekraninda zaten hicbir reklam yuzeyi yoktu (DECISIONS
+     * "Reklam doktrini" — baglayici); ana menu ve bolum secimde banner
+     * tutmanin bedeli, dar bir yatay ekranda oynanis disi her seyi yukari
+     * sikistirmak oluyordu.
+     *
+     * Gelir tarafi: banner bu oyunda gosterim basi en dusuk degeri ureten
+     * format. Interstitial (sonuc modali sonrasi) ve rewarded (R1 Tedarik
+     * Talebi, R2 Takviye, R3 Cift Odeme, R4 Guclendirici) **aynen duruyor**,
+     * yani gelir modeli kaldirilmadi; yalnizca en ucuz format, en pahaliya
+     * mal oldugu yerden cikarildi.
+     *
+     * Geri acmak icin bu sabiti `true` yapmak yeterli — cagri yerleri
+     * (`GameScreen`) ve `BannerAdView` altyapisi yerinde biraktildi.
+     */
+    const val BANNER_ENABLED: Boolean = false
+
+    /**
      * GDD §G.2/6 — zaferi kutsal olan boss bolumleri: bu bolumleri gecen
      * oyuncuya interstitial gosterilmez.
      *

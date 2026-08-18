@@ -2,6 +2,8 @@ package com.miniappfactory.frontlinedefender.game.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -279,25 +281,50 @@ fun VictoryModal(
     // Tek dogru kaynak motor: hesabi tekrarlamak yerine sonucu okuyoruz.
     val stars by gameEngine.lastEarnedStars.collectAsState()
 
-    Box(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xCC000000)),
         contentAlignment = Alignment.Center
     ) {
+        // CIHAZDA BULUNDU (2026-08-18, Galaxy S8 yatay 740x360 dp):
+        // modal EKRANA SIGMIYORDU ve **butonlar kirpiliyordu**. Oyuncu zaferi
+        // goruyor ama "SONRAKI BOLUM"e ulasamiyordu — bir sonraki bolume
+        // gecmenin tek yolu uygulamayi kapatip acmakti.
+        //
+        // Sebep: icerik (baslik 28sp + 44 dp yildizlar + dort satir istatistik
+        // + butonlar, aralarinda 16 dp) 360 dp'lik yatay yukseklige sigmiyor.
+        // Zafer ekrani buyudukce (kazanilan coin, yildiz ipucu) tasma
+        // kacinilmazdi.
+        //
+        // Cozum iki katmanli:
+        //  1) Yukseklik ekrana KILITLENIR (`heightIn`), icerik kaydirilir.
+        //  2) **Butonlar kaydirma alaninin DISINDA** — yani icerik ne kadar
+        //     buyurse buyusun butonlar HER ZAMAN gorunur. Kirpilacak sey
+        //     istatistik olur, cikis yolu asla.
+        val compact = maxHeight < 420.dp
+        val gap = if (compact) 8.dp else 16.dp
         Surface(
             shape = RoundedCornerShape(24.dp),
             color = SleekDarkBg,
             border = androidx.compose.foundation.BorderStroke(1.5.dp, SleekPrimaryGreen),
             modifier = Modifier
+                .padding(12.dp)
                 .widthIn(max = 420.dp)
-                .padding(20.dp)
+                .heightIn(max = maxHeight - 24.dp)
         ) {
             Column(
-                modifier = Modifier.padding(24.dp),
+                modifier = Modifier.padding(if (compact) 14.dp else 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(gap)
             ) {
+              Column(
+                modifier = Modifier
+                    .weight(1f, fill = false)
+                    .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(gap)
+              ) {
                 Text(
                     text = stringResource(R.string.dialog_victory_title),
                     color = SleekTextAccent,
@@ -387,6 +414,9 @@ fun VictoryModal(
                     }
                 }
 
+              } // <- kaydirilabilir istatistik alani biter
+
+                // BUTONLAR: kaydirma alaninin DISINDA, yani her zaman gorunur.
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)

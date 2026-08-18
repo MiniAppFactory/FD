@@ -1,5 +1,6 @@
 package com.miniappfactory.frontlinedefender.game.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -75,6 +76,20 @@ fun MissionsScreen(
     // acip kapatarak sifirlama URETILEMEZ.
     LaunchedEffect(progress) { progress.refreshMissions() }
 
+    // CIHAZDA BULUNDU (2026-08-18): oyuncu bu panelde KILITLI KALDI ve
+    // uygulamayi kapatip acmak zorunda kaldi.
+    //
+    // Panel tam ekran ve kok Box'i `clickable(onClick = {})` ile dokunusu
+    // YUTUYOR (arkadaki bolum kartlarina sizmasin diye — bu dogru). Ama o
+    // durumda tek cikis KAPAT butonuydu ve dokunma hedefi ~30 dp idi.
+    // Geri tusu de islenmedigi icin oyuncunun hicbir refleks kacisi yoktu:
+    // disari dokunmak calismiyor, geri tusu calismiyor, kucuk butonu
+    // isabet ettiremezse mahsur kaliyor.
+    //
+    // Kurallastirma: **dokunusu yutan her tam ekran katman geri tusunu
+    // ISLEMEK ZORUNDADIR.** Bugun yalnizca `SettingsScreen` isliyordu.
+    BackHandler(onBack = onClose)
+
     // Odul alindiktan sonra listeyi tazelemek icin. `todaysMissions` Compose
     // snapshot state'i uzerinden geliyor ama sahte implementasyonlarda
     // olmayabilir; bu sayac her iki durumda da yeniden cizimi garanti eder.
@@ -141,11 +156,14 @@ fun MissionsScreen(
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
+                    // Dokunma hedefi 14x6 dp ic bosluktaydi -> ~30 dp yukseklik,
+                    // Material'in 48 dp asgarisinin ALTINDA. Cihazda oyuncunun
+                    // paneli kapatamamasinin sebeplerinden biri buydu.
                     modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
+                        .clip(RoundedCornerShape(8.dp))
                         .background(Color(0x33FFFFFF))
                         .clickable { onClose() }
-                        .padding(horizontal = 14.dp, vertical = 6.dp)
+                        .padding(horizontal = 20.dp, vertical = 16.dp)
                         .testTag("missions_close")
                 )
             }

@@ -1,5 +1,6 @@
 package com.miniappfactory.frontlinedefender.game.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -46,6 +47,10 @@ fun UpgradeShopScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // Tam ekran katman: geri tusu ile de kapanmali. Bkz. MissionsScreen —
+    // cihazda oyuncu gorev panelinde mahsur kaldi (2026-08-18).
+    BackHandler(onBack = onBack)
+
     // Satin alma sonrasi kartlarin yenilenmesi icin. CampaignProgressImpl kendi
     // icinde mutableStateOf tutuyor ama rank/fiyat okumalari turetilmis oldugu
     // icin acik bir tetikleyici davranisi netlestiriyor.
