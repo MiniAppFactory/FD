@@ -14,6 +14,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -22,7 +23,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.miniappfactory.frontlinedefender.R
 import com.miniappfactory.frontlinedefender.game.data.SaveManager
+import com.miniappfactory.frontlinedefender.game.economy.Mission
+import com.miniappfactory.frontlinedefender.game.economy.WeeklyMission
 import com.miniappfactory.frontlinedefender.game.model.GameConfig
+import com.miniappfactory.frontlinedefender.ui.theme.SleekGold
 
 /**
  * Faz 4 — BOLUM SECME EKRANI.
@@ -62,6 +66,38 @@ interface CampaignProgress {
      * Su an bellek-ici; kalicilik ekonomi ajaninin isi.
      */
     fun tryUnlock(levelId: Int): Boolean
+
+    // ---------------------------------------------------------------------------
+    // Faz 14 — GOREV PANELI YUZEYI
+    //
+    // FUN_AUDIT: gorev sistemi eksiksiz yazilmisti ama HIC UI'si yoktu ve
+    // `claimCompletedMissions()` sifir kez cagriliyordu — tasarlanan haftalik
+    // ~3.620 coin'lik geri donus gelirinin TAMAMI oyuncuya ulasmiyordu.
+    //
+    // Hepsi varsayilanli: gorev tasimayan bir implementasyon (`InMemoryCampaignProgress`,
+    // test sahteleri) hicbir sey yazmadan derlenmeye devam eder ve panel girisi
+    // kendini gizler.
+    // ---------------------------------------------------------------------------
+
+    /** Bugunun 3 gorevi. Bos liste = panel girisi cizilmez. */
+    val todaysMissions: List<Mission> get() = emptyList()
+
+    /** Haftalik gorevler (GDD E.2 — iki adet). */
+    val weeklyMissions: List<WeeklyMission> get() = emptyList()
+
+    /** Saat suphesi damperi; panel odul etiketlerini buna gore gosterir. */
+    val missionRewardMultiplier: Double get() = 1.0
+
+    /** Tamamlanmis ama alinmamis gorev sayisi — rozetin ta kendisi. */
+    val claimableMissionCount: Int
+        get() = todaysMissions.count { it.isComplete && !it.claimed } +
+            weeklyMissions.count { it.isComplete && !it.claimed }
+
+    /** Odulleri oder ve "alindi" isaretler. Iki kez odemez. Donen deger coin. */
+    fun claimCompletedMissions(): Int = 0
+
+    /** Panel acilirken gun/hafta donusunu yeniden degerlendirir. */
+    fun refreshMissions() {}
 }
 
 /**
@@ -121,6 +157,14 @@ fun LevelSelectScreen(
         progress.isUnlocked(it.levelId) && progress.starsFor(it.levelId) == 0
     }?.levelId ?: 1
 
+    // Faz 14 — gorev paneli. Tam ekran KATMAN: aciken bolum kartlari ve alttaki
+    // R1 seridi erisilemez olur, boylece kazara sevk/reklam olmaz (Cephanelik
+    // katmaninin ayni deseni).
+    var missionsOpen by remember { mutableStateOf(false) }
+    val missionsAvailable = progress.todaysMissions.isNotEmpty() ||
+        progress.weeklyMissions.isNotEmpty()
+    val claimableMissions = progress.claimableMissionCount
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -163,6 +207,56 @@ fun LevelSelectScreen(
                 )
 
                 Spacer(Modifier.weight(1f))
+
+                // GOREVLER girisi — coin cipinin HEMEN SOLUNDA, sag bloga
+                // bitisik (kullanici geri bildirimi: "ikonlar saga yasli olsun,
+                // bosluk kalmasin"). Cephanelik girisi bu satirin ALTINDA, ayni
+                // sag kenarda duruyor; ucu birlikte tek bir sag sutun olusturur.
+                //
+                // Rozet: tamamlanmis ama ALINMAMIS gorev sayisi. Panel
+                // acilmadan da gorunur olmasi bu ekranin tek isi — FUN_AUDIT'in
+                // "kimse fark etmiyor" bulgusu tam olarak buydu.
+                if (missionsAvailable) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(
+                                if (claimableMissions > 0) Color(0x554C7A2E) else Color(0x334C7A2E)
+                            )
+                            .clickable { missionsOpen = true }
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                            .testTag("open_missions")
+                    ) {
+                        Text(
+                            text = stringResource(R.string.mission_open),
+                            color = if (claimableMissions > 0) Color(0xFFCDEB9E) else SleekGold,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            maxLines = 1
+                        )
+                        if (claimableMissions > 0) {
+                            Spacer(Modifier.width(6.dp))
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .size(17.dp)
+                                    .clip(RoundedCornerShape(9.dp))
+                                    .background(Color(0xFF9CD65B))
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.mission_badge, claimableMissions),
+                                    color = Color(0xFF14200C),
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Black,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.width(8.dp))
+                }
 
                 // Coin — SADECE bu ekranda. Savas HUD'inda asla.
                 Row(
@@ -236,6 +330,14 @@ fun LevelSelectScreen(
                     .fillMaxWidth()
                     .padding(bottom = 8.dp),
                 textAlign = TextAlign.Center
+            )
+        }
+
+        // Gorev paneli — TAM EKRAN katman, kok Box'in en ustunde.
+        if (missionsOpen) {
+            MissionsScreen(
+                progress = progress,
+                onClose = { missionsOpen = false }
             )
         }
     }

@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Faz 14 - GOREV PANELI (MissionsScreen.kt).
+
+  AYRI DOSYA: strings.xml ayni anda birden fazla ajan tarafindan duzenleniyor;
+  gorev metinleri burada izole tutulur. Anahtar semasi: mission_
+
+  Gorev basliklari TIP bazinda anahtarlanir, sablon id bazinda degil: ayni tip
+  farkli hedeflerle birden fazla sablonda geciyor (ornek KILL_ENEMIES hem 40
+  hem 120). Hedef sayisi bicim argumanidir, metne gomulmez; boylece hedef
+  degistiginde ceviri bozulmaz.
+-->
+<resources>
+
+    <!-- Bolum secme ekranindaki giris ve rozet -->
+    <string name="mission_open">MISSIONS</string>
+    <string name="mission_badge" translatable="false">%1$d</string>
+
+    <!-- Panel cercevesi -->
+    <string name="mission_title">MISSIONS</string>
+    <string name="mission_close">CLOSE</string>
+    <string name="mission_daily_header">DAILY</string>
+    <string name="mission_weekly_header">WEEKLY</string>
+    <string name="mission_progress" translatable="false">%1$d / %2$d</string>
+    <string name="mission_reward" translatable="false">+%1$d</string>
+    <string name="mission_claim">CLAIM</string>
+    <string name="mission_claim_all">CLAIM %1$d COIN</string>
+    <string name="mission_claimed">CLAIMED</string>
+    <string name="mission_nothing_to_claim">NOTHING TO CLAIM YET</string>
+    <string name="mission_all_bonus">Finish all three for a %1$d coin bonus.</string>
+    <string name="mission_reset_hint">Daily missions reset at midnight. Weekly missions reset Monday.</string>
+    <!-- GDD E.4 kural 4/5: saat suphesinde YALNIZCA gorev odulu damperlenir. -->
+    <string name="mission_damped">Clock check active: mission rewards pay %1$d%% today.</string>
+    <string name="mission_empty">No missions available yet. Clear a level to start.</string>
+    <string name="mission_claimed_toast">%1$d coin collected.</string>
+
+    <!-- Slot etiketleri (GDD E.1) -->
+    <string name="mission_slot_participation">TURNOUT</string>
+    <string name="mission_slot_volume">VOLUME</string>
+    <string name="mission_slot_skill">SKILL</string>
+
+    <!-- Gorev basliklari, MissionType bazinda -->
+    <string name="mission_type_complete_any_level">Clear %1$d level(s)</string>
+    <string name="mission_type_skip_prep_timer">Start %1$d waves early</string>
+    <string name="mission_type_kill_enemies">Destroy %1$d enemies</string>
+    <string name="mission_type_kill_armored">Destroy %1$d armored vehicles</string>
+    <string name="mission_type_kill_tanks">Destroy %1$d tanks</string>
+    <string name="mission_type_build_towers">Build %1$d towers</string>
+    <string name="mission_type_upgrade_towers">Upgrade towers %1$d times</string>
+    <string name="mission_type_earn_supply">Earn %1$d supply in one battle</string>
+    <string name="mission_type_three_stars">Clear a level with 3 stars</string>
+    <string name="mission_type_no_selling">Clear a level without selling a tower</string>
+    <string name="mission_type_high_health">Clear a level with the base almost intact</string>
+    <string name="mission_type_all_towers">Build every unlocked tower type in one battle</string>
+    <string name="mission_type_double_speed">Clear a level at double speed</string>
+    <string name="mission_type_weekly_levels">Complete %1$d levels this week</string>
+    <string name="mission_type_weekly_stars">Earn %1$d stars this week</string>
+
+</resources>

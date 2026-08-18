@@ -35,11 +35,26 @@ class SupplyBudgetTest {
      */
     @Test
     fun theEconomyBeforeTighteningWasMeasurablyFarTooFlush() {
+        // ESIK **BANDA BAGLANDI**, mutlak bir sayiya degil.
+        //
+        // Once `spi > 4.0` yaziyordu. O 4,0, o gunun bolum uzunluklarina (6-9
+        // dalga) gomulu bir sayiydi; bolumler 5-7 dalgaya inince ESKI ekonominin
+        // olculen SPI'si de dustu (L3 3,65) ve test, iddiasi hâlâ dogruyken
+        // kirildi. Iddia sudur: **eski ekonomi kabul edilebilir bandin USTUNDEYDI**.
+        // Bant (`SPI_TARGET_MAX`) dokumanin sahibi oldugu bir sayi, dolayisiyla
+        // esik artik bolum uzunlugundan bagimsiz.
         for (level in 1..6) {
-            val spi = SupplyBudgetModel.legacySupplyPressureIndex(level)
+            val legacy = SupplyBudgetModel.legacySupplyPressureIndex(level)
+            val today = SupplyBudgetModel.supplyPressureIndex(level)
             assertTrue(
-                "L$level sikilastirma oncesi SPI %.2f — sikayet yoksa test yanlis".format(spi),
-                spi > 4.0,
+                "L$level sikilastirma oncesi SPI %.2f — hedef bandin ustunde (%.1f) olmaliydi"
+                    .format(legacy, SupplyBudgetModel.SPI_TARGET_MAX),
+                legacy > SupplyBudgetModel.SPI_TARGET_MAX,
+            )
+            assertTrue(
+                "L$level: eski ekonomi bugunkunun (%.2f) en az 1,8 katini vermeliydi, verdigi %.2f"
+                    .format(today, legacy),
+                legacy >= today * 1.8,
             )
         }
     }
@@ -104,8 +119,14 @@ class SupplyBudgetTest {
         for (level in 1..SupplyBudgetModel.MODELLED_LEVELS) {
             val scale = SupplyBudgetModel.effectiveRewardScale(level)
             assertTrue(
-                "L$level etkin olcek %.3f — 0,32..0,36 bandi disinda".format(scale),
-                scale in 0.32..0.36,
+                // BANT 0,32..0,36 -> 0,31..0,34 (Faz 13, iki sebep):
+                //  1. Model artik 8 degil 55 bolumu kapsiyor; L9+ ilk kez olculuyor.
+                //  2. Odul carpani artik motorla AYNI aritmetikte (Float) hesaplaniyor;
+                //     Double'da 20 x 1,3 -> 25 cikiyordu, motorda 26. Tank/boss
+                //     agirlikli bolumlerde bu olcegi kaydiriyordu.
+                // Olculen aralik: 0,319 (L18) .. 0,333 (L1). Nominal hedef 1/3.
+                "L$level etkin olcek %.3f — 0,31..0,34 bandi disinda".format(scale),
+                scale in 0.31..0.34,
             )
         }
     }
@@ -128,17 +149,76 @@ class SupplyBudgetTest {
     // 2. ONERILEN SAYILAR — ECONOMY_SPEC A tablosu birebir
     // =================================================================================
 
+    /**
+     * BASLANGIC TEDARIKI ARTIK BIR **KURAL**, TABLO DEGIL.
+     *
+     * Eski tablo (80/90/110/120/140/150, sonra L7..L22 duz 150, Act III/IV/V
+     * 220/270/320) bolumler 5-7 dalgaya inince iki ayri yerden kirildi:
+     *  · SPI bandin ALTINA dustu (L4 1,33 · L5 1,31 · L7 1,41), cunku gelirin
+     *    yarisi dalga sayisiyla birlikte gitti;
+     *  · ve gec bolumler ACILIS DALGASINDA kaybedilir oldu — 270 Tedarik iki
+     *    kule alirken W1 kirk govde gonderiyordu (olcum: dalga izi,
+     *    `CampaignSolvabilityAllLevelsTest`).
+     *
+     * Yeni kural: **L3'ten itibaren sermaye = tasarlanan kadronun kademe-1
+     * maliyeti**, catallanan haritada x1,5. L1/L2 ogretici istisnasidir.
+     * Bu test kuralin ta kendisini yeniden hesaplayarak dogrular; sabit bir
+     * sayi dizisi tutmaz, yani kule fiyati degisirse bayatlamaz.
+     */
     @Test
-    fun recommendedStartingSupplyMatchesEconomySpecTable() {
-        assertEquals(80, startingSupplyFor(1))
-        assertEquals(90, startingSupplyFor(2))
-        assertEquals(110, startingSupplyFor(3))
-        assertEquals(120, startingSupplyFor(4))
-        assertEquals(140, startingSupplyFor(5))
-        assertEquals(150, startingSupplyFor(6))
-        // L7..L22 taban degerde kalir (sozlesme testini bozmamak icin).
-        for (level in 7..EconomyConfig.CAMPAIGN_LEVELS) {
-            assertEquals("L$level", EconomyConfig.BASE_STARTING_SUPPLY, startingSupplyFor(level))
+    fun startingSupplyIsDerivedFromTheDesignedRosterNotAFrozenTable() {
+        assertEquals("L1 ogretici sermayesi", 80, startingSupplyFor(1))
+        assertEquals("L2 ogretici sermayesi", 90, startingSupplyFor(2))
+
+        for (level in 3..EconomyConfig.CAMPAIGN_LEVELS) {
+            val order = GameConfigCampaignFacts.unlockedTowersInOrder(level)
+            val roster = SupplyBudgetModel.DESIGNED_ROSTER_SIZE[level - 1]
+            val tierOneCost = (0 until roster).sumOf {
+                GameConfigCampaignFacts.towerBuildCost.getValue(order[it % order.size])
+            }
+            val expected = if (GameConfigCampaignFacts.hasScarceCoverage(level)) {
+                Math.round(tierOneCost * SupplyBudgetModel.COVERAGE_SCARCITY_SUPPLY_FACTOR)
+            } else {
+                tierOneCost
+            }
+            assertEquals(
+                "L$level sermayesi kadronun kademe-1 maliyetinden sapti",
+                expected, startingSupplyFor(level),
+            )
+        }
+
+        // Kural GERCEKTEN calisiyor mu: kapsamasi KIT bir bolum, ayni kadroyu
+        // tasiyan bol kapsamali bir bolumden PAHALI olmali.
+        val sameRoster = (3..EconomyConfig.CAMPAIGN_LEVELS).groupBy {
+            SupplyBudgetModel.DESIGNED_ROSTER_SIZE[it - 1] to
+                GameConfigCampaignFacts.unlockedTowersInOrder(it).size
+        }
+        val demonstrated = sameRoster.values.any { group ->
+            val scarce = group.filter { GameConfigCampaignFacts.hasScarceCoverage(it) }
+            val roomy = group.filter { !GameConfigCampaignFacts.hasScarceCoverage(it) }
+            scarce.isNotEmpty() && roomy.isNotEmpty() &&
+                startingSupplyFor(scarce.first()) > startingSupplyFor(roomy.first())
+        }
+        assertTrue(
+            "ayni kadroyu tasiyan kit/bol kapsamali bir bolum cifti bulunamadi ya da " +
+                "kit olan pahali degil — kapsama primi olcum edilemiyor",
+            demonstrated,
+        )
+    }
+
+    /**
+     * MODEL ILE TABLO AYNI SAYIYI SOYLEMELI.
+     * `GameConfig.CAMPAIGN[L].startingSupply` motorun gercekten kullandigi deger;
+     * model onu KOPYALAMAZ, kendi kuralindan uretir. Ikisi ayrismamali.
+     */
+    @Test
+    fun gameConfigStartingSupplyMatchesTheBudgetModelForAllFiftyFiveLevels() {
+        for (level in 1..EconomyConfig.CAMPAIGN_LEVELS) {
+            assertEquals(
+                "L$level baslangic Tedariki GameConfig ile model arasinda ayristi",
+                GameConfig.levelSpec(level).startingSupply,
+                startingSupplyFor(level),
+            )
         }
     }
 
@@ -155,9 +235,11 @@ class SupplyBudgetTest {
      */
     @Test
     fun budgetTableMatchesTodaysMeasuredWaveTable() {
+        // Yeniden olculdu: bolumler 5-7 dalgaya indi (gelir dustu) ve sermaye
+        // kadrodan turetilir oldu (L3+ arttı). Net etki asagida.
         val expected = mapOf(
-            1 to 570, 2 to 692, 3 to 820, 4 to 1260,
-            5 to 1054, 6 to 1374, 7 to 1175, 8 to 1273,
+            1 to 502, 2 to 596, 3 to 719, 4 to 921,
+            5 to 929, 6 to 1078, 7 to 1172, 8 to 1131,
         )
         expected.forEach { (level, budget) ->
             assertEquals("L$level butce", budget, SupplyBudgetModel.supplyBudget(level))
@@ -167,6 +249,13 @@ class SupplyBudgetTest {
     @Test
     fun everyModelledLevelLandsInsideTheTargetPressureBand() {
         // SERT KURAL: hedef bant 1,5..2,6. Disina cikan bolum tasarim hatasidir.
+        //
+        // ISTISNA KALDIRILDI. Eskiden L9..L22 bu banttan MUAFTI
+        // (`BAND_EXEMPT_LEVELS`), cunku o bolumler 10-18 dalga uzunlugundaydi ve
+        // butce tahtanin kapasitesini asiyordu (L22 SPI 5,37 — oyuncu butun
+        // pad'leri doldurup hepsini kademe 3'e cikarsa bile parayi bitiremiyordu).
+        // Tek ritme gecisle birlikte muafiyetin sebebi ortadan kalkti; artik
+        // 55 bolumun 55'i banda giriyor (olculen aralik 1,54..2,52).
         for (level in 1..SupplyBudgetModel.MODELLED_LEVELS) {
             val spi = SupplyBudgetModel.supplyPressureIndex(level)
             assertTrue(
@@ -174,6 +263,36 @@ class SupplyBudgetTest {
                     spi, SupplyBudgetModel.SPI_TARGET_MIN, SupplyBudgetModel.SPI_TARGET_MAX,
                 ),
                 spi >= SupplyBudgetModel.SPI_TARGET_MIN && spi <= SupplyBudgetModel.SPI_TARGET_MAX,
+            )
+        }
+    }
+
+    /**
+     * L23..L55 SPI'si **tam 2,00** — cunku dalgalar ondan TURETILDI.
+     *
+     * CAMPAIGN_55.md 8.1 bandi bir kontrol degil bir URETIM KURALI yapiyor:
+     * `butce = 2,00 x I(L)` -> `hedef oldurme geliri` -> dalga kompozisyonu.
+     * Bu test zincirin kapali oldugunu kanitlar: dalga tablosunun urettigi gelir
+     * ile modelin bekledigi gelir BIREBIR ayni olmali. Bir kurus sapma,
+     * kompozisyon ureticisinin motorun odul aritmetiginden ayristigi anlamina
+     * gelir (bu proje bu hatayi iki kez yasadi).
+     */
+    @Test
+    fun everyGeneratedLevelSitsExactlyAtTheMiddleOfTheBand() {
+        for (level in 23..EconomyConfig.CAMPAIGN_LEVELS) {
+            assertEquals(
+                "L$level: dalga tablosunun urettigi oldurme geliri hedeften sapti",
+                WaveDefinitions.targetKillSupply(level),
+                SupplyBudgetModel.waveKillSupply(level),
+            )
+            assertEquals(
+                "L$level SPI tam 2,00 olmali",
+                2.00, SupplyBudgetModel.supplyPressureIndex(level), 0.005,
+            )
+            assertEquals(
+                "L$level: I(L) uretici ile model arasinda ayristi",
+                WaveDefinitions.designedLoadoutCost(level),
+                SupplyBudgetModel.designedLoadoutCost(level),
             )
         }
     }
@@ -191,9 +310,11 @@ class SupplyBudgetTest {
      */
     @Test
     fun theSupplyPressureIndexIsLockedLevelByLevel() {
+        // YENIDEN OLCULDU (tek ritim + kadrodan turetilen sermaye).
+        // Once: 2,28 / 1,85 / 1,88 / 2,03 / 1,70 / 2,22 / 1,62 / 1,76.
         val expected = mapOf(
-            1 to 2.28, 2 to 1.85, 3 to 1.88, 4 to 2.03,
-            5 to 1.70, 6 to 2.22, 7 to 1.62, 8 to 1.76,
+            1 to 2.01, 2 to 1.59, 3 to 1.65, 4 to 2.12,
+            5 to 1.88, 6 to 2.18, 7 to 1.62, 8 to 1.56,
         )
         expected.forEach { (level, spi) ->
             assertEquals(
@@ -262,10 +383,16 @@ class SupplyBudgetTest {
         // kendiliginden takip etmeli (Faz 10'da CANNON 90->95, SLOW 80->100 oldu ve
         // elle yazilmis bolen bunu takip etmiyordu).
         for (level in 1..SupplyBudgetModel.MODELLED_LEVELS) {
-            val expected = SupplyBudgetModel.designedRoster(level).sumOf { name ->
-                val type = GameConfig.TowerType.valueOf(name)
-                val spec = GameConfig.TOWER_SPECS.getValue(type)
+            val roster = SupplyBudgetModel.designedRoster(level)
+            val tierThree = SupplyBudgetModel.DESIGNED_TIER_THREE_COUNT[level - 1]
+            val expected = roster.sumOf { name ->
+                val spec = GameConfig.TOWER_SPECS.getValue(GameConfig.TowerType.valueOf(name))
                 spec.buildCost + spec.level2UpgradeCost
+            } + roster.take(tierThree).sumOf { name ->
+                // Kademe 3 L12'de BEDAVA acilir ama yukseltmesi Tedarik ister;
+                // saymamak gec bolumlerde bolen tarafini ~%40 eksik olcerdi.
+                GameConfig.TOWER_SPECS.getValue(GameConfig.TowerType.valueOf(name))
+                    .upgradeCostFrom(2) ?: 0
             }
             assertEquals(
                 "L$level tasarlanan kadro maliyeti canli TOWER_SPECS ile uyusmuyor",
@@ -301,15 +428,66 @@ class SupplyBudgetTest {
         }
     }
 
+    /**
+     * KADRO GERIYE GITMEZ — ama "nefes" bolumleri bu kuralin ISTISNASIDIR.
+     *
+     * L1..L11'de kural katidir: ogretme rampasinda kadro her bolumde en az
+     * onceki kadar olmali, yoksa oyuncu kurdugu savunmayi "sokuyor" gibi
+     * hisseder.
+     *
+     * L12'den itibaren kadro `R` iki seye birden bagli: (a) o haritanin ACIK pad
+     * sayisi (K-5: `acik >= R+2`) ve (b) bolumun nefes olup olmadigi. 11 farkli
+     * harita 5 kez donuyor; harita 06'nin 7 acik pad'i ile harita 10'un 15'i
+     * ayni kadroyu tasiyamaz. Bu yuzden kural WINDOW'a cevrildi: **3 bolumluk
+     * kayan maksimum geriye gitmez.** Niyet ayni (genel gidis yukari), tasarimin
+     * kasitli nefeslerini cezalandirmiyor.
+     */
     @Test
     fun theDesignedRosterNeverShrinksAsTheCampaignProgresses() {
-        for (level in 2..SupplyBudgetModel.MODELLED_LEVELS) {
+        for (level in 2..11) {
             assertTrue(
                 "L$level tasarlanan kadrosu L${level - 1}'den ucuz — oyuncu kule sokmuyor",
                 SupplyBudgetModel.designedLoadoutCost(level) >=
                     SupplyBudgetModel.designedLoadoutCost(level - 1),
             )
         }
+        // PERDE ICINDE: 3 bolumluk kayan maksimum geriye gitmez.
+        // PERDE SINIRINDA kural UYGULANMAZ — perde gecisi kampanyanin en buyuk
+        // nefesidir (CAMPAIGN_55.md 4.2, DS -%33..-38): yeni biyom + dusuk
+        // zorluk + yeni mekanik ayni bolumde bulusur. L44 (perde finali, kadro
+        // 2.060) -> L45 (perde acilisi, 1.745) tam olarak bu tasarimdir.
+        fun windowMax(level: Int, actStart: Int) =
+            (maxOf(actStart, level - 2)..level).maxOf { SupplyBudgetModel.designedLoadoutCost(it) }
+        for (act in 2..5) {
+            val actStart = 11 * (act - 1) + 1
+            for (level in actStart + 2..11 * act) {
+                assertTrue(
+                    "L$level: perde $act icinde 3 bolumluk kadro maksimumu " +
+                        "(${windowMax(level, actStart)}) geriye gitti " +
+                        "(onceki ${windowMax(level - 1, actStart)})",
+                    windowMax(level, actStart) >= windowMax(level - 1, actStart),
+                )
+            }
+        }
+        // PERDELER ARASINDA: her perdenin kadro tavani bir oncekini asmali.
+        val actCeilings = (1..5).map { act ->
+            (11 * (act - 1) + 1..11 * act).maxOf { SupplyBudgetModel.designedLoadoutCost(it) }
+        }
+        for (i in 1 until actCeilings.size) {
+            assertTrue(
+                "perde ${i + 1} kadro tavani (${actCeilings[i]}) perde $i'den " +
+                    "(${actCeilings[i - 1]}) dusuk — kampanya derinlesmiyor",
+                actCeilings[i] > actCeilings[i - 1],
+            )
+        }
+        // Act I tavani 850 -> 725: bolumler 5-7 dalgaya inince gelir yarilandi ve
+        // bes kulelik bir Act I kadrosu SPI'yi bandin altina itiyordu (L7 1,41).
+        // Act I artik dort kuleyle bitiyor; L7'de acilan Fuze (kademe-2 230) o
+        // dort kulenin pahalilasmasini tek basina tasiyor.
+        assertEquals(
+            "perde kadro tavanlari",
+            listOf(725, 1330, 1745, 2060, 2240), actCeilings,
+        )
     }
 
     /**
@@ -326,15 +504,32 @@ class SupplyBudgetTest {
             .let { it.buildCost + it.level2UpgradeCost }
         assertEquals(125, tierTwoGatling)
 
+        // TAVAN BOLUM UZUNLUGUYLA OLCEKLENIR — sabit 1,1 yalnizca ilk 8 bolum
+        // icin dogruydu. Bir dalganin finanse ettigi kule sayisi, bolumun kac
+        // dalgaya bolundugune ve o bolumun kadro buyuklugune baglidir: 6 dalgada
+        // 7 kule + 6 kademe-3 kurmasi beklenen bir bolumde dalga basina 1,1 kule
+        // ile hicbir sey kurulamazdi. Dogru degismez olcut **kadronun kendisi**:
+        // tek bir dalga, o bolumun tasarlanan kadrosunun 1/3'unden fazlasini
+        // finanse edemez — yani kadro EN AZ uc dalgada kurulur, "kur -> yukselt
+        // -> genislet" arki bolume sigar.
         for (level in 1..SupplyBudgetModel.MODELLED_LEVELS) {
             val perWave = SupplyBudgetModel.waveKillSupply(level).toDouble() /
                 SupplyBudgetModel.waveCount(level)
             val towersPerWave = perWave / tierTwoGatling
+            val rosterShare = perWave / SupplyBudgetModel.designedLoadoutCost(level)
             assertTrue(
-                "L$level: bir dalga %.2f kademe-2 Gatling finanse ediyor — 1,1'i gecerse "
-                    .format(towersPerWave) + "eski bolluk geri gelir",
-                towersPerWave <= 1.1,
+                "L$level: bir dalga tasarlanan kadronun %%%.0f'ini finanse ediyor "
+                    .format(rosterShare * 100) +
+                    "(%.2f kademe-2 Gatling) — tavan %%33".format(towersPerWave),
+                rosterShare <= 0.34,
             )
+            if (level <= 8) {
+                assertTrue(
+                    "L$level: bir dalga %.2f kademe-2 Gatling finanse ediyor — 1,1'i gecerse "
+                        .format(towersPerWave) + "eski bolluk geri gelir",
+                    towersPerWave <= 1.1,
+                )
+            }
             // Faz 10 oncesiyle karsilastirma: kesinti gercekten calisti mi.
             val legacyPerWave = SupplyBudgetModel.legacyWaveKillSupply(level).toDouble() /
                 SupplyBudgetModel.waveCount(level) / tierTwoGatling
@@ -373,34 +568,114 @@ class SupplyBudgetTest {
 
     @Test
     fun openingSupplyBuysAtLeastOneTowerAndAtMostTwoOnEveryEarlyLevel() {
-        // Testcinin "her kurusu saysin" istegi ACILISTA baslar: bir kule kesin kurulur,
-        // ucuncu kule ASLA acilista kurulamaz — dalga geliriyle kazanilir.
+        // Testcinin "her kurusu saysin" istegi ACILISTA baslar.
+        //
+        // ESKI IFADE: "acilista en fazla 2 kule". O kural, sermaye duz bir tablo
+        // (80/90/110/120/140/150) iken dogruydu. Sermaye artik KADRODAN turer:
+        // 5-7 dalgalik bir bolumde oyuncu kadrosunu kurabilmeli, yoksa acilis
+        // dalgasinda kaybeder (olculdu). Yani "kac kule" artik yanlis soru.
+        //
+        // DOGRU SORU: acilista savunma KURULABILIR ama YUKSELTILEMEZ. Sermaye
+        // kadronun kademe-2 maliyetini (I(L)) asarsa oyuncu bolume tam guclu
+        // baslar ve dalga geliri anlamsizlasir.
         val gatling = GameConfig.TOWER_SPECS.getValue(GameConfig.TowerType.MACHINE_GUN).buildCost
-        for (level in 1..6) {
+        for (level in 1..EconomyConfig.CAMPAIGN_LEVELS) {
             val opening = startingSupplyFor(level)
             assertTrue("L$level acilista tek kule bile kurulamiyor", opening >= gatling)
             assertTrue(
-                "L$level acilista ${opening / gatling} kule kurulabiliyor — en fazla 2 olmali",
-                opening / gatling <= 2,
+                "L$level acilis sermayesi ($opening) tasarlanan kadronun kademe-2 " +
+                    "maliyetini (${SupplyBudgetModel.designedLoadoutCost(level)}) asiyor — " +
+                    "bolum tam guclu basliyor, dalga geliri karar olmaktan cikiyor",
+                opening < SupplyBudgetModel.designedLoadoutCost(level),
+            )
+        }
+        // OGRETME DILIMI (L1-L2) ayrica katidir: en fazla IKI Gatling.
+        for (level in 1..2) {
+            assertTrue(
+                "L$level acilista ${startingSupplyFor(level) / gatling} kule — " +
+                    "ogretici dilimde en fazla 2",
+                startingSupplyFor(level) / gatling <= 2,
             )
         }
     }
 
+    /**
+     * SERMAYE TABANI GERIYE GITMEZ — ama CATALLANMA PRIMI monotonlugu bozar.
+     *
+     * Once bu test ham `startingSupplyFor` uzerinde monotonluk ariyordu. Sermaye
+     * artik iki carpandan olusuyor: **kadro tabani** (monoton) ve **catallanan
+     * harita primi x1,5** (haritaya bagli, dolayisiyla dalgali). Ornek: L12
+     * harita 11'de catallidir (555), L13 harita 10'da degildir (370) — bu bir
+     * gerileme degil, o bolumde iki cephe kurulmadigi icin gerekmeyen paranin
+     * verilmemesidir. Prim verilmeye devam edilseydi catalsiz bolumler
+     * kolaylasirdi.
+     *
+     * Kilit bu yuzden TABANA uygulanir; prim ayrica dogrulanir.
+     */
     @Test
-    fun startingSupplyNeverDecreasesAsTheCampaignProgresses() {
-        for (level in 2..EconomyConfig.CAMPAIGN_LEVELS) {
+    fun theStartingSupplyBaselineNeverDecreasesAndTheForkPremiumIsAlwaysPositive() {
+        fun baseline(level: Int): Int {
+            val order = GameConfigCampaignFacts.unlockedTowersInOrder(level)
+            val roster = SupplyBudgetModel.DESIGNED_ROSTER_SIZE[level - 1]
+            return (0 until roster).sumOf {
+                GameConfigCampaignFacts.towerBuildCost.getValue(order[it % order.size])
+            }
+        }
+        // OGRETME RAMPASI (L3..L22) katidir: taban geriye gitmez.
+        for (level in 4..22) {
             assertTrue(
-                "L$level baslangic Tedariki L${level - 1}'den dusuk",
-                startingSupplyFor(level) >= startingSupplyFor(level - 1),
+                "L$level sermaye tabani (${baseline(level)}) L${level - 1}'den " +
+                    "(${baseline(level - 1)}) dusuk",
+                baseline(level) >= baseline(level - 1),
             )
         }
+        // L23+ icin kural WINDOW'a cevrilir — `designedLoadoutCost` ile ayni
+        // gerekce: 11 harita bes kez donuyor, harita 06'nin 7 acik pad'i ile
+        // harita 10'un 15'i ayni kadroyu tasiyamaz ve NEFES bolumleri kadroyu
+        // bilerek kuculttur. 3 bolumluk kayan maksimum geriye gitmemeli.
+        fun windowMax(level: Int, actStart: Int) =
+            (maxOf(actStart, level - 2)..level).maxOf { baseline(it) }
+        for (act in 3..5) {
+            val actStart = 11 * (act - 1) + 1
+            for (level in actStart + 2..11 * act) {
+                assertTrue(
+                    "L$level sermaye tabaninin 3 bolumluk maksimumu geriye gitti",
+                    windowMax(level, actStart) >= windowMax(level - 1, actStart),
+                )
+            }
+        }
+        val scarce = (1..EconomyConfig.CAMPAIGN_LEVELS)
+            .filter { GameConfigCampaignFacts.hasScarceCoverage(it) }
+        assertTrue("kapsamasi kit bolum bulunamadi — kural olu", scarce.isNotEmpty())
+        // L1/L2 ogretici sabitleridir ve kurala girmez (bkz. EARLY_STARTING_SUPPLY).
+        scarce.filter { it > 2 }.forEach { level ->
+            assertTrue(
+                "L$level kapsamasi kit ama sermayesi (${startingSupplyFor(level)}) " +
+                    "tabandan (${baseline(level)}) buyuk degil",
+                startingSupplyFor(level) > baseline(level),
+            )
+        }
+        // Kural iki koldan da BESLENMELI: hem catallanan hem dar-tahta ornegi
+        // bulunmali, yoksa ikinci kol olu kod demektir.
+        assertTrue(
+            "dar tahta kolu hicbir bolumde tetiklenmiyor",
+            scarce.any { !GameConfig.usesAlternateRoutes(it) },
+        )
     }
 
     @Test
     fun waveClearBonusIsNoLongerTheHiddenBulkOfTheBudget() {
-        // Bugun ikramiye 35 ve bolum uzunluguyla sessizce buyuyor (L1 175, L8 315).
-        assertEquals(175, SupplyBudgetModel.waveClearBonusTotal(1, SupplyBudgetModel.LEGACY_WAVE_CLEAR_BONUS))
-        assertEquals(315, SupplyBudgetModel.waveClearBonusTotal(8, SupplyBudgetModel.LEGACY_WAVE_CLEAR_BONUS))
+        // Eski ikramiye 35 ve bolum uzunluguyla sessizce buyuyor. Tek ritimden
+        // sonra L1 5 dalga (35x4 = 140), L8 7 dalga (35x6 = 210) — sayilar
+        // dalga sayisindan TURETILIR, elle yazilmaz.
+        assertEquals(
+            35 * (SupplyBudgetModel.waveCount(1) - 1),
+            SupplyBudgetModel.waveClearBonusTotal(1, SupplyBudgetModel.LEGACY_WAVE_CLEAR_BONUS),
+        )
+        assertEquals(
+            35 * (SupplyBudgetModel.waveCount(8) - 1),
+            SupplyBudgetModel.waveClearBonusTotal(8, SupplyBudgetModel.LEGACY_WAVE_CLEAR_BONUS),
+        )
         // Onerilen 18 ile ikramiye hicbir bolumde butcenin %25'ini gecmez.
         for (level in 1..SupplyBudgetModel.MODELLED_LEVELS) {
             val share = 100 * SupplyBudgetModel.waveClearBonusTotal(level) /
@@ -433,11 +708,27 @@ class SupplyBudgetTest {
 
     @Test
     fun metaBaselineStaysCompatibleWithTheGameConfigContract() {
-        // L7+ tabani 150 kalmali, yoksa `EconomyGameConfigContractTest`in
-        // `BASE_STARTING_SUPPLY == INITIAL_GOLD` ve `MetaUpgrades().startingSupply`
-        // sozlesmeleri kirilir.
+        // META TABANI ile BOLUM SERMAYESI ARTIK AYRI SEYLER.
+        //
+        // Once burada `startingSupplyFor(L7) == INITIAL_GOLD` yaziyordu, yani
+        // meta hattinin tabani (150) ile L7'nin bolum sermayesi ayni sayiya
+        // sabitlenmisti. Sermaye kadrodan turetilince bu tesaduf bozuldu — ama
+        // KIRILAN sey bir sozlesme degil, iki farkli seyin ayni sayi olmasiydi.
+        // Motorun formulu `levelSpec.startingSupply + (meta - 150)` oldugu icin
+        // gercek sozlesme sudur: **meta hattinin TABANI, yukseltme yapmamis
+        // oyuncuya SIFIR bonus vermeli.**
         assertEquals(EconomyConfig.BASE_STARTING_SUPPLY, MetaUpgrades().startingSupply)
-        assertEquals(GameConfig.INITIAL_GOLD, startingSupplyFor(EconomyConfig.FIRST_PAID_LEVEL))
+        assertEquals(GameConfig.INITIAL_GOLD, EconomyConfig.BASE_STARTING_SUPPLY)
+        assertEquals(
+            "yukseltme yapmamis oyuncunun meta bonusu sifir olmali",
+            0, MetaUpgrades().startingSupply - EconomyConfig.BASE_STARTING_SUPPLY,
+        )
+        // ...ve bolum sermayesi meta tabanindan BAGIMSIZ olarak L7'de artik
+        // ogretici degerlerin uzerinde (kadro kurulabilmeli).
+        assertTrue(
+            "L${EconomyConfig.FIRST_PAID_LEVEL} sermayesi ogretici seviyede kalmis",
+            startingSupplyFor(EconomyConfig.FIRST_PAID_LEVEL) > startingSupplyFor(1),
+        )
     }
 
     // =================================================================================
@@ -448,7 +739,7 @@ class SupplyBudgetTest {
     fun tighteningTouchesOnlySupplyAndNeverCoinRewards() {
         // Tedarik ve Coin arasinda donusum YOK (GDD D.4): sikilastirma bolum odullerini,
         // kilit bedellerini ve agac fiyatlarini DEGISTIRMEZ.
-        assertEquals(3_140, EconomyConfig.TOTAL_LOCK_COST)
+        assertEquals(23_105, EconomyConfig.TOTAL_LOCK_COST)
         assertEquals(13_900, EconomyConfig.TREE_TOTAL_COST)
         assertEquals(450, EconomyConfig.R1_COIN_BUDGET_PER_DAY)
         for (level in 1..EconomyConfig.CAMPAIGN_LEVELS) {
@@ -500,14 +791,16 @@ class SupplyBudgetTest {
                 spec.startingSupply,
             )
         }
-        // Ilk alti bolum artik DUZ DEGIL: sikilastirmanin gercekten uygulandiginin
-        // kaniti (aksi halde yukaridaki assert duz tabloda da gecerdi).
+        // Sermaye artik DUZ DEGIL: kurallilik kaniti (aksi halde yukaridaki
+        // assert duz bir tabloda da gecerdi). L1/L2 ogretici sabitleri, L3+
+        // kadronun kademe-1 maliyeti.
         val early = (1..6).map { GameConfig.levelSpec(it).startingSupply }
-        assertEquals("ilk alti bolum butcesi", listOf(80, 90, 110, 120, 140, 150), early)
-        assertEquals(
-            "L7+ taban Tedarige (INITIAL_GOLD) donmeli",
-            GameConfig.INITIAL_GOLD,
-            GameConfig.levelSpec(7).startingSupply,
-        )
+        assertEquals("ilk alti bolum butcesi", listOf(80, 90, 215, 215, 255, 255), early)
+        // L7'de Fuze Bataryasi aciliyor ve tasarlanan kadroya giriyor; sermaye
+        // dort kulelik kademe-1 maliyetini (370) karsilar. Eskiden burada
+        // "L7+ taban Tedarige (150) donmeli" yaziyordu — o taban, kadro bes
+        // kuleye ve bolum 5-7 dalgaya inince acilis dalgasini gecilemez
+        // yapiyordu (olcum: dalga izi).
+        assertEquals(370, GameConfig.levelSpec(7).startingSupply)
     }
 }

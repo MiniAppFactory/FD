@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Faz 14 - GOREV PANELI, TURKCE.
+
+  Ton: askeri, kisa, emir kipi (docs/LOCALIZATION.md sozlugu).
+  Sabit terimler: Supply -> Tedarik, Coin -> Coin (cevrilmez), Wave -> Dalga,
+  Base -> Us, Upgrade -> Yukselt, Sell -> Sat, Tower -> Kule.
+
+  TASMA NOTU: "ODULU AL" ve "GOREVLER" en uzun karsiliklar; panel butonlari
+  AutoShrinkText ile ciziliyor, kesme yok.
+-->
+<resources>
+
+    <string name="mission_open">GÖREVLER</string>
+
+    <string name="mission_title">GÖREVLER</string>
+    <string name="mission_close">KAPAT</string>
+    <string name="mission_daily_header">GÜNLÜK</string>
+    <string name="mission_weekly_header">HAFTALIK</string>
+    <string name="mission_claim">ÖDÜLÜ AL</string>
+    <string name="mission_claim_all">%1$d COIN AL</string>
+    <string name="mission_claimed">ALINDI</string>
+    <string name="mission_nothing_to_claim">HENÜZ ALINACAK ÖDÜL YOK</string>
+    <string name="mission_all_bonus">Üçünü de bitir, %1$d coin bonus kazan.</string>
+    <string name="mission_reset_hint">Günlük görevler gece yarısı, haftalık görevler pazartesi yenilenir.</string>
+    <string name="mission_damped">Saat kontrolü etkin: görev ödülleri bugün %%%1$d ödüyor.</string>
+    <string name="mission_empty">Henüz görev yok. Bir bölüm temizle.</string>
+    <string name="mission_claimed_toast">%1$d coin alındı.</string>
+
+    <string name="mission_slot_participation">KATILIM</string>
+    <string name="mission_slot_volume">HACİM</string>
+    <string name="mission_slot_skill">BECERİ</string>
+
+    <string name="mission_type_complete_any_level">%1$d bölüm temizle</string>
+    <string name="mission_type_skip_prep_timer">%1$d dalgayı erken başlat</string>
+    <string name="mission_type_kill_enemies">%1$d düşman imha et</string>
+    <string name="mission_type_kill_armored">%1$d zırhlı araç imha et</string>
+    <string name="mission_type_kill_tanks">%1$d tank imha et</string>
+    <string name="mission_type_build_towers">%1$d kule kur</string>
+    <string name="mission_type_upgrade_towers">%1$d kez kule yükselt</string>
+    <string name="mission_type_earn_supply">Tek savaşta %1$d Tedarik kazan</string>
+    <string name="mission_type_three_stars">Bir bölümü 3 yıldızla temizle</string>
+    <string name="mission_type_no_selling">Kule satmadan bir bölüm temizle</string>
+    <string name="mission_type_high_health">Üssü neredeyse sağlam tutarak temizle</string>
+    <string name="mission_type_all_towers">Tek savaşta tüm açık kule tiplerini kur</string>
+    <string name="mission_type_double_speed">Bir bölümü çift hızda temizle</string>
+    <string name="mission_type_weekly_levels">Bu hafta %1$d bölüm tamamla</string>
+    <string name="mission_type_weekly_stars">Bu hafta %1$d yıldız kazan</string>
+
+</resources>

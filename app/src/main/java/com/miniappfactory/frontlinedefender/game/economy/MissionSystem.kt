@@ -117,7 +117,18 @@ object MissionPools {
         MissionTemplate("d_v_upg30", MissionType.UPGRADE_TOWERS, MissionSlot.VOLUME, 30, EconomyConfig.DAILY_REWARD_VOLUME),
         MissionTemplate("d_v_arm8", MissionType.KILL_ARMORED, MissionSlot.VOLUME, 8, EconomyConfig.DAILY_REWARD_VOLUME, minClearedLevels = 5),
         MissionTemplate("d_v_tank5", MissionType.KILL_TANKS, MissionSlot.VOLUME, 5, EconomyConfig.DAILY_REWARD_VOLUME, minClearedLevels = 7),
-        MissionTemplate("d_v_supply2500", MissionType.EARN_SUPPLY_IN_ONE_BATTLE, MissionSlot.VOLUME, 2500, EconomyConfig.DAILY_REWARD_VOLUME, minClearedLevels = 6),
+        // minClearedLevels 6 -> 18 (Faz 14 duzeltmesi, ODUL DEGISMEDI).
+        //
+        // Hedef "**bir savasta** 2.500 Tedarik" ve bu, bolumun dalga tablosunun
+        // uretebilecegi toplamdan buyuk olamaz. Olculen tek-savas geliri
+        // (baslangic sermayesi + oldurme + dalga ikramiyesi):
+        //   L6=1.078 · L9=1.213 · L12=1.553 · L15=1.620 · L17=2.036 · **L18=2.650**
+        // Yani eski kapiyla (6) gorev, cekildigi gunlerin cogunda oyuncunun
+        // erisebildigi HICBIR bolumde tamamlanamiyordu — panelde 80 coin'lik
+        // ulasilamaz bir hedef duruyordu. 18, hedefin gercekten karsilandigi
+        // ilk bolumdur (%6 marj). `dailyTargetsAreReachableAtTheirUnlockGate`
+        // bunu kilitler.
+        MissionTemplate("d_v_supply2500", MissionType.EARN_SUPPLY_IN_ONE_BATTLE, MissionSlot.VOLUME, 2500, EconomyConfig.DAILY_REWARD_VOLUME, minClearedLevels = 18),
     )
 
     /** Slot 3 — Beceri. Kasitli oyun ister ama zorlamaz. Odul 120. */
@@ -186,13 +197,19 @@ internal fun eligibleTemplates(
     pool: List<MissionTemplate>,
     clearedLevels: Int,
     unlockedTowerTypes: Int,
+    measurableTypes: Set<MissionType> = MissionType.entries.toSet(),
 ): List<MissionTemplate> {
     val filtered = pool.filter {
-        clearedLevels >= it.minClearedLevels && unlockedTowerTypes >= it.minTowerTypes
+        clearedLevels >= it.minClearedLevels &&
+            unlockedTowerTypes >= it.minTowerTypes &&
+            it.type in measurableTypes
     }
     // Her havuzda en az bir sablon minClearedLevels=0 / minTowerTypes=1 olacak sekilde
     // tasarlandi, yani bu dal olu. Yine de savunma: havuz ASLA bos donmez.
-    return filtered.ifEmpty { listOf(pool.minByOrNull { it.minClearedLevels }!!) }
+    return filtered.ifEmpty {
+        pool.filter { it.type in measurableTypes }.minByOrNull { it.minClearedLevels }?.let { listOf(it) }
+            ?: listOf(pool.minByOrNull { it.minClearedLevels }!!)
+    }
 }
 
 internal fun gcd(a: Int, b: Int): Int {
@@ -236,8 +253,11 @@ private fun pickTemplate(
     reroll: Int,
     clearedLevels: Int,
     unlockedTowerTypes: Int,
+    measurableTypes: Set<MissionType>,
 ): MissionTemplate {
-    val eligible = eligibleTemplates(MissionPools.poolFor(slot), clearedLevels, unlockedTowerTypes)
+    val eligible = eligibleTemplates(
+        MissionPools.poolFor(slot), clearedLevels, unlockedTowerTypes, measurableTypes
+    )
     val size = eligible.size
     if (size == 1) return eligible[0]
 
@@ -260,6 +280,19 @@ private fun pickTemplate(
  *
  * @param seed cihaz kurulumunda BIR KEZ uretilen kalici tohum.
  * @param rerollsBySlot slot basina kullanilmis yenileme sayisi (boyut 3).
+ * @param measurableTypes **sayaci gercekten dolan** gorev tipleri. Havuzun geri
+ *   kalani oyuncuya HIC GOSTERILMEZ.
+ *
+ *   Bu filtre bir "gecici cozum" degil bir SOZLESMEDIR: gosterilen her gorev
+ *   tamamlanabilir olmalidir. FUN_AUDIT'in bulgusu gorev sisteminin olu
+ *   olmasiydi; onun daha kotusu, oyuncuya 120 coin'lik ve kazanilmasi
+ *   IMKANSIZ bir gorev gostermektir — bu, paneli bir ise yaramaz vaade cevirir
+ *   ve tam tersi yonde guven kaybettirir.
+ *
+ *   Odul MIKTARLARI bu filtreden etkilenmez: gunluk odeme slot basinadir
+ *   (60/80/120 + 100 bonus), hangi sablonun cekildigine bagli DEGILDIR. Yani
+ *   filtre geliri DUSURMEZ, tam tersine cekilen her gorev bitirilebildigi icin
+ *   tasarlanan gunluk tavani ULASILABILIR kilar.
  */
 fun dailyMissions(
     epochDay: Long,
@@ -267,6 +300,7 @@ fun dailyMissions(
     clearedLevels: Int = 0,
     unlockedTowerTypes: Int = 1,
     rerollsBySlot: IntArray = IntArray(EconomyConfig.DAILY_MISSION_SLOTS),
+    measurableTypes: Set<MissionType> = MissionType.entries.toSet(),
 ): List<Mission> {
     require(rerollsBySlot.size == EconomyConfig.DAILY_MISSION_SLOTS) {
         "rerollsBySlot boyutu ${EconomyConfig.DAILY_MISSION_SLOTS} olmali"
@@ -275,7 +309,7 @@ fun dailyMissions(
         Mission(
             pickTemplate(
                 slot, epochDay, seed, rerollsBySlot[slot.ordinal],
-                clearedLevels, unlockedTowerTypes
+                clearedLevels, unlockedTowerTypes, measurableTypes
             )
         )
     }
@@ -511,4 +545,163 @@ fun canReroll(state: MissionState, slot: MissionSlot): Boolean {
     if (state.rerollsUsedToday >= EconomyConfig.DAILY_REROLLS_PER_DAY) return false
     val mission = state.daily.firstOrNull { it.template.slot == slot } ?: return false
     return !mission.isComplete
+}
+
+// =====================================================================================
+// SAVAS RAPORU -> GOREV SAYACI (Faz 14)
+//
+// FUN_AUDIT bulgusu: 15 gorev sayacinin 10'u hic ilerletilmiyordu, yani
+// `MissionPools.VOLUME` slotu bazi gunlerde %100 TAMAMLANAMIYORDU. Sorunun
+// kaynagi mimari: motor ekonomiyi tanimaz, dolayisiyla "kule kuruldu",
+// "hazirlik atlandi" gibi oynanis olaylari ekonomiye kendiliginden ulasmaz.
+//
+// Cozum: savas boyunca biriken OLCUMLER tek bir [BattleReport] icinde toplanir
+// ve savas bittiginde TEK SEFERDE goreve cevrilir. Boylece:
+//   - ayni olay iki kez sayilmaz (savas ici ilerletme YOK, yalnizca flush),
+//   - bildirilmeyen alan sessizce 0 sayilmaz, [BATTLE_STAT_UNREPORTED] kalir,
+//   - donusum saf ve testlidir (bu dosya), koordinasyon ise
+//     `CampaignProgressImpl` icindedir.
+// =====================================================================================
+
+/**
+ * "Bu alan OLCULMEDI" isareti. 0'dan farkidir ve kritiktir:
+ * `towersSold = 0` -> "hic satmadi" (CLEAR_WITHOUT_SELLING hak edilir),
+ * `towersSold = UNREPORTED` -> "bilmiyoruz" (gorev ilerlemez).
+ * Ikisi karistirilirsa oyuncu satis yaptigi savasta beceri odulu alir.
+ */
+const val BATTLE_STAT_UNREPORTED: Int = -1
+
+/**
+ * Bir savasin gorev sayaclarina donusen olculmus ozeti.
+ *
+ * Iki kaynaktan doldurulur ve [mergedWith] ile birlestirilir:
+ *  1. **Olcum** — savas sirasinda `CampaignProgressImpl.note*` cagrilariyla veya
+ *     zafer aninda tek parca halinde bildirilen gercek degerler.
+ *  2. **Turetme** — bolum bittiginde dalga tablosundan hesaplanan taban
+ *     (`CampaignProgressImpl.derivedBattleReport`). Zaferi kazanan oyuncu
+ *     bolumdeki dusmanlarin sizanlar HARIC hepsini oldurmustur; bu, tahmin
+ *     degil kimliktir (sizinti basina tam 1 can, `BASE_REACHED_PENALTY_LIVES`).
+ *
+ * Birlestirme her alanda **buyugu alir**: turetme bir TABANDIR, olcum onu
+ * yukari cekebilir ama asla asagi cekemez.
+ */
+data class BattleReport(
+    val towersBuilt: Int = BATTLE_STAT_UNREPORTED,
+    val towerUpgrades: Int = BATTLE_STAT_UNREPORTED,
+    val towersSold: Int = BATTLE_STAT_UNREPORTED,
+    val distinctTowerTypes: Int = BATTLE_STAT_UNREPORTED,
+    val prepTimersSkipped: Int = BATTLE_STAT_UNREPORTED,
+    val enemiesKilled: Int = BATTLE_STAT_UNREPORTED,
+    val armoredKilled: Int = BATTLE_STAT_UNREPORTED,
+    val tanksKilled: Int = BATTLE_STAT_UNREPORTED,
+    /** Bu savasta kazanilan TOPLAM Tedarik (baslangic sermayesi dahil). */
+    val supplyEarned: Int = BATTLE_STAT_UNREPORTED,
+    /** `null` = olculmedi. `false` = olculdu ve 2x kullanilmadi. */
+    val clearedAtDoubleSpeed: Boolean? = null,
+) {
+    companion object {
+        /** Hicbir sey bildirilmemis rapor. Hicbir gorevi ilerletmez. */
+        val UNREPORTED: BattleReport = BattleReport()
+    }
+
+    /** Bu rapor hic olcum tasiyor mu? Bos rapor icin flush atlanabilir. */
+    val isEmpty: Boolean
+        get() = clearedAtDoubleSpeed == null &&
+            listOf(
+                towersBuilt, towerUpgrades, towersSold, distinctTowerTypes,
+                prepTimersSkipped, enemiesKilled, armoredKilled, tanksKilled, supplyEarned,
+            ).all { it == BATTLE_STAT_UNREPORTED }
+
+    fun mergedWith(other: BattleReport): BattleReport = BattleReport(
+        towersBuilt = pick(towersBuilt, other.towersBuilt),
+        towerUpgrades = pick(towerUpgrades, other.towerUpgrades),
+        towersSold = pick(towersSold, other.towersSold),
+        distinctTowerTypes = pick(distinctTowerTypes, other.distinctTowerTypes),
+        prepTimersSkipped = pick(prepTimersSkipped, other.prepTimersSkipped),
+        enemiesKilled = pick(enemiesKilled, other.enemiesKilled),
+        armoredKilled = pick(armoredKilled, other.armoredKilled),
+        tanksKilled = pick(tanksKilled, other.tanksKilled),
+        supplyEarned = pick(supplyEarned, other.supplyEarned),
+        clearedAtDoubleSpeed = when {
+            clearedAtDoubleSpeed == true || other.clearedAtDoubleSpeed == true -> true
+            clearedAtDoubleSpeed == null -> other.clearedAtDoubleSpeed
+            else -> clearedAtDoubleSpeed
+        },
+    )
+
+    private fun pick(a: Int, b: Int): Int = when {
+        a == BATTLE_STAT_UNREPORTED -> b
+        b == BATTLE_STAT_UNREPORTED -> a
+        else -> maxOf(a, b)
+    }
+}
+
+/**
+ * "Tek savasta EN IYI" semantigi olan gorevler. Bunlarin ilerlemesi TOPLANMAZ,
+ * en iyi savas degerine YUKSELIR.
+ *
+ * `d_v_supply2500` "bir savasta 2.500 Tedarik kazan" der; toplama semantigi
+ * kullanilirsa uc kolay bolum ust uste oynanarak hedef kirilir ve gorev
+ * tasarlanan zorlugunu kaybeder.
+ */
+val MissionType.isSingleBattleBest: Boolean
+    get() = this == MissionType.EARN_SUPPLY_IN_ONE_BATTLE
+
+/** Tek-savas gorevlerinin ilerlemesini [value]'ya YUKSELTIR (toplamaz). */
+fun Mission.raisedTo(value: Int): Mission =
+    copy(progress = maxOf(progress, minOf(template.target, maxOf(0, value))))
+
+fun raiseMissions(missions: List<Mission>, type: MissionType, value: Int): List<Mission> =
+    missions.map { if (it.type == type) it.raisedTo(value) else it }
+
+/**
+ * Savas raporunu gorev sayaci artislarina cevirir. **Saf**: kalicilik, cuzdan
+ * ve Compose durumu bilmez, dolayisiyla Robolectric olmadan test edilir.
+ *
+ * Burada UC gorev bilincli olarak YOKTUR: [MissionType.COMPLETE_ANY_LEVEL],
+ * [MissionType.CLEAR_WITH_THREE_STARS] ve [MissionType.CLEAR_WITH_HIGH_HEALTH].
+ * Onlar `CampaignProgressImpl.onLevelCleared` icinde, YILDIZ hesabinin
+ * (guclendirici notrlugu) hemen yaninda ilerletilir; buraya tasinsalar tamir
+ * arbitraji sessizce geri acilirdi.
+ *
+ * @param victory savas zaferle mi bitti. Yenilgide beceri gorevleri ilerlemez,
+ *   hacim gorevleri (oldurme/insa/yukseltme) ilerler — oyuncu o emegi verdi.
+ * @param unlockedTowerTypes oyuncunun acik kule tipi sayisi; "tum kule
+ *   tiplerini kur" gorevinin hedefi budur, sabit 4 degil.
+ */
+fun battleMissionDeltas(
+    report: BattleReport,
+    victory: Boolean,
+    unlockedTowerTypes: Int,
+): List<Pair<MissionType, Int>> {
+    val out = ArrayList<Pair<MissionType, Int>>(9)
+
+    fun counted(type: MissionType, value: Int) {
+        if (value > 0) out.add(type to value)
+    }
+
+    // ---- Hacim: zafer sarti YOK. -----------------------------------------
+    counted(MissionType.KILL_ENEMIES, report.enemiesKilled)
+    counted(MissionType.KILL_ARMORED, report.armoredKilled)
+    counted(MissionType.KILL_TANKS, report.tanksKilled)
+    counted(MissionType.BUILD_TOWERS, report.towersBuilt)
+    counted(MissionType.UPGRADE_TOWERS, report.towerUpgrades)
+    counted(MissionType.SKIP_PREP_TIMER, report.prepTimersSkipped)
+    // "Tek savasta en iyi" — asagida `raiseMissions` ile islenir.
+    counted(MissionType.EARN_SUPPLY_IN_ONE_BATTLE, report.supplyEarned)
+
+    if (!victory) return out
+
+    // ---- Beceri: yalnizca ZAFERDE ve yalnizca OLCULMUSSE. ----------------
+    // Olculmemis alan "sarti sagladi" sayilmaz; aksi halde satis yapan oyuncu
+    // "satmadan temizle" odulunu (120 coin) bedavaya alirdi.
+    if (report.towersSold == 0) out.add(MissionType.CLEAR_WITHOUT_SELLING to 1)
+    if (report.distinctTowerTypes != BATTLE_STAT_UNREPORTED &&
+        report.distinctTowerTypes >= unlockedTowerTypes.coerceAtLeast(1)
+    ) {
+        out.add(MissionType.BUILD_ALL_TOWER_TYPES to 1)
+    }
+    if (report.clearedAtDoubleSpeed == true) out.add(MissionType.CLEAR_AT_DOUBLE_SPEED to 1)
+
+    return out
 }

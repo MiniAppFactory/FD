@@ -331,15 +331,38 @@ fun boostersAvailableAt(level: Int): List<BoosterType> =
 // =====================================================================================
 
 /**
+ * [boosterAllowed] `enemiesOnField` parametresinin "BILINMIYOR" degeri.
+ *
+ * NEDEN NEGATIF BIR NOBET DEGERI: sifir gecerli ve ANLAMLI bir sayidir ("saha bos"),
+ * dolayisiyla varsayilan olamaz — varsayilani 0 yapmak, dusman sayisini bildirmeyen
+ * her cagirani (ekonomi simulasyonu, birim testleri, ileride eklenecek tutorial veya
+ * otomatik oynatma) sessizce "hedef yok" dalina dusururdu. Negatif deger ise savas
+ * alaninda ASLA uretilemez, bu yuzden "bu cagiran sahayi bilmiyor" bilgisini gecerli
+ * sayimlardan kesin olarak ayirir ve kontrol atlanir: bilgi yoksa ekonomi katmani
+ * oyuncuyu cezalandirmaz.
+ */
+const val ENEMY_COUNT_UNKNOWN: Int = -1
+
+/**
  * Bir guclendiriciyi kullanmaya izin var mi?
  *
  * KONTROL SIRASI (analytics ve UI mesaji bu siraya baglidir):
  * kill switch -> bolum kilidi -> kullanim tavani -> **arbitraj kalkani** -> gunluk
  * reklam hakki -> bekleme -> etki -> odeme gucu -> rezerv.
  *
+ * "ETKI" adimi guclendiricinin **hicbir sey yapmayacagi** durumlari yakalar ve
+ * [BoosterDecision.NoEffect] doner. Bu adim odeme gucu kontrolunden ONCE gelir:
+ * etkisiz bir kullanim ucret kesmeden, kullanim hakki yakmadan ve bekleme
+ * baslatmadan reddedilmelidir. Iki durum vardir:
+ *   - [BoosterType.BASE_REPAIR] ve us cani zaten tam,
+ *   - [BoosterType.AIR_SUPPORT] ve sahada hedef yok ([enemiesOnField] == 0).
+ *
  * @param viaAd rewarded reklam yolu mu deneniyor.
  * @param supplyOnHand savas ici mevcut Tedarik (yalnizca SUPPLY fiyatli tipler icin).
  * @param baseHealth / [maxBaseHealth] yalnizca [BoosterType.BASE_REPAIR] icin anlamli.
+ * @param enemiesOnField su an sahada bulunan dusman sayisi; yalnizca
+ *   [BoosterType.AIR_SUPPORT] icin anlamli. [ENEMY_COUNT_UNKNOWN] (varsayilan) =
+ *   cagiran sahayi bildirmiyor, hedef kontrolu atlanir.
  */
 fun boosterAllowed(
     state: BoosterState,
@@ -349,6 +372,7 @@ fun boosterAllowed(
     supplyOnHand: Int = 0,
     baseHealth: Int = 0,
     maxBaseHealth: Int = EconomyConfig.BASE_MAX_HEALTH,
+    enemiesOnField: Int = ENEMY_COUNT_UNKNOWN,
     nowMs: Long = Long.MAX_VALUE / 2,
 ): BoosterDecision {
     if (!type.enabled) return BoosterDecision.Disabled
@@ -376,7 +400,16 @@ fun boosterAllowed(
         return BoosterDecision.Cooldown(cooldown - (nowMs - last))
     }
 
+    // ETKI. Ucret kesilmeden, kullanim hakki yakilmadan ve bekleme baslatilmadan
+    // once "bu kullanim hicbir sey yapmayacak" durumlari elenir.
     if (type == BoosterType.BASE_REPAIR && baseRepairAmount(baseHealth, maxBaseHealth) == 0) {
+        return BoosterDecision.NoEffect
+    }
+    // Hava Destegi ekrandaki dusmanlara vurur; hedef yoksa 96-264 Tedarik HICBIR SEYE
+    // harcanir, savas basina tek ucretli hak yanar ve 45 sn bekleme baslar. Geri alma
+    // yok. Kapi bu yuzden ekonomi katmanindadir (UI'da degil): yeni bir cagiran
+    // eklendiginde kapi sessizce atlanmaz.
+    if (type == BoosterType.AIR_SUPPORT && enemiesOnField == 0) {
         return BoosterDecision.NoEffect
     }
 

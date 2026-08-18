@@ -265,6 +265,58 @@ fun starsFor(livesLeft: Int, maxLives: Int): Int {
     }
 }
 
+/**
+ * Yildiz hesabina giren can — **meta yukseltmeden ARINDIRILMIS**.
+ *
+ * ## Kapattigi exploit
+ * "Tahkimat" meta yukseltmesi maks us canini 20'den 30'a cikariyor. Motor
+ * yildizi `kalanCan / tabanCan` ile hesapliyordu; pay meta DAHIL, payda taban
+ * idi. Tahkimat rank 5'teki oyuncu 12 dusman sizdirip 3 yildiz, 10 sizdirip
+ * "Kusursuz Savunma" madalyasi (+80 coin) aliyordu — meta yukseltme bir yildiz
+ * hilesine donusmustu.
+ *
+ * ## Neden payda [baseMaxLives] birakildi
+ * Alternatif, paydayi da meta-dahil yapmakti; matematik duzelirdi ama Tahkimat
+ * bir CEZAYA donerdi: 30 canli oyuncunun 3 yildiz icin 3 sizintiya hakki
+ * olurken 20 canlinin 2 sizintiya hakki olurdu, yani oyuncu satin aldigi seyle
+ * zorlastirilirdi. Secilen kural: **yildiz yalnizca SIZINTI SAYISINA bakar.**
+ * Her rankta 3 yildiz ayni sizinti sayisini gerektirir; Tahkimat'in aldigi sey
+ * yildiz degil dayaniklilik marjidir. Bu, [effectiveStarHealth] ile birebir
+ * ayni doktrindir ("geri verilen veya fazladan can, yildiz degil hayatta kalma
+ * satin alir").
+ *
+ * En az 1 doner: meta sayesinde ayakta kalan oyuncuya 0 yildiz demek zaferi
+ * iptal etmek olurdu ve [resolveLevelClear] (stars > 0 sartli) patlardi.
+ *
+ * @param baseMaxLives bolumun TABAN us cani (meta bonusu HARIC).
+ * @param livesLost bu savasta usse sizan dusman sayisi.
+ */
+fun starHealthFromLeaks(baseMaxLives: Int, livesLost: Int): Int {
+    require(baseMaxLives > 0) { "baseMaxLives > 0 olmali" }
+    return (baseMaxLives - livesLost.coerceAtLeast(0)).coerceAtLeast(1)
+}
+
+/**
+ * [targetStars] yildizi almak icin gereken **en az** can.
+ *
+ * Zafer ekranindaki "N sizinti daha az = 3 yildiz" ipucunun kaynagi. Esikleri
+ * elle cevirmek yerine [starsFor]'u tarayarak bulur: yuzde esikleri
+ * ([EconomyConfig.STAR3_HEALTH_RATIO]) ondalik oldugu icin `ceil(0.90 * 20)`
+ * gibi bir hesap kayan nokta yuzunden 19 dondurup ipucunu bir sizinti YANLIS
+ * gosterebilirdi. Tarama, gosterilen sayinin gercek yildiz kurali ile
+ * ayrisamayacagini garanti eder.
+ *
+ * @return 1..[maxLives] araliginda bir can; [targetStars] <= 0 icin 0.
+ */
+fun healthNeededForStars(targetStars: Int, maxLives: Int): Int {
+    require(maxLives > 0) { "maxLives > 0 olmali" }
+    if (targetStars <= 0) return 0
+    for (health in 1..maxLives) {
+        if (starsFor(health, maxLives) >= targetStars) return health
+    }
+    return maxLives
+}
+
 /** Okunurluk takma adi; [starsFor] ile ayni fonksiyon. */
 fun starsForRemainingHealth(remainingHealth: Int, maxHealth: Int): Int =
     starsFor(remainingHealth, maxHealth)

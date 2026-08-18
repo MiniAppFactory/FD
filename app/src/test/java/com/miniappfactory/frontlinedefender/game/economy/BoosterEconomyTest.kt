@@ -79,10 +79,13 @@ class BoosterEconomyTest {
 
     @Test
     fun priceTableMatchesEconomySpec() {
-        // ECONOMY_SPEC B fiyat tablosu. Bu degerler dokumandaki tabloyla BIREBIR aynidir.
-        assertEquals(120, boosterPrice(BoosterType.AIR_SUPPORT, 4))
-        assertEquals(144, boosterPrice(BoosterType.AIR_SUPPORT, 7))
-        assertEquals(264, boosterPrice(BoosterType.AIR_SUPPORT, 22))
+        // ECONOMY_SPEC B fiyat tablosu.
+        // Hava Destegi tabani 96 -> 101: fiyat acilista (L4) TAM olarak bir
+        // kademe-2 Gatling (125) olsun diye. Ankraj artik "acilis Tedarikinin
+        // %85'i" degil "bir kule" — bkz. EconomyConfig.AIR_SUPPORT_SUPPLY_BASE.
+        assertEquals(125, boosterPrice(BoosterType.AIR_SUPPORT, 4))
+        assertEquals(149, boosterPrice(BoosterType.AIR_SUPPORT, 7))
+        assertEquals(269, boosterPrice(BoosterType.AIR_SUPPORT, 22))
 
         assertEquals(240, boosterPrice(BoosterType.BASE_REPAIR, 7))
         assertEquals(540, boosterPrice(BoosterType.BASE_REPAIR, 22))
@@ -106,17 +109,26 @@ class BoosterEconomyTest {
         }
     }
 
+    /**
+     * SERT KURAL: hava destegi **bir kule kurmaktan vazgecmek** demek.
+     *
+     * OLCUT DEGISTI — "acilis Tedarikinin %70'i" -> "tam yukseltilmis en ucuz
+     * kule". Eski olcut, acilis Tedariki bir-iki kule alirken dogru vekildi.
+     * Sermaye kadrodan turetilir olunca (3-7 kulelik purse) ayni yuzde artik
+     * "bir kule" demiyor; ustelik yuzde, guclendirici fiyatiyla hicbir ilgisi
+     * olmayan bir sebeple (kadro buyudu) kayiyor. Yeni olcut dogrudan kule
+     * fiyatina bakiyor, yani kalibrasyonun NIYETI ile ayni birimde.
+     */
     @Test
-    fun airSupportCostsAtLeastAWholeOpeningTower() {
-        // SERT KURAL: hava destegi bir kule kurmaktan vazgecmek demek. Fiyat, o bolumun
-        // baslangic Tedarikinin %70'inin altina duserse "bedava gibi" olur ve
-        // ECONOMY_SPEC A sikilastirmasi anlamsizlasir.
+    fun airSupportNeverCostsLessThanAFullyUpgradedTower() {
+        val cheapestFullTower = GameConfigCampaignFacts.towerBuildCost.keys
+            .minOf { GameConfigCampaignFacts.tierTwoCost(it) }
         for (level in BoosterType.AIR_SUPPORT.unlockLevel..EconomyConfig.CAMPAIGN_LEVELS) {
-            val opening = startingSupplyFor(level)
+            val price = boosterPrice(BoosterType.AIR_SUPPORT, level)
             assertTrue(
-                "L$level: hava destegi ${boosterPrice(BoosterType.AIR_SUPPORT, level)}, " +
-                    "acilis Tedariki $opening — cok ucuz",
-                boosterPrice(BoosterType.AIR_SUPPORT, level) >= opening * 70 / 100,
+                "L$level: hava destegi $price, tam yukseltilmis en ucuz kule " +
+                    "$cheapestFullTower — guclendirici kuleden ucuz olamaz",
+                price >= cheapestFullTower,
             )
         }
     }
@@ -345,6 +357,150 @@ class BoosterEconomyTest {
         assertEquals(12, baseRepairAmount(1, 30))
     }
 
+    // ---------------------------------------------------------------------------------
+    // 4b. HEDEFSIZ HAVA DESTEGI — geri alinamaz bos harcamanin ekonomi katmani kapisi
+    // ---------------------------------------------------------------------------------
+    // Hava Destegi ekrandaki dusmanlara vurur. Saha bosken (hazirlik fazi, dalgalar
+    // arasi) kullanim 96-264 Tedarik'i HICBIR SEYE harcar, savas basina tek ucretli
+    // hakki yakar ve 45 sn bekleme baslatir; geri alma yok. Kapi bu yuzden UI'da
+    // degil, tek dogruluk kaynagi olan ekonomi katmanindadir.
+
+    @Test
+    fun airSupportIsRefusedWhenThereAreNoTargets() {
+        val s = state(level = 10)
+        assertEquals(
+            BoosterDecision.NoEffect,
+            boosterAllowed(
+                s, BoosterType.AIR_SUPPORT, viaAd = false, richWallet,
+                supplyOnHand = 9_999, enemiesOnField = 0,
+            ),
+        )
+    }
+
+    @Test
+    fun refusedAirSupportCostsNothingBurnsNoUseAndStartsNoCooldown() {
+        // Ret ucretsiz OLMALI: aksi halde oyuncu yanlis basmanin bedelini savasin
+        // geri kalaninda oder (hak + bekleme + Tedarik).
+        val s = state(level = 10)
+        val decision = boosterAllowed(
+            s, BoosterType.AIR_SUPPORT, viaAd = false, richWallet,
+            supplyOnHand = 9_999, enemiesOnField = 0, nowMs = 5_000L,
+        )
+        assertEquals(BoosterDecision.NoEffect, decision)
+        assertFalse(decision.isAllowed)
+
+        val after = useBooster(s, BoosterType.AIR_SUPPORT, viaAd = false, decision = decision, nowMs = 5_000L)
+        assertSame("reddedilen kullanim durumu degistirmemeli", s, after)
+        assertEquals(0, after.paidUsesOf(BoosterType.AIR_SUPPORT))
+        assertEquals(0, after.adUsesOf(BoosterType.AIR_SUPPORT))
+        assertTrue("bekleme baslamamali", after.lastUseMs.isEmpty())
+        assertSame("Tedarik/coin dusulmemeli", richWallet, payForBooster(richWallet, decision))
+
+        // Bekleme gercekten islememis olmali: hedef gelince ayni anda izin cikar.
+        assertTrue(
+            boosterAllowed(
+                after, BoosterType.AIR_SUPPORT, viaAd = false, richWallet,
+                supplyOnHand = 9_999, enemiesOnField = 1, nowMs = 5_000L,
+            ).isAllowed
+        )
+    }
+
+    @Test
+    fun airSupportIsAllowedAsSoonAsOneEnemyIsOnTheField() {
+        val s = state(level = 10)
+        val d = boosterAllowed(
+            s, BoosterType.AIR_SUPPORT, viaAd = false, richWallet,
+            supplyOnHand = 9_999, enemiesOnField = 1,
+        )
+        assertEquals(
+            BoosterDecision.Allowed(boosterPrice(BoosterType.AIR_SUPPORT, 10), BoosterCurrency.SUPPLY, false),
+            d,
+        )
+    }
+
+    @Test
+    fun noTargetGateAlsoCoversTheAdPath() {
+        // Reklam yolu bedava gorunur ama savas basina tek EK hakki ve gunluk reklam
+        // hakkini yakar — bos sahada o hak da bosa gitmemeli.
+        var s = state(level = 10)
+        val paid = boosterAllowed(
+            s, BoosterType.AIR_SUPPORT, viaAd = false, richWallet,
+            supplyOnHand = 9_999, enemiesOnField = 3, nowMs = 0L,
+        )
+        assertTrue(paid.isAllowed)
+        s = useBooster(s, BoosterType.AIR_SUPPORT, viaAd = false, decision = paid, nowMs = 0L)
+
+        val late = EconomyConfig.AIR_SUPPORT_COOLDOWN_MS
+        assertEquals(
+            BoosterDecision.NoEffect,
+            boosterAllowed(s, BoosterType.AIR_SUPPORT, viaAd = true, richWallet, enemiesOnField = 0, nowMs = late),
+        )
+        assertTrue(
+            boosterAllowed(s, BoosterType.AIR_SUPPORT, viaAd = true, richWallet, enemiesOnField = 2, nowMs = late)
+                .isAllowed
+        )
+    }
+
+    @Test
+    fun noEffectIsDecidedBeforeAffordability() {
+        // KONTROL SIRASI SOZLESMESI (analytics `booster_blocked.reason` buna bagli):
+        // "etki" adimi odeme gucunden ONCE gelir. Tedariki de yetmeyen bir oyuncuya
+        // InsufficientSupply degil NoEffect donmeli, yoksa oyuncuya sahada hedef
+        // oldugu ve tek eksigin para oldugu YANLIS bilgisi verilir.
+        val d = boosterAllowed(
+            state(level = 10), BoosterType.AIR_SUPPORT, viaAd = false, richWallet,
+            supplyOnHand = 0, enemiesOnField = 0,
+        )
+        assertEquals(BoosterDecision.NoEffect, d)
+    }
+
+    @Test
+    fun enemyCountDoesNotAffectTheOtherBoosters() {
+        // Regresyon: yeni parametre yalnizca AIR_SUPPORT icin anlamli.
+        // Us Tamiri hala YALNIZCA "can zaten tam" durumunda NoEffect doner.
+        assertEquals(
+            BoosterDecision.NoEffect,
+            boosterAllowed(
+                state(level = 10), BoosterType.BASE_REPAIR, viaAd = false, richWallet,
+                baseHealth = 20, maxBaseHealth = 20, enemiesOnField = 0,
+            ),
+        )
+        assertTrue(
+            "bos saha tamiri engellememeli — tamirin hedefle ilgisi yok",
+            boosterAllowed(
+                state(level = 10), BoosterType.BASE_REPAIR, viaAd = false, richWallet,
+                baseHealth = 5, maxBaseHealth = 20, enemiesOnField = 0,
+            ).isAllowed
+        )
+        assertTrue(
+            boosterAllowed(state(level = 10), BoosterType.EMERGENCY_SUPPLY, viaAd = true, richWallet, enemiesOnField = 0)
+                .isAllowed
+        )
+    }
+
+    @Test
+    fun unknownEnemyCountPreservesLegacyBehaviourExactly() {
+        // Varsayilan deger NEDEN -1: 0 gecerli ve anlamli bir sayidir ("saha bos").
+        // Varsayilan 0 olsaydi, sahayi bildirmeyen her cagiran (simulasyon, birim
+        // testleri, ileride tutorial/otomatik oynatma) sessizce reddedilirdi.
+        assertEquals(-1, ENEMY_COUNT_UNKNOWN)
+        val s = state(level = 10)
+        val withTargets = boosterAllowed(
+            s, BoosterType.AIR_SUPPORT, viaAd = false, richWallet,
+            supplyOnHand = 9_999, enemiesOnField = 7,
+        )
+        val explicitUnknown = boosterAllowed(
+            s, BoosterType.AIR_SUPPORT, viaAd = false, richWallet,
+            supplyOnHand = 9_999, enemiesOnField = ENEMY_COUNT_UNKNOWN,
+        )
+        val defaulted = boosterAllowed(
+            s, BoosterType.AIR_SUPPORT, viaAd = false, richWallet, supplyOnHand = 9_999,
+        )
+        assertEquals(withTargets, explicitUnknown)
+        assertEquals(withTargets, defaulted)
+        assertTrue(defaulted.isAllowed)
+    }
+
     // =================================================================================
     // 5. Coin yolu — Konuslanma Rezervi guclendiriciler yuzunden kirilmaz
     // =================================================================================
@@ -475,10 +631,12 @@ class BoosterEconomyTest {
         val tank = facts.enemyMaxHp.getValue("TANK")
         val fraction = EconomyConfig.AIR_SUPPORT_DAMAGE_FRACTION
 
-        // Kalibrasyon oncesi piyade 75, tank 580 canliydi; oran sabit oldugu icin
-        // silinen can otomatik olarak x3,5 buyudu.
-        assertEquals(260.0, infantry, 0.5)
-        assertEquals(2030.0, tank, 0.5)
+        // Faz 12.1: taban carpan x3,5 -> x1,1 olarak yeniden olculdu (bolum 1
+        // gecilemiyordu, bkz. GameConfig.ENEMY_SPECS). Bu testin ISPATLADIGI
+        // SEY ISTE BU: hava destegi ORAN oldugu icin kalibrasyon her iki yone
+        // gittiginde de kendiliginden olcegi tuttu, tek satir kod degismedi.
+        assertEquals(82.0, infantry, 0.5)
+        assertEquals(638.0, tank, 0.5)
 
         // Tek kullanim hicbirini oldurmez ama ikisinde de anlamli bir dilim alir.
         assertTrue("piyade tek vurusta olmemeli", fraction * infantry < infantry)
@@ -511,21 +669,41 @@ class BoosterEconomyTest {
         assertEquals(125, tierTwoGatling)
 
         val atUnlock = boosterPrice(BoosterType.AIR_SUPPORT, BoosterType.AIR_SUPPORT.unlockLevel)
-        assertEquals(120, atUnlock)
-        assertTrue(
-            "acilista hava destegi $atUnlock, kademe-2 Gatling $tierTwoGatling — " +
-                "fiyatlar ayrisirsa karar 'karar' olmaktan cikar",
-            atUnlock >= tierTwoGatling * 80 / 100 && atUnlock <= tierTwoGatling * 120 / 100,
-        )
+        assertEquals("acilista fiyat TAM olarak bir kademe-2 Gatling", tierTwoGatling, atUnlock)
 
-        // Modellenen bolumlerde fiyat, tasarlanan kadronun %15-25'i bandinda kalmali:
-        // bir kulelik karar. Bant disina cikarsa ya bedava gibi olur ya alinamaz olur.
-        for (level in BoosterType.AIR_SUPPORT.unlockLevel..SupplyBudgetModel.MODELLED_LEVELS) {
+        // ---------------------------------------------------------------
+        // FIYAT TAVANI — ARTIK 55 BOLUMUN TAMAMINDA
+        // ---------------------------------------------------------------
+        // Bu dongu bir zamanlar `unlockLevel..SupplyBudgetModel.MODELLED_LEVELS`
+        // idi; MODELLED_LEVELS 8'den 55'e cikarilirken elle `..8`e sabitlendi ve
+        // gerekce olarak "ust bolumlerin rampasi `boosterPriceRisesWithLevel`de
+        // kilitli" yazildi. **Depoda oyle bir test yok** ve var olan
+        // `pricesNeverDecreaseWithLevel` yalnizca monotonlugu kontrol ediyor,
+        // bu testin varlik sebebi olan UST SINIRI degil. Sonuc: fiyat tavani
+        // 55 bolumun 47'sinde denetimsiz kaliyordu.
+        //
+        // KAPSAM 5 BOLUMDEN 55 BOLUME ACILDI ve tavan BUTCEYE baglandi.
+        //
+        // Eski olcut "tasarlanan kadronun %15-25'i" idi ve yalnizca L4..L8'i
+        // kapsiyordu. Iki sorunu vardi: (a) kapsam — 55 bolumun 47'sinde
+        // guclendirici fiyat tavani DENETIMSIZDI (dongu `..8`e elle
+        // sabitlenmisti ve gerekce olarak depoda VAR OLMAYAN bir teste atif
+        // yapiliyordu); (b) olcut kadro BUYUKLUGUNE duyarliydi — ayni fiyat,
+        // alti kulelik bir kadronun %20'si iken dort kulelik bir kadronun
+        // %34'u olur ve bu, guclendiricinin fiyatiyla ilgili hicbir sey
+        // soylemez.
+        //
+        // Tavan artik bolumun TOPLAM Tedarik butcesine gore: guclendirici hicbir
+        // bolumde ekonominin dortte birini yiyemez. Olculen aralik %10,9 (L13)
+        // .. %17,1 (L53). Bandin ALT ucu ayri ve MUTLAK bir testle korunuyor:
+        // [airSupportNeverCostsLessThanAFullyUpgradedTower].
+        for (level in BoosterType.AIR_SUPPORT.unlockLevel..EconomyConfig.CAMPAIGN_LEVELS) {
             val share = 100.0 * boosterPrice(BoosterType.AIR_SUPPORT, level) /
-                SupplyBudgetModel.designedLoadoutCost(level)
+                SupplyBudgetModel.supplyBudget(level)
             assertTrue(
-                "L$level: hava destegi tasarlanan kadronun %%%.1f'i".format(share),
-                share in 15.0..25.0,
+                "L$level: hava destegi bolum butcesinin %%%.1f'i — %%25 tavani asildi"
+                    .format(share),
+                share <= 25.0,
             )
         }
     }

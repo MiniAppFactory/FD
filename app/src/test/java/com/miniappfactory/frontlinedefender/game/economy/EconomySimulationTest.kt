@@ -36,16 +36,20 @@ class EconomySimulationTest {
     }
 
     @Test
-    fun totalCampaignLockCostIs3140() {
+    fun totalCampaignLockCostIs23105() {
         val total = (1..EconomyConfig.CAMPAIGN_LEVELS).sumOf { lockCost(it) }
-        assertEquals("GDD C.3: kilit maliyeti toplami 3.140", EconomyConfig.TOTAL_LOCK_COST, total)
-        assertEquals(3_140, total)
+        assertEquals("GDD C.3: kilit maliyeti toplami", EconomyConfig.TOTAL_LOCK_COST, total)
+        assertEquals(23_105, total)
+        // 22 bolumluk kampanyanin payi degismedi.
+        assertEquals(3_140, (1..22).sumOf { lockCost(it) })
+        // L23+ formulu: 350 + 15(L-22).
+        for (l in 23..55) assertEquals("L$l", 350 + 15 * (l - 22), lockCost(l))
     }
 
     @Test
-    fun sixLevelsAreFreeAndSixteenAreGated() {
+    fun sixLevelsAreFreeAndFortyNineAreGated() {
         assertEquals(6, (1..EconomyConfig.CAMPAIGN_LEVELS).count { lockCost(it) == 0 })
-        assertEquals(16, (1..EconomyConfig.CAMPAIGN_LEVELS).count { lockCost(it) > 0 })
+        assertEquals(49, (1..EconomyConfig.CAMPAIGN_LEVELS).count { lockCost(it) > 0 })
     }
 
     @Test
@@ -142,9 +146,13 @@ class EconomySimulationTest {
         // BAYRAK F-3 ust siniri: 3 yildiz tavani - 1 yildiz tabani, TEK SEFERLIK.
         val threeStar = (1..EconomyConfig.CAMPAIGN_LEVELS).sumOf { levelReward(it, 3) }
         val oneStar = (1..EconomyConfig.CAMPAIGN_LEVELS).sumOf { levelReward(it, 1) }
-        assertEquals(16_010, threeStar)
-        assertEquals(10_010, oneStar)
-        assertEquals("ECONOMY_SPEC 3.2: tavan 6.000", 6_000, threeStar - oneStar)
+        // 22 bolumluk kampanyada 16.010 / 10.010 / 6.000 idi; 55 bolumde tavan
+        // buyudu. Tek seferlik olma ozelligi DEGISMEDI (sinirsiz farming degil).
+        assertEquals(83_600, threeStar)
+        assertEquals(52_250, oneStar)
+        assertEquals("yildiz iyilestirme tavani", 31_350, threeStar - oneStar)
+        assertEquals("22 bolumluk pay degismedi", 6_000,
+            (1..22).sumOf { levelReward(it, 3) } - (1..22).sumOf { levelReward(it, 1) })
     }
 
     // =================================================================================
@@ -219,9 +227,9 @@ class EconomySimulationTest {
 
     @Test
     fun reserveIsZeroWhenCampaignFullyUnlocked() {
-        val all = walletAt(9_999, (1..22).toSet())
+        val all = walletAt(9_999, (1..EconomyConfig.CAMPAIGN_LEVELS).toSet())
         assertNull(firstLockedLevel(all.unlockedLevels))
-        assertEquals("GDD C.4: 22 acikken rezerv 0", 0, reserveFor(all))
+        assertEquals("GDD C.4: 55 bolum acikken rezerv 0", 0, reserveFor(all))
         assertEquals(9_999, spendableBalance(all))
     }
 
@@ -300,7 +308,7 @@ class EconomySimulationTest {
      * Gercek zafer yolunu (`resolveLevelClear`/`applyLevelClear`) kullanir.
      */
     @Test
-    fun worstCasePlayerFinishesAllTwentyTwoLevels() {
+    fun aOneStarRunNeverGoesBrokeAcrossFiftyFiveLevels() {
         var wallet = PlayerWallet()
         val steps = mutableListOf<Step>()
 
@@ -334,15 +342,18 @@ class EconomySimulationTest {
             steps += Step(level, before, cost, wallet.coins, margin)
         }
 
-        assertEquals("22 bolumun tamami acilmis olmali", 22, wallet.unlockedLevels.size)
-        assertEquals("22 bolumun tamami temizlenmis olmali", 22, wallet.clearedLevels.size)
-        assertEquals("GDD C.3: en kotu durumda son bakiye 6.870", 6_870, wallet.coins)
-        assertEquals("GDD C.3: en kotu durum kampanya geliri 10.010", 10_010, wallet.lifetimeEarned)
-        assertEquals(3_140, wallet.lifetimeSpent)
+        // CAMPAIGN_55.md 8.3 — 55 bolumluk EN KOTU DURUM simulasyonu.
+        // Hepsi 1 yildiz · hic gorev · hic reklam · hic tekrar · hic yukseltme.
+        assertEquals("55 bolumun tamami acilmis olmali", 55, wallet.unlockedLevels.size)
+        assertEquals("55 bolumun tamami temizlenmis olmali", 55, wallet.clearedLevels.size)
+        assertEquals("kampanya sonu bakiye", 29_145, wallet.coins)
+        assertEquals("en kotu durum kampanya geliri", 52_250, wallet.lifetimeEarned)
+        assertEquals("toplam kilit maliyeti", 23_105, wallet.lifetimeSpent)
+        assertTrue("bakiye hicbir bolumde negatife dusmemeli", steps.all { it.balanceAfterLevel >= 0 })
 
         // GDD H.3: minimum guvenlik payi >= 12x
         val paid = steps.filter { it.lockPaid > 0 }
-        assertEquals(16, paid.size)
+        assertEquals(49, paid.size)
         val minMargin = paid.minOf { it.safetyMargin }
         assertTrue("min guvenlik payi $minMargin, 12x'in altinda", minMargin >= 12.0)
         // L7 en dar nokta: 1290 / 100 = 12,9x
@@ -421,7 +432,7 @@ class EconomySimulationTest {
             }
         }
 
-        assertEquals("22 bolum tamamlanmali", 22, wallet.clearedLevels.size)
+        assertEquals("55 bolum tamamlanmali", 55, wallet.clearedLevels.size)
         assertTrue("acgozlu oyuncu hic yukseltme almadiysa test anlamsiz", purchases >= 10)
         assertTrue("rezerv kilidi hic devreye girmediyse test anlamsiz", reserveBlocks > 0)
         assertTrue("harcanan coin agac toplamini asamaz", upgrades.spentCoins() <= EconomyConfig.TREE_TOTAL_COST)
