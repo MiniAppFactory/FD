@@ -47,6 +47,21 @@ object AdIds {
     private const val PRODUCTION_REWARDED_AD_UNIT_ID: String = ""
 
     /**
+     * R4 Guclendirici icin AYRI bir rewarded birimi — henuz YOK.
+     *
+     * Neden ayri bir sabit: savas-ici guclendirici reklaminin eCPM'i ve
+     * tamamlanma orani menu-ici R1'den yapisal olarak farklidir; ayni birime
+     * karistirilirsa iki yerlesimin performansi tek bir ortalamanin arkasinda
+     * kaybolur ve hangisinin gelir getirdigi olculemez. AdMob'da bu yerlesim
+     * icin ayri bir "Rewarded" ad unit acilmali (onerilen ad: "FD Booster R4").
+     *
+     * BOS oldugu surece [rewardedAdUnitId] paylasilan rewarded birimine duser —
+     * yani bugun R1/R2/R3 ile ayni Google TEST birimi kullanilir. Gercek bir
+     * kimlik UYDURULMAZ; kayit yapilana kadar bu alan bos kalir.
+     */
+    private const val PRODUCTION_REWARDED_BOOSTER_AD_UNIT_ID: String = ""
+
+    /**
      * AndroidManifest'teki `com.google.android.gms.ads.APPLICATION_ID`
      * meta-data'sinin **ayni** degeri. Manifest degeri derleme zamaninda
      * sabitlenir; buradaki kopya yalnizca dogrulama/log amaclidir.
@@ -61,6 +76,27 @@ object AdIds {
 
     fun rewardedAdUnitId(): String =
         if (USE_TEST_ADS) TEST_REWARDED_AD_UNIT_ID else PRODUCTION_REWARDED_AD_UNIT_ID
+
+    /**
+     * Yerlesime ozel rewarded birimi.
+     *
+     * Bugun TUM yerlesimler ayni Google test birimini kullanir (test kimlikleri
+     * yerlesim ayrimi yapmaz). Gercek kimliklere gecildiginde yalnizca bu
+     * fonksiyonun icindeki esleme buyur; cagri yerleri degismez.
+     *
+     * Kimligi olmayan bir yerlesim paylasilan rewarded birimine duser; bos
+     * kimlikle SDK'ya asla gidilmez ([isConfigured]).
+     */
+    fun rewardedAdUnitId(placement: RewardedPlacement): String {
+        if (USE_TEST_ADS) return TEST_REWARDED_AD_UNIT_ID
+        val specific = when (placement) {
+            RewardedPlacement.BOOSTER -> PRODUCTION_REWARDED_BOOSTER_AD_UNIT_ID
+            RewardedPlacement.SUPPLY_DROP,
+            RewardedPlacement.REINFORCEMENT,
+            RewardedPlacement.DOUBLE_PAYOUT -> ""
+        }
+        return if (specific.isNotBlank()) specific else PRODUCTION_REWARDED_AD_UNIT_ID
+    }
 
     /** Kimlik bos ise reklam istegi hic yapilmaz — SDK'yi bos id ile cagirmayiz. */
     fun isConfigured(adUnitId: String): Boolean = adUnitId.isNotBlank()

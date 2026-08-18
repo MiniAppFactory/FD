@@ -24,9 +24,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.miniappfactory.frontlinedefender.R
+import com.miniappfactory.frontlinedefender.game.audio.rememberHaptics
 import com.miniappfactory.frontlinedefender.game.engine.GameEngine
 import com.miniappfactory.frontlinedefender.game.engine.GameState
-import com.miniappfactory.frontlinedefender.game.model.GameConfig
+import com.miniappfactory.frontlinedefender.game.economy.LevelClearResult
+import com.miniappfactory.frontlinedefender.game.economy.healthNeededForStars
 import com.miniappfactory.frontlinedefender.ui.theme.*
 
 @Composable
@@ -36,6 +38,15 @@ fun MainMenuOverlay(
 ) {
     val highScore = gameEngine.saveManager.highScore
     var soundEnabled by remember { mutableStateOf(gameEngine.saveManager.soundEnabled) }
+    // Faz 14 - muzik ve dokunsal geri bildirim. Tercihler `SaveManager`da
+    // DEGIL, ilgili yoneticilerin kendi kalici deposunda; burada yalnizca
+    // anahtarin cizilecek durumu tutuluyor (ses satiriyla ayni desen).
+    var musicEnabled by remember { mutableStateOf(gameEngine.audioManager.isMusicEnabled) }
+    val haptics = rememberHaptics()
+    var hapticsEnabled by remember { mutableStateOf(haptics.isHapticsEnabled) }
+
+    // Disli ikonu ARTIK gercekten bir ekran aciyor (bkz. asagidaki not).
+    var settingsOpen by remember { mutableStateOf(false) }
 
     // KAMUFLAJ ZEMIN.
     //
@@ -151,53 +162,112 @@ fun MainMenuOverlay(
                 )
             }
 
-            // Sound Toggle
+            // AYARLAR GIRISI
             //
-            // BUG (kullanici bildirdi): "baslangicta settings'e basamadim".
-            // Dugme calisiyordu ama DISLI ikonu bir ayarlar EKRANI bekletiyor ve
-            // tek geri bildirim ikonun soluklasmasiydi -> basildigi anlasilmiyordu.
-            // Cozum: durumu YAZIYLA soyle. Renk tek ayrim kanali olamaz
-            // (game-art erisilebilirlik kurali) — metin hem durumu hem islevi
-            // belirsizlige yer birakmadan veriyor.
+            // ESKI HALI: bu disli ikonu **yalnizca bir ses ac/kapa dugmesiydi**;
+            // kodun kendi yorumu "disli ikonu bir ayarlar EKRANI bekletiyor"
+            // diye itiraf ediyordu ve kullanici da "settings'e basamadim" diye
+            // bildirmisti — cunku basiliyordu ama hicbir ekran acilmiyordu.
+            //
+            // ARTIK: ikon gercek bir ayarlar ekrani aciyor. Ses ac/kapa oraya
+            // TASINDI (davranis ayni: hem kalici kayda hem calisan ses motoruna
+            // yazilir), ve ekran UMP "Gizlilik Secenekleri" girisini de tasiyor —
+            // oyuncunun rizasini geri cekebilecegi tek kalici nokta.
+            //
+            // Ikonun altindaki YAZI korundu: ikon tek basina ne oldugunu
+            // anlatmiyor ve renk tek ayrim kanali olamaz (erisilebilirlik).
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 IconButton(
-                    onClick = {
-                        soundEnabled = !soundEnabled
-                        gameEngine.saveManager.soundEnabled = soundEnabled
-                        gameEngine.audioManager.isSoundEnabled = soundEnabled
-                    },
+                    onClick = { settingsOpen = true },
                     modifier = Modifier
                         .size(48.dp)
                         .background(SleekSurfaceCard, CircleShape)
                         .border(1.dp, SleekBorderLight, CircleShape)
-                        .testTag("sound_toggle_button")
+                        .testTag("settings_button")
                 ) {
                     SpriteIcon(
                         id = R.drawable.spr_ic_settings,
                         size = 26.dp,
-                        contentDescription = stringResource(R.string.dialog_sound_toggle_desc),
-                        modifier = if (soundEnabled) Modifier else Modifier.alpha(0.35f)
+                        contentDescription = stringResource(R.string.settings_open_desc)
                     )
                 }
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = stringResource(
-                        if (soundEnabled) R.string.dialog_sound_on else R.string.dialog_sound_off
-                    ),
-                    color = if (soundEnabled) SleekTextAccent else SleekTextAccent.copy(alpha = 0.45f),
+                    text = stringResource(R.string.settings_button_label),
+                    color = SleekTextAccent,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1
                 )
             }
         }
+
+        if (settingsOpen) {
+            SettingsScreen(
+                soundEnabled = soundEnabled,
+                onSoundEnabledChange = { enabled ->
+                    // Eski dugmenin YAPTIGI ISIN AYNISI, tasindi: once yerel
+                    // durum (aninda geri bildirim), sonra kalici kayit, sonra
+                    // calisan ses motoru.
+                    soundEnabled = enabled
+                    gameEngine.saveManager.soundEnabled = enabled
+                    gameEngine.audioManager.isSoundEnabled = enabled
+                },
+                musicEnabled = musicEnabled,
+                onMusicEnabledChange = { enabled ->
+                    // Ses satiriyla AYNI sira: once yerel durum (aninda geri
+                    // bildirim), sonra calisan motor. Kalici kayit motorun
+                    // kendi setter'i icinde yapiliyor.
+                    musicEnabled = enabled
+                    gameEngine.audioManager.isMusicEnabled = enabled
+                },
+                hapticsEnabled = hapticsEnabled,
+                onHapticsEnabledChange = { enabled ->
+                    hapticsEnabled = enabled
+                    haptics.isHapticsEnabled = enabled
+                },
+                // SIFIRLAMA. `SaveManager` bu uc metodu tasiyordu ama hicbir
+                // yerden cagrilmiyordu; ayarlar ekrani onlari saf lambda
+                // olarak alir, motoru/kaydi TANIMAZ.
+                onResetHints = { gameEngine.saveManager.resetHints() },
+                onResetTutorial = { gameEngine.saveManager.resetTutorial() },
+                onResetProgress = { gameEngine.saveManager.resetProgress() },
+                onDismiss = { settingsOpen = false }
+            )
+        }
     }
 }
 
+/**
+ * Zafer ekrani.
+ *
+ * ## Faz 13'te neden degisti
+ * 1. **Tek buton "REPLAY" yaziyordu ama `returnToLevelSelect()` cagiriyordu** —
+ *    etiket yalandi.
+ * 2. **"SONRAKI BOLUM" yoktu.** Kampanyayi surdurmenin yolu zafer ekranindan
+ *    cikip haritada siradaki bolumu bulmaktan geciyordu; tutunmanin en buyuk
+ *    tek kaybi buydu.
+ * 3. **Kazanilan coin hic gosterilmiyordu.** Ekonomi coini yatiriyor
+ *    (`onLevelCleared`), oyuncu ise yalnizca meta karsiligi olmayan "Final
+ *    score" goruyordu — yani ilerlemenin gorunur karsiligi yoktu.
+ * 4. **Kalan can paydasi sabit sabit bir kampanya degeriydi**; Tahkimat
+ *    meta yukseltmesiyle can 30'a ciktiginda ekran "30/20" yaziyordu.
+ *
+ * @param clearResult ekonominin bu temizlik icin urettigi odul dokumu.
+ *   `null` ise coin satiri hic cizilmez (uydurma sayi gosterilmez).
+ * @param nextLevelId siradaki oynanabilir bolum; `null` ise (kampanya bitti
+ *   veya siradaki bolum kilitli) "SONRAKI BOLUM" butonu **gosterilmez** —
+ *   calismayan bir buton koymaktansa hic koymamak.
+ * @param onNextLevel [nextLevelId] null degilken cagrilir.
+ * @param onLevelSelect bolum secime donus (eski "REPLAY" butonunun GERCEK isi).
+ */
 @Composable
 fun VictoryModal(
     gameEngine: GameEngine,
-    onReplay: () -> Unit
+    clearResult: LevelClearResult? = null,
+    nextLevelId: Int? = null,
+    onNextLevel: (() -> Unit)? = null,
+    onLevelSelect: () -> Unit
 ) {
     val lives by gameEngine.lives.collectAsState()
     val score by gameEngine.score.collectAsState()
@@ -263,41 +333,108 @@ fun VictoryModal(
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Text(
+                        // Payda ARTIK sabit degil: Tahkimat meta yukseltmesi
+                        // cani 20'den 30'a cikarabiliyor ve ekran "30/20"
+                        // yaziyordu. `maxLives` taban + meta bonusunu tek yerde
+                        // toplayan tek dogru kaynak.
                         text = stringResource(
                             R.string.dialog_lives_remaining,
                             lives,
-                            GameConfig.INITIAL_BASE_LIVES
+                            gameEngine.maxLives
                         ),
                         color = Color.White,
                         fontSize = 14.sp,
                         textAlign = TextAlign.Center
                     )
+                    // KAZANILAN COIN — ilerlemenin gorunur karsiligi. Ekonomi
+                    // bunu zaten yatirdi; gostermemek, odulu hic vermemis gibi
+                    // hissettiriyordu.
+                    if (clearResult != null && clearResult.total > 0) {
+                        Text(
+                            text = stringResource(R.string.dialog_coins_earned, clearResult.total),
+                            color = SleekGold,
+                            fontWeight = FontWeight.Black,
+                            fontSize = 18.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.testTag("victory_coins_earned")
+                        )
+                    }
                     Text(
                         text = stringResource(R.string.dialog_final_score, score),
-                        color = SleekGold,
+                        color = SleekTextAccent,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
+                        fontSize = 14.sp,
                         textAlign = TextAlign.Center
                     )
+                    // SIRADAKI HEDEF. Yalnizca 3 yildizin altindayken ve hedef
+                    // gercekten ulasilabilirken gosterilir; 3 yildizda "daha
+                    // iyisini yap" demek anlamsiz olurdu.
+                    if (stars < 3) {
+                        val needed = healthNeededForStars(
+                            targetStars = 3,
+                            maxLives = gameEngine.levelSpec.maxBaseLives.coerceAtLeast(1)
+                        )
+                        val gap = needed - gameEngine.lastStarHealth
+                        if (gap > 0) {
+                            Text(
+                                text = stringResource(R.string.dialog_star_hint, gap),
+                                color = SleekTextAccent,
+                                fontSize = 13.sp,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.testTag("victory_star_hint")
+                            )
+                        }
+                    }
                 }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
+                    // BOLUM SEC: kampanya bittiyse veya siradaki bolum
+                    // kilitliyse TEK buton olarak kalir (eski davranis).
                     Button(
-                        onClick = onReplay,
-                        colors = ButtonDefaults.buttonColors(containerColor = SleekPrimaryGreen),
+                        onClick = onLevelSelect,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (onNextLevel == null) {
+                                SleekPrimaryGreen
+                            } else {
+                                SleekSurfaceCard
+                            }
+                        ),
                         shape = RoundedCornerShape(16.dp),
                         modifier = Modifier
                             .weight(1f)
-                            .testTag("victory_replay_button")
+                            .testTag("victory_level_select_button")
                     ) {
                         Text(
-                            text = stringResource(R.string.dialog_replay),
+                            text = stringResource(R.string.dialog_level_select),
                             fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
                             maxLines = 1
                         )
+                    }
+                    if (onNextLevel != null && nextLevelId != null) {
+                        Button(
+                            onClick = onNextLevel,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = SleekPrimaryGreen
+                            ),
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("victory_next_level_button")
+                        ) {
+                            Text(
+                                text = stringResource(R.string.dialog_next_level),
+                                fontWeight = FontWeight.Bold,
+                                // 13sp: TR "SONRAKİ BÖLÜM" 14 karakter ve
+                                // butonlar esit agirlikli; 14sp'de dar
+                                // ekranlarda (S8 landscape) tasiyordu.
+                                fontSize = 13.sp,
+                                maxLines = 1
+                            )
+                        }
                     }
                 }
             }
@@ -414,6 +551,13 @@ fun PauseMenuModal(
     onMainMenu: () -> Unit
 ) {
     var soundEnabled by remember { mutableStateOf(gameEngine.saveManager.soundEnabled) }
+    // Faz 14 - muzik ve dokunsal geri bildirim. Tercihler `SaveManager`da
+    // DEGIL, ilgili yoneticilerin kendi kalici deposunda; burada yalnizca
+    // anahtarin cizilecek durumu tutuluyor (ses satiriyla ayni desen).
+    var musicEnabled by remember { mutableStateOf(gameEngine.audioManager.isMusicEnabled) }
+    val haptics = rememberHaptics()
+    var hapticsEnabled by remember { mutableStateOf(haptics.isHapticsEnabled) }
+    var settingsOpen by remember { mutableStateOf(false) }
 
     Box(
         modifier = Modifier
@@ -442,30 +586,30 @@ fun PauseMenuModal(
                     textAlign = TextAlign.Center
                 )
 
-                // Sound Toggle Row
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                // AYARLAR
+                //
+                // Buradaki tek basina duran ses anahtari, ayarlarin YARISININ
+                // duraklatma menusunde YARISININ ana menude olmasi demekti; ustelik
+                // duraklatma menusunden gizlilik secenekleri erisilemiyordu.
+                // Anahtar ayarlar ekranina TASINDI (davranis birebir ayni) ve
+                // yerine ekranin tamamini acan tek bir giris kondu. Boylece her
+                // ayar tek bir yerde yasar ve iki kopya zamanla ayrisamaz.
+                Button(
+                    onClick = { settingsOpen = true },
+                    colors = ButtonDefaults.buttonColors(containerColor = SleekSurfaceCard),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("pause_settings_button")
                 ) {
-                    // Row SpaceBetween: etiket Switch'i itmesin diye weight(1f)
-                    // ile sinirli ve gerekirse olcek kuculur.
                     AutoShrinkText(
-                        text = stringResource(R.string.dialog_sound_effects),
-                        color = Color.White,
-                        fontWeight = FontWeight.SemiBold,
+                        text = stringResource(R.string.settings_button_label),
+                        color = Color.Unspecified,
+                        fontWeight = FontWeight.Bold,
                         maxFontSize = 16.sp,
                         minFontSize = 12.sp,
                         maxLines = 1,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Switch(
-                        checked = soundEnabled,
-                        onCheckedChange = {
-                            soundEnabled = it
-                            gameEngine.saveManager.soundEnabled = it
-                            gameEngine.audioManager.isSoundEnabled = it
-                        }
+                        textAlign = TextAlign.Center
                     )
                 }
 
@@ -521,6 +665,40 @@ fun PauseMenuModal(
                     )
                 }
             }
+        }
+
+        // Duraklatma modalinin USTUNDE acilir. Oyun zaten duraklatilmis
+        // durumda; ayarlar kapaninca ayni modala geri donulur, oynanis
+        // kendiliginden devam ETMEZ.
+        if (settingsOpen) {
+            SettingsScreen(
+                soundEnabled = soundEnabled,
+                onSoundEnabledChange = { enabled ->
+                    soundEnabled = enabled
+                    gameEngine.saveManager.soundEnabled = enabled
+                    gameEngine.audioManager.isSoundEnabled = enabled
+                },
+                musicEnabled = musicEnabled,
+                onMusicEnabledChange = { enabled ->
+                    // Ses satiriyla AYNI sira: once yerel durum (aninda geri
+                    // bildirim), sonra calisan motor. Kalici kayit motorun
+                    // kendi setter'i icinde yapiliyor.
+                    musicEnabled = enabled
+                    gameEngine.audioManager.isMusicEnabled = enabled
+                },
+                hapticsEnabled = hapticsEnabled,
+                onHapticsEnabledChange = { enabled ->
+                    hapticsEnabled = enabled
+                    haptics.isHapticsEnabled = enabled
+                },
+                // SIFIRLAMA. `SaveManager` bu uc metodu tasiyordu ama hicbir
+                // yerden cagrilmiyordu; ayarlar ekrani onlari saf lambda
+                // olarak alir, motoru/kaydi TANIMAZ.
+                onResetHints = { gameEngine.saveManager.resetHints() },
+                onResetTutorial = { gameEngine.saveManager.resetTutorial() },
+                onResetProgress = { gameEngine.saveManager.resetProgress() },
+                onDismiss = { settingsOpen = false }
+            )
         }
     }
 }

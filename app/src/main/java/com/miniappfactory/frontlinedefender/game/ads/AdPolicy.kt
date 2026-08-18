@@ -1,6 +1,9 @@
 package com.miniappfactory.frontlinedefender.game.ads
 
 import android.os.SystemClock
+import com.miniappfactory.frontlinedefender.game.economy.EconomyConfig
+import com.miniappfactory.frontlinedefender.game.model.GameConfig
+import com.miniappfactory.frontlinedefender.game.model.WaveDefinitions
 import java.util.Calendar
 
 /**
@@ -55,13 +58,46 @@ object AdPolicyConfig {
      */
     const val EXIT_WATCHDOG_MS: Long = 15_000L
 
-    /** GDD §G.2/6 — zaferi kutsal olan boss bolumleri. */
-    val BOSS_LEVEL_IDS: Set<Int> = setOf(11, 22)
+    /**
+     * GDD §G.2/6 — zaferi kutsal olan boss bolumleri: bu bolumleri gecen
+     * oyuncuya interstitial gosterilmez.
+     *
+     * FAZ 15 DUZELTMESI — elle yazilan liste yerine OYUNUN KENDI GERCEGINDEN
+     * turetiliyor.
+     *
+     * Onceki hali `setOf(11, 22)` idi ve kampanya 22 -> 55 bolume cikarilinca
+     * SESSIZCE bayatladi: perdeler 11'er bolum oldugu icin yeni finaller
+     * 33, 44 ve 55; ucu de korumasiz kalmisti, yani oyuncu bir perde
+     * finalindeki boss'u yendikten hemen sonra reklam yiyordu. Tam olarak
+     * korunmasi istenen an.
+     *
+     * Artik bir bolum, dalgalarindan HERHANGI BIRI [GameConfig.EnemyType.COMMAND_TANK]
+     * iceriyorsa boss bolumudur. Bu, konum konvansiyonuna ("her 11. bolum")
+     * degil oynanisin kendisine bagli: boss nereye konursa koruma oraya gider,
+     * kampanya tablosu yeniden sekillense bile liste kendini gunceller.
+     *
+     * `by lazy`: [WaveDefinitions.CAMPAIGN] de lazy uretiliyor ve bu nesne
+     * sinif yuklenirken degil ilk kullanimda cozulmeli.
+     */
+    val BOSS_LEVEL_IDS: Set<Int> by lazy {
+        WaveDefinitions.CAMPAIGN
+            .filterValues { waves ->
+                waves.any { wave ->
+                    wave.spawns.any { it.enemyType == GameConfig.EnemyType.COMMAND_TANK }
+                }
+            }
+            .keys
+    }
 
     // --- Rewarded limitleri (GDD §G.3) ---
 
-    /** R1 Tedarik Talebi: 3/gun. */
-    const val SUPPLY_DROP_DAILY_LIMIT: Int = 3
+    /**
+     * R1 Tedarik Talebi: 3/gun.
+     *
+     * Degeri EKONOMIDEN gelir. Ayni sayiyi burada elle tutmak, ekonomi hakki
+     * degistiginde reklam katmaninin butonu erken/gec kapatmasi demekti.
+     */
+    const val SUPPLY_DROP_DAILY_LIMIT: Int = EconomyConfig.R1_VIEWS_PER_DAY
 
     /** R2 Takviye: savas basina 1. */
     const val REINFORCEMENT_PER_BATTLE_LIMIT: Int = 1
@@ -69,19 +105,70 @@ object AdPolicyConfig {
     /** R3 Cift Odeme: savas basina 1. */
     const val DOUBLE_PAYOUT_PER_BATTLE_LIMIT: Int = 1
 
-    // --- Odul buyuklukleri (GDD §G.3 / §G.4 tablosu) ---
+    /**
+     * R4 Guclendirici: savas basina 4 — **kasitli olarak GEVSEK**.
+     *
+     * ## Neden burada gercek bir kota YOK (CIFT KAPI YASAGI)
+     * Bu yerlesimin gunluk hakkinin sahibi **ekonomi katmanidir**:
+     * `EconomyConfig.BOOSTER_AD_VIEWS_PER_DAY = 4` ve sayac `SaveManager`
+     * uzerinden KALICI (`CampaignProgressImpl.boosterAdViewsToday`) — yani
+     * uygulama yeniden baslatilinca sifirlanmaz. Ustelik ekonomi savas basina
+     * da kisitlar: her guclendirici tipi icin `adUsesPerBattle = 1`, uc tip var,
+     * dolayisiyla **bir savasta ekonominin izin verebilecegi en yuksek deger 3'tur**.
+     *
+     * Ayni siniri burada IKINCI kez uygularsak sonuc su olur: ekonomi "hakkin var"
+     * der, buton gorunur, oyuncu dokunur ve reklam katmani sessizce reddeder.
+     * Reddin sebebi hicbir ekranda gorunmez — oyuncu icin bu bir hatadir, kural
+     * degil. Bu yuzden bu sayi bir kota degil, **SDK spam tavanidir**: ekonomi
+     * kapisi her zaman ONCE kapanir, bu tavan pratikte hicbir zaman baglayici
+     * olmaz (4 > 3). Sifir da degildir — ekonomi katmani bir gun devre disi
+     * kalirsa veya bir cagri yeri onu atlarsa, tek savasta sinirsiz reklam
+     * istegi cikmasini engelleyen bir tavan durur.
+     *
+     * ## Neden gunluk degil de savas basina
+     * Gunluk sayac kalici depolama ister; bellekteki bir gunluk sayac uygulama
+     * yeniden baslatilinca sifirlanacagi icin ya YANLIS (ekonomiden daha gevsek)
+     * ya da ZARARLI (ekonomiden once kapanan ikinci kapi) olurdu. Savas basina
+     * tavan `onBattleStarted()` ile zaten dogal olarak sifirlanir ve tek bir
+     * savas icindeki spam'i tam olarak hedefler.
+     *
+     * ## Gelir notu
+     * Guclendirici reklami **hicbir coin odemez** (bkz. `EconomyConfig`
+     * BOOSTER_AD_VIEWS_PER_DAY KDoc'u), yalnizca savas ici etki verir. Bu yuzden
+     * R1'deki arbitraj/enflasyon riski burada YOKTUR ve
+     * [ANTI_ARBITRAGE_FALLBACK_CAP_ENABLED] bu yerlesime uygulanmaz.
+     */
+    const val BOOSTER_PER_BATTLE_CEILING: Int = 4
 
-    /** R1 tam odul. */
-    const val SUPPLY_DROP_FULL_COIN: Int = 150
+    // --- Odul buyuklukleri: SAHIBI EKONOMI, burasi yalnizca TEKLIF METNI ---
+    //
+    // Bu sabitler artik odul YATIRMAZ; yatirma yolu tamamen
+    // `AdRewardBridge` -> `CampaignProgressImpl` uzerinden gider ve miktari
+    // ekonomi belirler. Burada kalmalarinin tek sebebi, teklif ekranindaki
+    // "izlersen ~150, reklam yoksa 50" ON BILGISI: o metin reklam gosterilmeden
+    // once yazilir, yani ekonomiye sorulacak bir sonuc henuz yoktur. Degerler
+    // ekonomiden turetildigi icin metin ile odeme ayrisamaz.
+
+    /** R1 tam odul (teklif metni icin taban; adaptif bayrak acikken TABAN'dir). */
+    const val SUPPLY_DROP_FULL_COIN: Int = EconomyConfig.R1_REWARD_FILLED
 
     /** R1 azaltilmis odul ("Karargah elindekini gonderdi"). */
-    const val SUPPLY_DROP_REDUCED_COIN: Int = 50
+    const val SUPPLY_DROP_REDUCED_COIN: Int = EconomyConfig.R1_REWARD_FALLBACK
 
-    /** R2 tam odul: us cani bu degere getirilir ve savas kaldigi dalgadan devam eder. */
+    /**
+     * R2 tam odul: us cani bu degere getirilir ve savas kaldigi dalgadan
+     * devam eder.
+     *
+     * Ekonomi karsiligi YOK ve olmamali: bu bir COIN degil, savas ici can
+     * degeridir; ust siniri motorun `maxLives` degeridir. Ekonomiye dokunmama
+     * garantisi baska turlu saglanir — takviyeyle geri gelen can yildiz
+     * hesabindan dusulur (`CampaignProgressImpl.starHealthFor`), yani takviye
+     * yildiz ve coin SATIN ALMAZ.
+     */
     const val REINFORCEMENT_LIVES: Int = 5
 
-    /** R3 tam odul: o temizligin coin odulu bu katsayiyla carpilir. */
-    const val DOUBLE_PAYOUT_MULTIPLIER: Int = 2
+    /** R3 carpani (teklif metni icin). Gercek ek katmani ekonomi hesaplar. */
+    const val DOUBLE_PAYOUT_MULTIPLIER: Int = EconomyConfig.R3_MULTIPLIER
 
     // --- Yukleme suresi ---
 
@@ -294,6 +381,13 @@ class InMemoryRewardedQuotaStore(
     private var reinforcementUsedThisBattle: Int = 0
     private var doublePayoutUsedThisBattle: Int = 0
 
+    /**
+     * R4 spam tavani sayaci. Gercek gunluk hak ekonomi katmanindadir; bu sayac
+     * yalnizca tek bir savas icindeki istek sayisini tavanlar
+     * ([AdPolicyConfig.BOOSTER_PER_BATTLE_CEILING]).
+     */
+    private var boosterUsedThisBattle: Int = 0
+
     private fun rollDayIfNeeded() {
         val today = dayKey()
         if (today != currentDay) {
@@ -306,6 +400,7 @@ class InMemoryRewardedQuotaStore(
     override fun onBattleStarted() {
         reinforcementUsedThisBattle = 0
         doublePayoutUsedThisBattle = 0
+        boosterUsedThisBattle = 0
     }
 
     override fun remaining(placement: RewardedPlacement): Int {
@@ -317,6 +412,11 @@ class InMemoryRewardedQuotaStore(
                 (AdPolicyConfig.REINFORCEMENT_PER_BATTLE_LIMIT - reinforcementUsedThisBattle).coerceAtLeast(0)
             RewardedPlacement.DOUBLE_PAYOUT ->
                 (AdPolicyConfig.DOUBLE_PAYOUT_PER_BATTLE_LIMIT - doublePayoutUsedThisBattle).coerceAtLeast(0)
+            // DIKKAT: bu deger oyuncuya GOSTERILMEZ. R4'un oyuncu-yuzu sayaci
+            // ekonomi katmanindadir (`BoosterState.adViewsLeftToday`); buradaki
+            // sayi yalnizca savas-ici spam tavaninin kalanidir.
+            RewardedPlacement.BOOSTER ->
+                (AdPolicyConfig.BOOSTER_PER_BATTLE_CEILING - boosterUsedThisBattle).coerceAtLeast(0)
         }
     }
 
@@ -328,6 +428,7 @@ class InMemoryRewardedQuotaStore(
             RewardedPlacement.SUPPLY_DROP -> supplyDropUsedToday++
             RewardedPlacement.REINFORCEMENT -> reinforcementUsedThisBattle++
             RewardedPlacement.DOUBLE_PAYOUT -> doublePayoutUsedThisBattle++
+            RewardedPlacement.BOOSTER -> boosterUsedThisBattle++
         }
     }
 
@@ -352,6 +453,14 @@ class InMemoryRewardedQuotaStore(
             // Taban odul reklamdan ONCE zaten verildi ve kaydedildi; fallback
             // sadece "x2 olmadi" demek. Hak tuketilmez, tekrar denenebilir.
             RewardedPlacement.DOUBLE_PAYOUT -> true
+            // Reklam gelmese de oyuncu guclendiriciyi kullanabilir (no-fill ASLA
+            // kilitlemez). Ekonomi katmani bu kullanimi kendi sayacina yazar;
+            // burada yalnizca savas-ici spam tavani ilerletilir ki ucak modunda
+            // tek savasta yuzlerce istek cikmasin.
+            RewardedPlacement.BOOSTER -> {
+                boosterUsedThisBattle++
+                true
+            }
         }
     }
 }

@@ -285,50 +285,63 @@ fun SupplyDropBar(
 // Her biri oyuncuya gosterilecek NOTR mesaji doner (hata dili YOK).
 // ---------------------------------------------------------------------------
 
-/** R1 Tedarik Talebi. */
-fun applySupplyDrop(context: Context, result: RewardedResult, bridge: AdRewardBridge): String =
-    when (result.outcome) {
-        RewardedOutcome.FULL_REWARD -> {
-            bridge.grantCoins(AdPolicyConfig.SUPPLY_DROP_FULL_COIN, "rewarded_supply_drop_full")
-            context.getString(R.string.ad_supply_full, AdPolicyConfig.SUPPLY_DROP_FULL_COIN)
-        }
-        RewardedOutcome.REDUCED_REWARD -> {
-            bridge.grantCoins(AdPolicyConfig.SUPPLY_DROP_REDUCED_COIN, "rewarded_supply_drop_reduced")
-            context.getString(R.string.ad_supply_reduced, AdPolicyConfig.SUPPLY_DROP_REDUCED_COIN)
-        }
-        // Arbitraj tavani doldu (veya hak tukendi): ilerleme kaybi YOK,
-        // yalnizca bugun daha fazla azaltilmis odul verilmez.
-        RewardedOutcome.UNAVAILABLE ->
-            context.getString(R.string.ad_supply_unavailable)
+/**
+ * R1 Tedarik Talebi.
+ *
+ * MIKTAR BURADA YAZMIYOR — ekonomi ne verdiyse mesaj onu soyler. Eskiden
+ * `AdPolicyConfig.SUPPLY_DROP_FULL_COIN` sabiti hem mesaja hem "yatir"
+ * cagrisina gidiyordu; ekonominin gunluk butcesi (450) veya adaptif odul
+ * bayragi devreye girdiginde ekranda yazan sayi ile bakiyeye gecen sayi
+ * ayrisirdi. Artik tek sayi var ve o ekonominin dondurdugu sayidir.
+ */
+fun applySupplyDrop(context: Context, result: RewardedResult, bridge: AdRewardBridge): String {
+    // Teklif zaten tukenmis: ekonomiye HIC gidilmez (yoksa hakki bitmis
+    // oyuncu her dokunusta gunluk butceyi yerdi). Ilerleme kaybi YOK.
+    if (result.outcome == RewardedOutcome.UNAVAILABLE) {
+        return context.getString(R.string.ad_supply_unavailable)
     }
-
-/** R3 Cift Odeme. Taban odul reklamdan ONCE verilmis olmalidir (GDD §G.4). */
-fun applyDoublePayout(context: Context, result: RewardedResult, bridge: AdRewardBridge): String =
-    when (result.outcome) {
-        RewardedOutcome.FULL_REWARD -> {
-            bridge.grantDoublePayout(AdPolicyConfig.DOUBLE_PAYOUT_MULTIPLIER)
-            context.getString(R.string.ad_double_full, AdPolicyConfig.DOUBLE_PAYOUT_MULTIPLIER)
-        }
-        RewardedOutcome.REDUCED_REWARD ->
-            context.getString(R.string.ad_double_reduced)
-        RewardedOutcome.UNAVAILABLE ->
-            context.getString(R.string.ad_double_claimed)
+    val reward = bridge.grantSupplyDrop(result)
+    return when {
+        // Gunluk coin butcesi doldu (veya kopru bagli degil): notr mesaj,
+        // hicbir ilerleme yolu kapanmaz.
+        reward.coins <= 0 -> context.getString(R.string.ad_supply_unavailable)
+        reward.full -> context.getString(R.string.ad_supply_full, reward.coins)
+        else -> context.getString(R.string.ad_supply_reduced, reward.coins)
     }
+}
 
 /**
- * R2 Takviye. **Bugun cagrilmaz** — [AdRewardBridge.reinforcementSupported]
- * false oldugu icin teklif hic gosterilmez. Motor API'si eklendiginde
- * `GameScreen` bu fonksiyonu R2 sheet'ine baglar; iki dal da savasi
- * SURDURUR, fark yalnizca canin geri gelip gelmedigi degil — reklam yoksa da
- * can verilir (GDD §G.4: "Savas YINE devam eder").
+ * R3 Cift Odeme. Taban odul reklamdan ONCE verilmis olmalidir (GDD §G.4);
+ * bu fonksiyon yalnizca EK katmanin sonucunu anlatir.
+ */
+fun applyDoublePayout(context: Context, result: RewardedResult, bridge: AdRewardBridge): String {
+    if (result.outcome == RewardedOutcome.UNAVAILABLE) {
+        return context.getString(R.string.ad_double_claimed)
+    }
+    val reward = bridge.grantDoublePayout(result)
+    // Ek katman verilmediyse oyuncu HICBIR SEY kaybetmedi: taban odul cebinde.
+    return if (reward.bonusCoins > 0) {
+        context.getString(R.string.ad_double_full, reward.bonusCoins)
+    } else {
+        context.getString(R.string.ad_double_reduced)
+    }
+}
+
+/**
+ * R2 Takviye.
+ *
+ * GDD §G.4: reklam gelmese de **savas YINE devam eder** — bu yuzden FULL ve
+ * REDUCED dallari ayni seyi yapar, fark yalnizca metindedir. Kopru
+ * uygulayamadiysa (motor reddetti / bagli degil) akis yine bloklanmaz:
+ * cagiran taraf yenilgi modalini gosterir ve oyuncu "tekrar dene" der.
  */
 fun applyReinforcement(context: Context, result: RewardedResult, bridge: AdRewardBridge): String {
-    val applied = bridge.grantReinforcement(AdPolicyConfig.REINFORCEMENT_LIVES)
+    val reward = bridge.grantReinforcement(result)
     return when {
-        !applied -> context.getString(R.string.ad_reinforce_failed)
+        !reward.applied -> context.getString(R.string.ad_reinforce_failed)
         result.outcome == RewardedOutcome.FULL_REWARD ->
-            context.getString(R.string.ad_reinforce_full, AdPolicyConfig.REINFORCEMENT_LIVES)
+            context.getString(R.string.ad_reinforce_full, reward.lives)
         else ->
-            context.getString(R.string.ad_reinforce_noad, AdPolicyConfig.REINFORCEMENT_LIVES)
+            context.getString(R.string.ad_reinforce_noad, reward.lives)
     }
 }

@@ -14,7 +14,10 @@ import com.google.android.gms.ads.rewarded.RewardedAd
 import com.google.android.gms.ads.rewarded.RewardedAdLoadCallback
 
 /**
- * Faz 5 — GDD §G.3'teki UC rewarded noktasi. Dorduncu bir nokta karar ister.
+ * Faz 5 — rewarded noktalarinin ortak yurutucusu. GDD §G.3'teki uc nokta
+ * (R1/R2/R3) ve ayri kararla eklenen savas-ici R4 ([RewardedPlacement.BOOSTER])
+ * ayni sozlesmeyi paylasir; yerlesime gore degisen tek sey ad unit kimligi
+ * ([AdIds.rewardedAdUnitId]) ve hak muhasebesidir ([RewardedQuotaStore]).
  *
  * ## NO-FILL DOKTRINI (GDD §G.4, DECISIONS bağlayıcı)
  *
@@ -43,6 +46,16 @@ class RewardedAdManager(
     private val handler = Handler(Looper.getMainLooper())
 
     private var cached: RewardedAd? = null
+
+    /**
+     * On-yuklenen reklamin HANGI ad unit'ten geldigi. Yerlesimlere ayri birimler
+     * verildiginde bir yerlesimin reklami baska bir yerlesimde gosterilmemeli —
+     * yoksa AdMob raporlari yanlis birime yazilir ve yerlesim performansi
+     * olculemez. Bugun tum birimler ayni test kimligi oldugu icin bu kontrol
+     * hicbir davranisi degistirmez.
+     */
+    private var cachedAdUnitId: String? = null
+
     private var loading: Boolean = false
 
     @Volatile
@@ -65,12 +78,14 @@ class RewardedAdManager(
                 override fun onAdLoaded(ad: RewardedAd) {
                     loading = false
                     cached = ad
+                    cachedAdUnitId = adUnitId
                     Log.i(AD_LOG_TAG, "rewarded preloaded")
                 }
 
                 override fun onAdFailedToLoad(error: LoadAdError) {
                     loading = false
                     cached = null
+                    cachedAdUnitId = null
                     analytics.adNoFill(FORMAT, "preload", "code=${error.code}")
                 }
             }
@@ -109,7 +124,7 @@ class RewardedAdManager(
             return
         }
 
-        val adUnitId = AdIds.rewardedAdUnitId()
+        val adUnitId = AdIds.rewardedAdUnitId(placement)
 
         // 2) Riza kapisi. Onaysiz reklam ISTENMEZ; oyuncu azaltilmis odulle
         //    ilerler (kilitlenme yok).
@@ -141,10 +156,13 @@ class RewardedAdManager(
             }
         }
 
-        val ready = cached
+        // On-yuklenen reklam yalnizca AYNI ad unit'e aitse kullanilir; degilse
+        // saklanir ve bu yerlesim icin taze bir istek yapilir.
+        val ready = if (cachedAdUnitId == adUnitId) cached else null
         if (ready != null) {
             cached = null
-            showNow(activity, ready, placement, settle, reduced)
+            cachedAdUnitId = null
+            showNow(activity, ready, adUnitId, placement, settle, reduced)
             return
         }
 
@@ -169,14 +187,16 @@ class RewardedAdManager(
                         // Reklami ZORLA gostermek yerine sakla — bir sonraki
                         // teklif aninda hazir olur.
                         cached = ad
+                        cachedAdUnitId = adUnitId
                         return
                     }
-                    showNow(activity, ad, placement, settle, reduced)
+                    showNow(activity, ad, adUnitId, placement, settle, reduced)
                 }
 
                 override fun onAdFailedToLoad(error: LoadAdError) {
                     loading = false
                     cached = null
+                    cachedAdUnitId = null
                     if (finished) return
                     analytics.adNoFill(FORMAT, placement.name, "code=${error.code}")
                     reduced(AdFallbackReason.LOAD_FAILED)
@@ -188,12 +208,14 @@ class RewardedAdManager(
     private fun showNow(
         activity: Activity,
         ad: RewardedAd,
+        adUnitId: String,
         placement: RewardedPlacement,
         settle: (RewardedResult) -> Unit,
         reduced: (AdFallbackReason) -> Unit
     ) {
         if (activity.isFinishing || activity.isDestroyed) {
             cached = ad
+            cachedAdUnitId = adUnitId
             reduced(AdFallbackReason.SHOW_FAILED)
             return
         }
@@ -252,6 +274,7 @@ class RewardedAdManager(
         handler.removeCallbacksAndMessages(null)
         cached?.fullScreenContentCallback = null
         cached = null
+        cachedAdUnitId = null
         inFlightSince = 0L
         loading = false
     }

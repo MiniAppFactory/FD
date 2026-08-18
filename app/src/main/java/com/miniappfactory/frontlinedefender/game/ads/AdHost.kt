@@ -77,10 +77,23 @@ interface AdHost {
      *
      * Onemli: bu deger reklamin YUKLU olup olmamasina **bagli degildir**.
      * Reklam hazir olmadigi icin buton asla gizlenmez/pasiflenmez (GDD §G.4).
+     *
+     * [RewardedPlacement.BOOSTER] icin buton gorunurlugunun karari BU DEGIL,
+     * ekonomi katmanindaki `boosterAllowed(...)`dir; buradaki tavan pratikte
+     * hicbir zaman once kapanmaz (bkz. [AdPolicyConfig.BOOSTER_PER_BATTLE_CEILING]).
      */
     fun isRewardedOffered(placement: RewardedPlacement): Boolean
 
-    /** R1'in bugun kalan hakki (UI'da "3/gun" gostergesi icin). */
+    /**
+     * R1'in bugun kalan hakki (UI'da "3/gun" gostergesi icin).
+     *
+     * DIKKAT — [RewardedPlacement.BOOSTER] icin bu deger **oyuncuya
+     * gosterilmez**: R4'un gunluk hakkinin sahibi ekonomi katmanidir
+     * (`EconomyConfig.BOOSTER_AD_VIEWS_PER_DAY`, kalici sayac). Buradan donen
+     * sayi yalnizca savas-ici spam tavaninin kalanidir
+     * ([AdPolicyConfig.BOOSTER_PER_BATTLE_CEILING]). Oyuncuya gosterilecek
+     * sayi `BoosterState.adViewsLeftToday`'dir.
+     */
     fun rewardedRemaining(placement: RewardedPlacement): Int
 
     /** Ayarlar > Reklam ayarlari. */
@@ -103,7 +116,17 @@ enum class InterstitialReason {
     BOSS_VICTORY_TO_LEVEL_SELECT
 }
 
-/** GDD §G.3 — yalnizca 3 nokta. Dorduncu bir nokta eklenmesi karar gerektirir. */
+/**
+ * GDD §G.3 UC nokta tanimliyordu; [BOOSTER] **dorduncu** noktadir ve ayri bir
+ * karar olarak eklenmistir (Faz 10 ekonomi katmani, `game/economy/BoosterSystem.kt`).
+ *
+ * Dorduncu noktanin gerekcesi: `BoosterType.EMERGENCY_SUPPLY` **AD_ONLY** para
+ * birimindedir — ucretli yolu YOKTUR, yani rewarded yerlesimi olmadan oyunda
+ * **hic kullanilamaz** (ve bolum 2'de acilan ILK guclendiricidir). Diger iki
+ * guclendirici (hava destegi, us tamiri) reklami yalnizca ucretli kullanim
+ * tukendikten SONRAKI ek kullanim icin kullanir; yani reklam ucretli yolun
+ * ikamesi degil uzantisidir ve ekonomi arbitraji yapisal olarak kapalidir.
+ */
 enum class RewardedPlacement {
     /** R1 — Tedarik Talebi. Bolum secim ekrani. +150 coin, 3/gun. */
     SUPPLY_DROP,
@@ -112,7 +135,24 @@ enum class RewardedPlacement {
     REINFORCEMENT,
 
     /** R3 — Cift Odeme. Zafer ekrani. Coin odulu x2. Savas basina 1. */
-    DOUBLE_PAYOUT
+    DOUBLE_PAYOUT,
+
+    /**
+     * R4 — Guclendirici. Savas ICI.
+     *
+     * Digerlerinden farki: teklif oynanisin ORTASINDA gorunur. Bu yuzden
+     * yerlesimin sozlesmesi daha sikidir:
+     *  - Teklif yalnizca oyuncunun KENDI dokundugu guclendirici butonundan acilir;
+     *    kendiliginden acilan hicbir savas-ici reklam yoktur.
+     *  - Teklif acikken simulasyon durdurulur, kapaninca ayni noktadan devam eder
+     *    (cagiran tarafin sorumlulugu — `GameScreen`).
+     *  - Hicbir dal savasi bloklamaz: reklam gelmese de oyuncu savasa devam eder,
+     *    yalnizca guclendiricinin verdigi etki degisir ([RewardedOutcome]).
+     *
+     * Gunluk hakkin sahibi bu katman DEGILDIR; bkz.
+     * [AdPolicyConfig.BOOSTER_PER_BATTLE_CEILING].
+     */
+    BOOSTER
 }
 
 /**
