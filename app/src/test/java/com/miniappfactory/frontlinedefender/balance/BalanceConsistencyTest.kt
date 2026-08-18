@@ -988,7 +988,7 @@ class BalanceConsistencyTest {
                 GameConfig.MAP_SAFE_TOP_FRAC_MIN in -0.5f..0f
         )
         assertTrue("HUD varsayilan yuksekligi pozitif olmali", GameConfig.HUD_TOP_INSET_DP > 0f)
-        assertTrue("sarsinti tasmasi negatif olamaz", GameConfig.SHAKE_OVERSCAN_REF_PX >= 0f)
+        assertTrue("kenar sivamasi negatif olamaz", GameConfig.MAP_EDGE_BLEED_REF_PX >= 0f)
         assertTrue(
             "bekleyen pad alfasi secili pad alfasindan dusuk olmali",
             GameConfig.BUILD_PAD_IDLE_ALPHA < GameConfig.BUILD_PAD_SELECTED_ALPHA

@@ -15,9 +15,13 @@ import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import com.miniappfactory.frontlinedefender.game.engine.GameEngine
 import com.miniappfactory.frontlinedefender.game.model.*
 import kotlin.math.atan2
+import kotlin.math.ceil
 import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.min
@@ -142,6 +146,16 @@ private val floatingTextPaint = android.graphics.Paint().apply {
  */
 private val enemyHitFlashFilter = ColorFilter.tint(Color.White, BlendMode.SrcIn)
 
+// ---------------------------------------------------------------------------
+// ORTULEN SECIM HAYALETI — renkler (bkz. drawOcclusionCallout).
+// Altin aile secim rengiyle ayni (kule secim halkasi 0xFFFFD54F), boylece
+// hayalet "secili olan sey" olarak okunur; plaka koyu ve opak, cunku
+// haritanin uzerinde kontrast tasimasi gerekiyor.
+// ---------------------------------------------------------------------------
+private val CALLOUT_PLATE_COLOR = Color(0xE60B0E08)
+private val CALLOUT_BORDER_COLOR = Color(0xFFFFD54F)
+private val CALLOUT_LINK_COLOR = Color(0xB3FFD54F)
+
 /** easeOutBack - hafif overshoot. Vurgu anlarinda kullanilir (lineer DEGIL). */
 private fun easeOutBack(t: Float): Float {
     val x = t.coerceIn(0f, 1f) - 1f
@@ -166,6 +180,11 @@ fun GameCanvas(
 ) {
     // Faz 3: tum sprite'lar BIR KEZ decode edilir. Kare dongusunde decode yok.
     val sprites = rememberGameSprites()
+
+    // Alt cekmecelerin dp yuksekligini px'e cevirmek icin. Cekmeceler
+    // GameCanvas'in USTUNDE ayri Composable'lar oldugu icin yukseklikleri
+    // olculerek buraya gelemiyor; ortak sayi GameConfig'te duruyor.
+    val density = LocalDensity.current.density
 
     val selectedBuildSpot by gameEngine.selectedBuildSpot.collectAsState()
     val selectedTower by gameEngine.selectedTower.collectAsState()
@@ -227,15 +246,22 @@ fun GameCanvas(
             //    Pad/kule/dusman/HUD cizimi ve dokunma girdisi kesintiye
             //    ugramaz — bolum PREPARATION fazinda basladigi icin oyuncu
             //    bu kisa boslugu bir gecikme olarak hissetmez.
-            val over = GameConfig.SHAKE_OVERSCAN_REF_PX * s
+            //    P0 DUZELTMESI: harita artik GERILMIYOR. Eskiden bitmap
+            //    oynanis dikdortgeninden 10 ref-px tasirilarak (buyutulerek)
+            //    ciziliyordu; bu, boyali yol ile yurunen rota arasinda kenarda
+            //    10, kosede 14 ref-px SUREKLI kayma demekti. Simdi bitmap TAM
+            //    oynanis dikdortgenine oturur ve sarsinti bandi kenar
+            //    pikselinin disari sivanmasiyla kapatilir — icerik kaymaz.
+            val art = GameConfig.mapArtRect(gameEngine.fieldRect)
             if (mapBitmap != null) {
                 drawSprite(
                     image = mapBitmap,
-                    left = gameEngine.fieldLeftPx - over,
-                    top = gameEngine.fieldTopPx - over,
-                    width = gameEngine.fieldWidthPx + over * 2f,
-                    height = gameEngine.fieldHeightPx + over * 2f
+                    left = art.left,
+                    top = art.top,
+                    width = art.width,
+                    height = art.height
                 )
+                drawMapEdgeBleed(mapBitmap, art, GameConfig.mapEdgeBleedPx(s))
             }
 
             // 2. Yol/spawn/us CIZIMI YOK — yol artik haritada boyali.
@@ -287,6 +313,21 @@ fun GameCanvas(
             gameEngine.visualEffects.forEach { fx ->
                 drawVisualEffect(fx, sprites, s)
             }
+
+            // 9. ORTULEN SECIM — hayalet gosterge.
+            //    Alt cekmece (63 / 56 dp) secili pad'i ya da kuleyi yutuyorsa
+            //    hedef cekmecenin USTUNDE tekrarlanir. En uste cizilir:
+            //    kule/dusman yiginin altinda kalirsa amacini kaybeder.
+            drawOcclusionCallout(
+                gameEngine = gameEngine,
+                sprites = sprites,
+                selectedSpot = selectedBuildSpot,
+                selectedTower = selectedTower,
+                previewTowerType = previewTowerType,
+                drawerDensity = density,
+                topInsetPx = topInsetPx,
+                s = s
+            )
         }
 
         // 9. EKRAN FLASI — "buyuk olay" isareti (bugun yalniz hava taarruzu).
@@ -362,6 +403,63 @@ private fun handleCanvasTap(gameEngine: GameEngine, tap: Offset) {
 // titreme yapar. Bu yuzden dogal boyutta cizip transform ile olcekliyoruz;
 // boylece konum ve olcek FLOAT hassasiyetinde kalir.
 // ---------------------------------------------------------------------------
+
+/**
+ * HARITA KENAR SIVAMASI — sarsintida acilan koyu seridi kapatir, icerigi
+ * KAYDIRMADAN.
+ *
+ * Eski cozum haritayi buyutuyordu ve bu, sanat ile oynanis arasinda kalici bir
+ * kayma uretiyordu (bkz. `GameConfig.MAP_EDGE_BLEED_REF_PX` KDoc'u). Burada
+ * bitmap'in en dis 1 piksellik satir/sutunlari dikdortgenin DISINA gerilir:
+ * dikdortgenin ICI birebir yerinde kalir, disina yalnizca kenar rengi uzar.
+ * Harita kenarlari cim/toprak oldugu icin sivama gozle ayirt edilemez.
+ *
+ * KARE BUTCESI: dort ince serit, toplam ~%3 ek piksel (tam harita ~1,7 Mpx,
+ * seritler ~48 Kpx). Tahsis YOK — `IntOffset`/`IntSize` deger siniflaridir.
+ * Cizim scale transformunun ICINDE yapildigi icin tamsayi dst koordinatlari
+ * GORUNTU pikseli birimindedir, yani alt-piksel titremesi olusmaz.
+ */
+private fun DrawScope.drawMapEdgeBleed(
+    image: ImageBitmap,
+    art: GameConfig.MapFieldRect,
+    bleedPx: Float
+) {
+    val w = image.width
+    val h = image.height
+    if (bleedPx <= 0f || w < 2 || h < 2) return
+    val sx = art.width / w
+    val sy = art.height / h
+    if (sx <= 0f || sy <= 0f) return
+    val bx = ceil(bleedPx / sx).toInt().coerceAtLeast(1)
+    val by = ceil(bleedPx / sy).toInt().coerceAtLeast(1)
+
+    withTransform({
+        translate(art.left, art.top)
+        scale(sx, sy, pivot = Offset.Zero)
+    }) {
+        // Ust ve alt seritler kose bosluklarini da kapatsin diye yanlardan tasar.
+        drawImage(
+            image = image,
+            srcOffset = IntOffset(0, 0), srcSize = IntSize(w, 1),
+            dstOffset = IntOffset(-bx, -by), dstSize = IntSize(w + 2 * bx, by)
+        )
+        drawImage(
+            image = image,
+            srcOffset = IntOffset(0, h - 1), srcSize = IntSize(w, 1),
+            dstOffset = IntOffset(-bx, h), dstSize = IntSize(w + 2 * bx, by)
+        )
+        drawImage(
+            image = image,
+            srcOffset = IntOffset(0, 0), srcSize = IntSize(1, h),
+            dstOffset = IntOffset(-bx, 0), dstSize = IntSize(bx, h)
+        )
+        drawImage(
+            image = image,
+            srcOffset = IntOffset(w - 1, 0), srcSize = IntSize(1, h),
+            dstOffset = IntOffset(w, 0), dstSize = IntSize(bx, h)
+        )
+    }
+}
 
 private fun DrawScope.drawSprite(
     image: ImageBitmap,
@@ -439,6 +537,101 @@ private fun DrawScope.drawDebugPath(gameEngine: GameEngine) {
     pts.forEach { drawCircle(Color(0xCC00FFFF), 5f, Offset(it.x, it.y)) }
     gameEngine.scaledBuildSpots.forEach {
         drawCircle(Color(0xCCFFFF00), 6f, Offset(it.normX, it.normY), style = Stroke(width = 2f))
+    }
+}
+
+/**
+ * ===========================================================================
+ * ORTULEN SECIM HAYALETI — "bastigim pad'i acilan panel yuttu"
+ * ===========================================================================
+ *
+ * OLCULEN SORUN (`MapLayoutSafetyTest.bottomDrawerOcclusionIsMeasuredAndReported`):
+ * TowerBuildBar (63 dp) acilinca 740x360 dp'de harita 2'de 4, harita 4'te 3 pad
+ * cekmecenin altinda kaliyor. Oyuncu pad'e basiyor, panel aciliyor ve hem
+ * pad'i hem BIRAKMA ONIZLEMESINI kapatiyor: neye kurdugunu goremiyor.
+ *
+ * NEDEN ALAN KUCULTULMEDI: 63 dp daha kucultmek 740x360'ta yuksekligin
+ * %20'sini goturur ve bu bedel KALICI olurdu; cekmece ise sadece secim
+ * varken acik. Bilgi tasindi, alan degil.
+ *
+ * COZUM (uc kanal birlikte):
+ *  1. BAGLI CIZGI — hayaletin hangi pad'e ait oldugunu tekil olarak soyler;
+ *     onsuz ekranda "ikinci bir pad" belirmis gibi okunur.
+ *  2. HAYALET PLAKA — gercek pad'lerde olmayan koyu disk + altin cerceve,
+ *     yani hayalet asla gercek bir hedefle karistirilmaz ve dokunulabilir
+ *     gorunmez.
+ *  3. ICERIK — bir kule karti BASILI tutuluyorsa O KULENIN sprite'i cizilir:
+ *     birakma onizlemesi panelin ustune TASINMIS olur, kaybolmaz.
+ *
+ * Sarsinti transformunun ICINDE cizilir: bagli cizginin ucu pad ile birlikte
+ * hareket etmezse baglanti kopuk gorunur. Sarsinti genligi (maks 5 px)
+ * `OCCLUSION_CALLOUT_GAP_REF_PX` boslugunun cok altinda kalir.
+ */
+private fun DrawScope.drawOcclusionCallout(
+    gameEngine: GameEngine,
+    sprites: GameSprites,
+    selectedSpot: BuildSpot?,
+    selectedTower: TowerEntity?,
+    previewTowerType: GameConfig.TowerType?,
+    drawerDensity: Float,
+    topInsetPx: Float,
+    s: Float
+) {
+    // Hedef ve hangi cekmecenin acik oldugu. Pad secimi onceliklidir: iki
+    // cekmece ayni anda acik olamaz (motor secimleri birbirini disliyor).
+    val targetX: Float
+    val targetY: Float
+    val drawerDp: Float
+    val badge: ImageBitmap?
+    when {
+        selectedSpot != null -> {
+            targetX = selectedSpot.normX
+            targetY = selectedSpot.normY
+            drawerDp = GameConfig.BUILD_DRAWER_HEIGHT_DP
+            badge = previewTowerType?.let { sprites.towers[it] } ?: sprites.buildPad
+        }
+        selectedTower != null -> {
+            targetX = selectedTower.posX
+            targetY = selectedTower.posY
+            drawerDp = GameConfig.INSPECTOR_DRAWER_HEIGHT_DP
+            badge = sprites.towers[selectedTower.type]
+        }
+        else -> return
+    }
+
+    val drawerPx = drawerDp * drawerDensity
+    val tapR = GameConfig.TAP_RADIUS_REF_PX * s
+    if (!GameConfig.isOccludedByBottomDrawer(targetY, tapR, size.height, drawerPx)) return
+
+    val field = gameEngine.fieldRect
+    val r = GameConfig.OCCLUSION_CALLOUT_RADIUS_REF_PX * s
+    val cy = GameConfig.occlusionCalloutY(size.height, drawerPx, topInsetPx, s)
+    val cx = targetX.coerceIn(
+        (field.left + r).coerceAtMost(field.right - r),
+        (field.right - r).coerceAtLeast(field.left + r)
+    )
+
+    // 1. Bagli cizgi — pad'in ust kenarindan plakanin alt kenarina.
+    val strokeW = (3f * s).coerceAtLeast(1.5f)
+    drawLine(
+        color = CALLOUT_LINK_COLOR,
+        start = Offset(targetX, targetY - tapR),
+        end = Offset(cx, cy + r),
+        strokeWidth = strokeW
+    )
+
+    // 2. Plaka: koyu disk + altin cerceve (gercek pad'de bunlar yok).
+    drawCircle(color = CALLOUT_PLATE_COLOR, radius = r, center = Offset(cx, cy))
+    drawCircle(
+        color = CALLOUT_BORDER_COLOR,
+        radius = r,
+        center = Offset(cx, cy),
+        style = Stroke(width = strokeW)
+    )
+
+    // 3. Icerik: basili tutulan kule, yoksa pad isareti.
+    if (badge != null) {
+        drawSpriteAt(image = badge, cx = cx, cy = cy, width = r * 1.5f, alpha = 0.95f)
     }
 }
 

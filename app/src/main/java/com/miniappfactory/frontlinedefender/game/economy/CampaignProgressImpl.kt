@@ -34,7 +34,7 @@ class CampaignProgressImpl(
     private val clock: ClockProvider = AndroidClockProvider(),
     /** Analytics kancasi (GDD H.9). Baglanmadigi surece sessizdir. */
     private val analytics: (event: String, params: Map<String, Any>) -> Unit = { _, _ -> },
-) : CampaignProgress {
+) : CampaignProgress, BattleTelemetry {
 
     private var wallet by mutableStateOf(saveManager.loadWallet())
     private var upgrades by mutableStateOf(saveManager.loadMetaUpgrades())
@@ -380,6 +380,9 @@ class CampaignProgressImpl(
         // kullanilmadiysa `starHealthFor` girdiyi aynen dondurur, yani Faz 9 davranisi
         // birebir korunur.
         val starHealth = starHealthFor(livesLeft)
+        // Haftalik "Elit Operator" sayaci icin: cuzdan YAZILMADAN ONCEKI en iyi
+        // yildiz. Asagida yalnizca ARTIS sayilir (bkz. `starGain`).
+        val starsBefore = wallet.starsOf(levelId)
         val result = resolveLevelClear(wallet, levelId, starHealth, maxLives, boostedReplaysToday)
         commitWallet(applyLevelClear(wallet, result))
         if (result.consumesBoostedReplay) {
@@ -394,7 +397,34 @@ class CampaignProgressImpl(
             advanceDaily(MissionType.CLEAR_WITH_HIGH_HEALTH, 1)
         }
         advanceWeeklyCounter(MissionType.WEEKLY_LEVELS_COMPLETED, 1)
-        if (result.firstClear) advanceWeeklyCounter(MissionType.WEEKLY_STARS_EARNED, result.stars)
+        // Faz 15 — HAFTALIK YILDIZ SAYACI ARTIK "ARTIS" SAYIYOR.
+        //
+        // Onceki kural `result.firstClear` idi ve tek bir kor nokta uretiyordu:
+        // kampanyayi (55 bolum) bitirmis oyuncu icin sayac SONSUZA KADAR olu
+        // kaliyordu — 600 coin'lik `w_elite_operator` bir daha ASLA
+        // tamamlanamiyordu, yani haftalik butcenin %55'i (1.100 -> 500)
+        // erisilemez hale geliyordu. Hedef 15 yildiz/hafta; ilk temizleme
+        // biterse arz da biter.
+        //
+        // Yeni kural: bu temizlik bolumun EN IYI yildizini kac basamak
+        // yukselttiyse o kadar sayilir (2 -> 3 = +1). Ilk temizlemede
+        // `starsBefore = 0` oldugu icin sonuc `result.stars`tir, yani bugunku
+        // davranis BIREBIR korunur; degisen tek sey tekrar oynanan bolumun
+        // artik sifir yerine FARKI sayiyor olmasi.
+        //
+        // FARMING'E KAPALI: yildiz best-of'tur (`applyLevelClear` maxOf) ve
+        // asla dusmez, dolayisiyla bir bolumun her yildizi omur boyu EN FAZLA
+        // BIR KEZ sayilabilir. Ust sinir sabit: 55 bolum x 3 = 165 yildiz.
+        // Ayni bolumu tekrar oynamak 0 uretir. Us Tamiri / R2 Takviye ile
+        // satin alinan can zaten `starHealth` uzerinden dusulmustur, yani
+        // guclendiriciyle yildiz yukseltip sayac doldurma yolu da kapalidir.
+        //
+        // KALAN ACIK (rapor edildi, odul MIKTARI degistirilmedi): 165/165
+        // yapmis oyuncu icin arz yine biter. O noktada kampanyanin tamami
+        // tuketilmistir; yeni bolum gelene kadar bu gorevin yerine gececek bir
+        // sablon GDD karari ister (ECONOMY_SPEC bayrak F-4).
+        val starGain = (result.stars - starsBefore).coerceAtLeast(0)
+        advanceWeeklyCounter(MissionType.WEEKLY_STARS_EARNED, starGain)
 
         // Faz 14 — GERI KALAN 10 SAYAC. Cagiranin bildirdigi olcum, savas
         // boyunca biriken olcum ve dalga tablosundan TURETILEN taban burada
@@ -518,7 +548,7 @@ class CampaignProgressImpl(
     }
 
     /** Kule kuruldu (`GameConfig.TowerType` adi ile — tip cesitliligi de sayilir). */
-    fun noteTowerBuilt(towerTypeName: String) {
+    override fun noteTowerBuilt(towerTypeName: String) {
         val built = battleReport.towersBuilt.coerceAtLeast(0) + 1
         typesBuiltThisBattle.add(towerTypeName)
         battleReport = battleReport.copy(
@@ -528,7 +558,7 @@ class CampaignProgressImpl(
     }
 
     /** Kule yukseltildi (bir kademe). */
-    fun noteTowerUpgraded() {
+    override fun noteTowerUpgraded() {
         battleReport = battleReport.copy(
             towerUpgrades = battleReport.towerUpgrades.coerceAtLeast(0) + 1
         )
@@ -539,28 +569,28 @@ class CampaignProgressImpl(
      * demek `CLEAR_WITHOUT_SELLING`in hak edilmesi demektir, bu yuzden savas
      * basinda sayaci acikca 0'a cekmek gerekir ([noteSellTrackingActive]).
      */
-    fun noteTowerSold() {
+    override fun noteTowerSold() {
         battleReport = battleReport.copy(
             towersSold = battleReport.towersSold.coerceAtLeast(0) + 1
         )
     }
 
     /** Satis olcumunun ACIK oldugunu bildirir; sayac 0'dan baslar. */
-    fun noteSellTrackingActive() {
+    override fun noteSellTrackingActive() {
         if (battleReport.towersSold == BATTLE_STAT_UNREPORTED) {
             battleReport = battleReport.copy(towersSold = 0)
         }
     }
 
     /** Hazirlik sayaci beklenmeden dalga baslatildi. */
-    fun notePrepTimerSkipped() {
+    override fun notePrepTimerSkipped() {
         battleReport = battleReport.copy(
             prepTimersSkipped = battleReport.prepTimersSkipped.coerceAtLeast(0) + 1
         )
     }
 
     /** Savas hizi degisti; 2x'e cikildiysa savas boyunca hatirlanir. */
-    fun noteGameSpeed(speed: Float) {
+    override fun noteGameSpeed(speed: Float) {
         val doubled = battleReport.clearedAtDoubleSpeed == true || speed >= 2f
         battleReport = battleReport.copy(clearedAtDoubleSpeed = doubled)
     }
@@ -773,8 +803,8 @@ class CampaignProgressImpl(
  *
  * 1. **Turetme** — `CampaignProgressImpl.derivedBattleReport` bolumun dalga
  *    tablosundan hesaplar. Hicbir dis baglanti gerektirmez, HER ZAMAN calisir.
- * 2. **Olcum** — savas UI'sinin `note*` cagrilari. Su an **BAGLI DEGIL**
- *    ([BATTLE_TELEMETRY_WIRED]).
+ * 2. **Olcum** — savas UI'sinin [BattleTelemetry] cagrilari. Faz 15'te
+ *    **BAGLANDI** ([BATTLE_TELEMETRY_WIRED]).
  *
  * ## Neden kapi var
  * Tamamlanamayan bir gorev gostermek, hic gorev gostermemekten KOTUDUR:
@@ -782,19 +812,22 @@ class CampaignProgressImpl(
  * panelin tamamina guvenini kaybeder. Kapi olmadan gunlerin ~%60'inda beceri
  * slotu boyle bir gorev cikariyordu.
  *
- * ## Kapiyi acmak (savas UI'si sahibi ajanin isi)
- * `game/ui/` savas yuzeyleri su cagrilari yaparsa (`progress` zaten
- * `BoosterRail`e geciyor, ayni nesne):
+ * ## Kapi ACILDI (Faz 15)
+ * Savas yuzeyleri [BattleTelemetry] uzerinden olcumu bildiriyor:
  * ```
- * TowerBuildBar       -> progress.noteTowerBuilt(type.name)
- * SelectedTowerInspector -> progress.noteTowerUpgraded() / progress.noteTowerSold()
- * GameScreen (savas basi) -> progress.noteSellTrackingActive()
- * HUDOverlay          -> progress.notePrepTimerSkipped() / progress.noteGameSpeed(speed)
+ * TowerBuildBar          -> noteTowerBuilt(type.name)        // buildTower() true dondu
+ * SelectedTowerInspector -> noteTowerUpgraded() / noteTowerSold()
+ * HUDOverlay             -> notePrepTimerSkipped() / noteGameSpeed(speed)
+ * GameScreen (savas basi)-> noteSellTrackingActive() + noteGameSpeed(1x tabani)
  * ```
- * ...tek yapilacak [BATTLE_TELEMETRY_WIRED] degerini `true` yapmaktir; alti
- * gorev ayni gun havuza doner. `MissionWiringTest` iki durumu da kilitler.
+ * Dikis **derleyici zorunlu**: uc composable da `telemetry` parametresini
+ * VARSAYILANSIZ alir, yani baglanti sessizce kopamaz. `MissionTelemetryWiringTest`
+ * gercek dugmelere basip sayaclarin ilerledigini kanitlar.
+ *
+ * Bu bayrak artik yalnizca kapinin **niye** var oldugunu belgeliyor; `false`a
+ * cekilirse alti sablon ayni gun havuzdan cikar (geri alma supabi).
  */
-internal const val BATTLE_TELEMETRY_WIRED: Boolean = false
+internal const val BATTLE_TELEMETRY_WIRED: Boolean = true
 
 /** Dalga tablosundan TURETILEN — dis baglanti gerektirmez. */
 internal val DERIVED_MISSION_TYPES: Set<MissionType> = setOf(

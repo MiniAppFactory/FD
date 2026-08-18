@@ -166,6 +166,7 @@
     <!-- Faz 10: rewarded teklif popup metinleri -->
     <string name="ad_sheet_watch">REKLAMI İZLE</string>
     <string name="ad_sheet_skip">GEREK YOK</string>
+    <string name="ad_sheet_continue">DEVAM ET</string>
     <string name="ad_sheet_supply_title">TEDARİK TALEBİ</string>
     <string name="ad_sheet_supply_body">Kısa bir reklam izle, karargâh %1$d coin gönderir. Reklam bulunamazsa yine %2$d coin alırsın ve günlük hakkın harcanmaz.</string>
     <string name="ad_sheet_supply_remaining">bugün %1$d / %2$d hak</string>

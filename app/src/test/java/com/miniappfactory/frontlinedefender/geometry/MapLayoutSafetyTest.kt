@@ -234,47 +234,108 @@ class MapLayoutSafetyTest {
     }
 
     /**
-     * ALT KENAR — OLCUM, henuz KILIT DEGIL.
+     * ALT KENAR — OLCUM **VE** GERI BILDIRIM KILIDI.
      *
      * Ust HUD daimidir, alttaki iki cekmece ise GECICIDIR: `TowerBuildBar`
-     * (olculen 63 dp) yalnizca bos bir pad SECILINCE, `SelectedTowerInspector`
-     * (56 dp) yalnizca bir kule secilince acilir. Yani bunlar oynanis alanini
-     * daimi olarak kucultmezler ama SECILEN pad'i kendi cekmeceleri altinda
-     * birakabilirler — klasik "parmak/panel hedefi ortuyor" durumu.
+     * ([GameConfig.BUILD_DRAWER_HEIGHT_DP] = 63 dp) yalnizca bos bir pad
+     * SECILINCE, `SelectedTowerInspector` (56 dp) yalnizca bir kule secilince
+     * acilir. Yani bunlar oynanis alanini daimi olarak kucultmezler ama
+     * SECILEN pad'i kendi cekmeceleri altinda birakabilirler — klasik
+     * "parmak/panel hedefi ortuyor" durumu.
      *
      * Alani 63 dp daha kucultmek 740x360 dp'de yuksekligi %20 goturuyordu; bu
-     * gecici bir panel icin kalici ve buyuk bir bedel. Bu yuzden karar
-     * ARAYUZ tarafina birakildi (ofsetli onizleme / yari saydam cekmece /
-     * secili pad'i cekmecenin ustunde tekrarlama). Burada yalnizca OLCULUR:
-     * sayi buyurse gorunur olur.
+     * gecici bir panel icin kalici ve buyuk bir bedel — YAPILMADI. Bunun
+     * yerine bilgi tasindi: ortulen hedef cekmecenin USTUNDE bagli cizgi +
+     * hayalet plaka olarak tekrarlanir (`GameCanvas.drawOcclusionCallout`).
+     * Bir kule karti basili tutuluyorsa plakada O KULENIN sprite'i cizilir,
+     * yani birakma onizlemesi kaybolmaz.
+     *
+     * Bu test artik iki sey yapar:
+     *  1. ORTMEYI olcer ve tabloyu basar (esik: harita basina <= 6),
+     *  2. ortulen HER pad icin hayalet gostergenin TAMAMEN gorunur bir yere
+     *     dustugunu KILITLER — HUD'un altinda, cekmecenin ustunde ve hedefin
+     *     yukarisinda. Aksi halde "cozdum" iddiasi olculemezdi.
      */
     @Test
     fun bottomDrawerOcclusionIsMeasuredAndReported() {
-        val drawerDp = 63f // TowerBuildBar olculen yukseklik (bkz. BoosterRail KDoc)
+        val drawerDp = GameConfig.BUILD_DRAWER_HEIGHT_DP
         val rows = StringBuilder(
-            "\nALT CEKMECE ORTMESI (63 dp, yalnizca pad secilince acik)\n" +
-                "harita | ekran | cekmece altinda kalan pad\n"
+            "\nALT CEKMECE ORTMESI (${drawerDp.toInt()} dp, yalnizca pad secilince acik)\n" +
+                "harita | ekran | cekmece altinda kalan pad | hayalet gosterge y (dp)\n"
         )
         var worst = 0
+        var occludedTotal = 0
+        val unmitigated = mutableListOf<String>()
+
         mapIds.forEach { mapId ->
             val pads = LevelData.forMapId(mapId).buildSpots
             screens.forEach { (name, w, h) ->
                 val r = GameConfig.computeFieldRect(mapId, w, h, hudDp)
                 val tapR = GameConfig.TAP_RADIUS_REF_PX * r.renderScale
-                val hit = pads.filter { r.top + it.normY * r.height + tapR > h - drawerDp }
-                if (hit.isNotEmpty()) {
-                    worst = maxOf(worst, hit.size)
-                    rows.append(
-                        "  %2d   | %-14s | %s\n".format(mapId, name, hit.joinToString(",") { "${it.id}" })
+                val hit = pads.filter {
+                    GameConfig.isOccludedByBottomDrawer(
+                        targetScreenY = r.top + it.normY * r.height,
+                        targetRadiusPx = tapR,
+                        screenHeightPx = h,
+                        drawerHeightPx = drawerDp
                     )
                 }
+                if (hit.isEmpty()) return@forEach
+
+                worst = maxOf(worst, hit.size)
+                occludedTotal += hit.size
+
+                val calloutR = GameConfig.OCCLUSION_CALLOUT_RADIUS_REF_PX * r.renderScale
+                val cy = GameConfig.occlusionCalloutY(h, drawerDp, hudDp, r.renderScale)
+
+                // (a) Hayalet HUD'in altinda ve cekmecenin ustunde, TAMAMEN.
+                if (cy - calloutR < hudDp - EPS) {
+                    unmitigated += "harita $mapId @ $name: hayaletin ustu " +
+                        "${"%.1f".format(cy - calloutR)} dp, HUD alt kenari $hudDp dp"
+                }
+                if (cy + calloutR > h - drawerDp + EPS) {
+                    unmitigated += "harita $mapId @ $name: hayaletin alti " +
+                        "${"%.1f".format(cy + calloutR)} dp, cekmece ust kenari " +
+                        "${"%.1f".format(h - drawerDp)} dp"
+                }
+                // (b) Hayalet ortulen pad'in YUKARISINDA — bagli cizgi daima
+                //     yukari gostersin, hedefin uzerine binmesin.
+                hit.forEach { pad ->
+                    val padY = r.top + pad.normY * r.height
+                    if (cy >= padY - EPS) {
+                        unmitigated += "harita $mapId pad ${pad.id} @ $name: hayalet " +
+                            "${"%.1f".format(cy)} dp, pad ${"%.1f".format(padY)} dp — yukarida degil"
+                    }
+                }
+                // (c) Yatayda alanin icinde kalabilmeli (kirpilmis hayalet olmaz).
+                if (r.width < 2f * calloutR) {
+                    unmitigated += "harita $mapId @ $name: alan genisligi " +
+                        "${"%.1f".format(r.width)} dp, hayalet capi ${"%.1f".format(2f * calloutR)} dp"
+                }
+
+                rows.append(
+                    "  %2d   | %-14s | %-24s | %.1f\n".format(
+                        mapId, name, hit.joinToString(",") { "${it.id}" }, cy
+                    )
+                )
             }
         }
         println(rows)
+        println("ORTULEN PAD TOPLAMI: $occludedTotal (11 harita x 3 ekran), hepsi hayalet gosterge aliyor")
+
         assertTrue(
             "alt cekmecenin ortugu pad sayisi harita basina 6'yi asti — " +
                 "cekmece tasarimi yeniden ele alinmali (olculen en kotu: $worst)",
             worst <= 6
+        )
+        assertTrue(
+            "ORTULEN PAD GERI BILDIRIMSIZ KALDI — hayalet gosterge gorunur bir " +
+                "yere dusmuyor:\n" + unmitigated.distinct().joinToString("\n"),
+            unmitigated.isEmpty()
+        )
+        assertTrue(
+            "olcum bos olmamali: hicbir pad ortulmuyorsa bu test bir sey ispat etmiyor",
+            occludedTotal > 0
         )
     }
 

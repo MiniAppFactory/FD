@@ -187,7 +187,9 @@ fun RewardedOfferSheet(
                         modifier = Modifier.testTag("offer_result_message")
                     )
                     OfferButton(
-                        label = "CONTINUE",
+                        // CIHAZDA GORULDU (Faz 17): etiket koda gomuluydu ve
+                        // oyunun geri kalani Turkceyken Ingilizce kaliyordu.
+                        label = stringResource(R.string.ad_sheet_continue),
                         background = Color(0xFF4C7A2E),
                         textColor = Color(0xFFF2FFE4),
                         modifier = Modifier.fillMaxWidth().testTag("offer_continue"),

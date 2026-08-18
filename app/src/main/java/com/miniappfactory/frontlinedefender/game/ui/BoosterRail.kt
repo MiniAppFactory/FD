@@ -129,7 +129,10 @@ private const val TICK_MS = 250L
 @DrawableRes
 private fun boosterSpriteRes(type: BoosterType): Int = when (type) {
     BoosterType.EMERGENCY_SUPPLY -> R.drawable.spr_ic_booster_supply_drop
-    BoosterType.AIR_SUPPORT -> R.drawable.spr_fx_missile
+    // 2026-08-19: kendi ikonu geldi. Eskiden `spr_fx_missile` kullaniyordu —
+    // o bir EFEKT sprite'iydi (havada giden fuze), ikon ailesinin parlak/
+    // egimli diliyle uyusmuyordu ve digerlerinin yaninda yamali duruyordu.
+    BoosterType.AIR_SUPPORT -> R.drawable.spr_ic_booster_air_support
     BoosterType.BASE_REPAIR -> R.drawable.spr_ic_booster_base_repair
 }
 

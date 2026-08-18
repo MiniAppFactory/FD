@@ -18,15 +18,21 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.miniappfactory.frontlinedefender.R
+import com.miniappfactory.frontlinedefender.game.economy.BattleTelemetry
 import com.miniappfactory.frontlinedefender.game.engine.GameEngine
 import com.miniappfactory.frontlinedefender.game.engine.GameState
 import com.miniappfactory.frontlinedefender.game.model.GameConfig
 import com.miniappfactory.frontlinedefender.ui.theme.*
 
+/**
+ * @param telemetry gorev olcumu ([BattleTelemetry]). **Varsayilani YOKTUR** —
+ *   `d_p_skip3` ve `d_s_double_speed` gorevlerinin tek besleyicisi burasi.
+ */
 @Composable
 fun HUDOverlay(
     gameEngine: GameEngine,
     onOpenPauseMenu: () -> Unit,
+    telemetry: BattleTelemetry,
     modifier: Modifier = Modifier
 ) {
     val gold by gameEngine.gold.collectAsState()
@@ -198,7 +204,18 @@ fun HUDOverlay(
                 // Start Wave Button (During Prep Phase)
                 if (gameState == GameState.PREPARATION) {
                     Button(
-                        onClick = { gameEngine.startNextWaveNow() },
+                        onClick = {
+                            // "Atlandi" sayilmasi icin dalganin GERCEKTEN
+                            // hazirlik fazinda baslatilmis olmasi gerekir.
+                            // Bayrak akistan DEGIL motorun anlik degerinden
+                            // okunur: `gameState` bir kare bayat olabilir ve
+                            // sayac kendiliginden bittiginde de buton bir kare
+                            // daha cizili kalabilirdi.
+                            val skipped =
+                                gameEngine.gameState.value == GameState.PREPARATION
+                            gameEngine.startNextWaveNow()
+                            if (skipped) telemetry.notePrepTimerSkipped()
+                        },
                         colors = ButtonDefaults.buttonColors(
                             containerColor = SleekPrimaryGreen,
                             contentColor = Color.White
@@ -229,7 +246,13 @@ fun HUDOverlay(
 
                 // Speed Toggle Button (1x / 2x) — icon_fast_forward + carpan
                 IconButton(
-                    onClick = { gameEngine.toggleGameSpeed() },
+                    onClick = {
+                        gameEngine.toggleGameSpeed()
+                        // Motorun YENI degeri okunur, yerel `speed` degil:
+                        // yerel kopya bu karede hala eski degeri tasir ve
+                        // 1x -> 2x gecisi hic olculmezdi.
+                        telemetry.noteGameSpeed(gameEngine.gameSpeed.value)
+                    },
                     modifier = Modifier
                         .size(36.dp)
                         .background(

@@ -178,6 +178,11 @@ data class ProjectileEntity(
     var posY: Float,
     val startX: Float,
     val startY: Float,
+    /**
+     * Faz 17: bu mermiyi ATAN kule. Oldurmeyi dogru kuleye yazmak icin.
+     * `null` = kule kaynakli degil (ornek: hava destegi).
+     */
+    val ownerTowerId: String? = null,
     val targetEnemyId: String?,
     val targetX: Float,
     val targetY: Float,

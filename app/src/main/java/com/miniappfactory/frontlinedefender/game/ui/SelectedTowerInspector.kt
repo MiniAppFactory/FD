@@ -19,6 +19,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.miniappfactory.frontlinedefender.R
 import com.miniappfactory.frontlinedefender.game.audio.rememberHaptics
+import com.miniappfactory.frontlinedefender.game.economy.BattleTelemetry
+import com.miniappfactory.frontlinedefender.game.model.GameConfig
 import com.miniappfactory.frontlinedefender.game.engine.GameEngine
 import com.miniappfactory.frontlinedefender.ui.theme.*
 
@@ -28,10 +30,14 @@ import com.miniappfactory.frontlinedefender.ui.theme.*
  * Onceki iki satirli hali cihazda ~300 px kapliyor ve alt sirada duran build
  * pad'leri kapatiyordu. Ayrica satis butonundaki `"+$$${...}"` ifadesi Kotlin'de
  * IKI dolar isareti uretiyordu ("+$$56"); duzeltildi.
+ *
+ * @param telemetry gorev olcumu ([BattleTelemetry]). **Varsayilani YOKTUR** —
+ *   `d_v_upg30` ve `d_s_no_sell` gorevlerinin tek besleyicisi burasi.
  */
 @Composable
 fun SelectedTowerInspector(
     gameEngine: GameEngine,
+    telemetry: BattleTelemetry,
     modifier: Modifier = Modifier
 ) {
     val selectedTower by gameEngine.selectedTower.collectAsState()
@@ -50,7 +56,13 @@ fun SelectedTowerInspector(
                 color = SleekDarkBg,
                 border = androidx.compose.foundation.BorderStroke(1.dp, SleekBorderDark),
                 shadowElevation = 16.dp,
-                modifier = Modifier.fillMaxWidth()
+                // Bkz. TowerBuildBar'daki ayni yorum: `GameCanvas`in ortulen
+                // secim hayaleti bu yuksekligi capa olarak kullaniyor, o yuzden
+                // sayi `GameConfig`ten OKUNUR, buraya kopyalanmaz.
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .defaultMinSize(minHeight = GameConfig.INSPECTOR_DRAWER_HEIGHT_DP.dp)
+                    .testTag("inspector_drawer")
             ) {
                 Row(
                     modifier = Modifier
@@ -158,7 +170,11 @@ fun SelectedTowerInspector(
                         Button(
                             onClick = {
                                 haptics.onTowerUpgraded()
-                                gameEngine.upgradeSelectedTower()
+                                // Yalnizca motor GERCEKTEN yukselttiyse sayilir
+                                // (Tedarik yetmemesi / kademe kilidi false doner).
+                                if (gameEngine.upgradeSelectedTower()) {
+                                    telemetry.noteTowerUpgraded()
+                                }
                             },
                             enabled = gold >= upgradeCost,
                             colors = ButtonDefaults.buttonColors(
@@ -216,7 +232,13 @@ fun SelectedTowerInspector(
                     Button(
                         onClick = {
                             haptics.onTowerSold()
-                            gameEngine.sellSelectedTower()
+                            // SATIS `d_s_no_sell`i BOZAR — bu yuzden yalnizca
+                            // gercekten satildiginda bildirilir. Reddedilen bir
+                            // dokunus oyuncunun 120 coin'lik beceri gorevini
+                            // haksiz yere yakardi.
+                            if (gameEngine.sellSelectedTower()) {
+                                telemetry.noteTowerSold()
+                            }
                         },
                         colors = ButtonDefaults.buttonColors(
                             containerColor = SleekRed,

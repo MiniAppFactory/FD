@@ -113,8 +113,33 @@ object MissionPools {
     /** Slot 2 — Hacim. Dogal oynanisla dolar, ekstra grind istemez. Odul 80. */
     val VOLUME: List<MissionTemplate> = listOf(
         MissionTemplate("d_v_kill120", MissionType.KILL_ENEMIES, MissionSlot.VOLUME, 120, EconomyConfig.DAILY_REWARD_VOLUME),
-        MissionTemplate("d_v_build15", MissionType.BUILD_TOWERS, MissionSlot.VOLUME, 15, EconomyConfig.DAILY_REWARD_VOLUME),
-        MissionTemplate("d_v_upg30", MissionType.UPGRADE_TOWERS, MissionSlot.VOLUME, 30, EconomyConfig.DAILY_REWARD_VOLUME),
+        // Faz 15 — minClearedLevels 0 -> 6 ve 0 -> 17. **ODUL DEGISMEDI.**
+        //
+        // Bu iki sablon olcum kapisi acilana kadar (BATTLE_TELEMETRY_WIRED)
+        // oyuncuya HIC gosterilmiyordu, dolayisiyla kapilari bugune kadar hic
+        // sinanmadi. Kapi acilirken olculdu ve ikisi de bu slotun kendi
+        // sozlesmesini ("Dogal oynanisla dolar, ekstra grind istemez")
+        // ihlal ediyordu.
+        //
+        // Olcut TASARLANAN OYNANIStir: `SupplyBudgetModel.designedRoster` (kac
+        // kule kurulur) + `DESIGNED_TIER_THREE_COUNT` (kacinin kademesi yukselir)
+        // — yani SPI'nin boleni, projenin "bu bolum boyle oynanir" tanimi.
+        // Gunde 4 savas varsayimiyla olculen tasarlanan degerler:
+        //
+        //   insa/gun:      L1=8 · L4=12 · **L7=16** · L17=20 · L26=24
+        //   yukseltme/gun: L7=16 · L12=20 · L15=24 · L17=28 · **L18=32**
+        //
+        // 15 insa ilk kez L7'de, 30 yukseltme ilk kez L18'de dogal oynanisla
+        // karsilanir; kapi "o bolum oynanabilir hale geldigi an" olan bir
+        // eksigine kurulur (oyuncu temizledigi bolumler + siradakini oynar).
+        //
+        // KURAMSAL azami degil TASARLANAN deger kullanildi: azami olcut
+        // (butcenin tamamini kuleye yatirip pad'leri doldurmak) upg30 icin
+        // L11'i gosteriyordu, ama o oyunu oynamak ekstra grind demek — tam
+        // olarak slotun yasakladigi sey. `d_v_supply2500`in L6 -> L18
+        // duzeltmesi de ayni disiplinle yapilmisti (%6 marj).
+        MissionTemplate("d_v_build15", MissionType.BUILD_TOWERS, MissionSlot.VOLUME, 15, EconomyConfig.DAILY_REWARD_VOLUME, minClearedLevels = 6),
+        MissionTemplate("d_v_upg30", MissionType.UPGRADE_TOWERS, MissionSlot.VOLUME, 30, EconomyConfig.DAILY_REWARD_VOLUME, minClearedLevels = 17),
         MissionTemplate("d_v_arm8", MissionType.KILL_ARMORED, MissionSlot.VOLUME, 8, EconomyConfig.DAILY_REWARD_VOLUME, minClearedLevels = 5),
         MissionTemplate("d_v_tank5", MissionType.KILL_TANKS, MissionSlot.VOLUME, 5, EconomyConfig.DAILY_REWARD_VOLUME, minClearedLevels = 7),
         // minClearedLevels 6 -> 18 (Faz 14 duzeltmesi, ODUL DEGISMEDI).
@@ -634,6 +659,55 @@ data class BattleReport(
         b == BATTLE_STAT_UNREPORTED -> a
         else -> maxOf(a, b)
     }
+}
+
+/**
+ * Faz 15 — **SAVAS OLCUM DIKISI.**
+ *
+ * `game/ui/` savas yuzeylerinin ekonomiye "kule kuruldu / yukseltildi /
+ * satildi / hazirlik atlandi / hiz degisti" diye haber verdigi DAR arayuz.
+ * Tek uretim uygulayicisi `CampaignProgressImpl`.
+ *
+ * ## Neden `CampaignProgressImpl` DEGIL de arayuz
+ * 1. **Yon:** savas UI'si ekonominin cuzdanini, gorev havuzunu ve reklam
+ *    sayacini TANIMAMALI. Bir kule kurma dugmesinin gorebilecegi tek cumle
+ *    "kule kuruldu"dur; `TowerBuildBar`a tum ekonomiyi vermek onu bir gun
+ *    `progress.coins` okumaya davet eder.
+ * 2. **Test edilebilirlik:** wiring testi sahte bir kaydedici enjekte edip
+ *    "dugmeye basildi -> sayac ilerledi" iddiasini tek basina kanitlar.
+ *
+ * ## Sozlesme
+ * - Cagrilar **savas ici** yapilir; ekonomi bunlari biriktirir ve gorev
+ *   sayacina savas basina BIR KEZ isler ([BattleReport]).
+ * - Cagiran taraf yalnizca **gercekten olan** olayi bildirir: motor cagrisi
+ *   `false` donduyse (Tedarik yetmedi, kule kilitli, girdi kabul edilmiyor)
+ *   HICBIR sey bildirilmez. Aksi halde reddedilen bir insa gorev ilerletirdi.
+ */
+interface BattleTelemetry {
+
+    /** Kule kuruldu. [towerTypeName] `GameConfig.TowerType` adidir. */
+    fun noteTowerBuilt(towerTypeName: String)
+
+    /** Kule bir kademe yukseltildi. */
+    fun noteTowerUpgraded()
+
+    /** Kule satildi. */
+    fun noteTowerSold()
+
+    /**
+     * "Satis olcumu ACIK" bildirimi — savas basinda BIR KEZ.
+     *
+     * Sifir da anlamlidir: `towersSold = 0` ("olctuk, hic satmadi")
+     * `CLEAR_WITHOUT_SELLING`i hak ettirir, [BATTLE_STAT_UNREPORTED]
+     * ("bilmiyoruz") ettirmez. Bu cagri olmadan gorev ASLA ilerlemez.
+     */
+    fun noteSellTrackingActive()
+
+    /** Hazirlik sayaci beklenmeden dalga baslatildi. */
+    fun notePrepTimerSkipped()
+
+    /** Savas hizi. 2x'e cikildiysa savas boyunca hatirlanir. */
+    fun noteGameSpeed(speed: Float)
 }
 
 /**

@@ -609,6 +609,19 @@ class GameEngine(
     // oranini koruyarak sigdirilir, artan yer koyu zemin kalir ve TUM oynanis
     // koordinatlari bu dikdortgene gore hesaplanir.
     // ------------------------------------------------------------------------
+    /**
+     * Oynanis dikdortgeni — TEK nesne.
+     *
+     * Renderer harita bitmap'ini bunun uzerinden konumlandirir
+     * (`GameConfig.mapArtRect`), motor da rota/pad'i bunun uzerinden olcekler
+     * (`GameConfig.normXToScreen`). Dort ayri float yerine tek nesne olmasi
+     * "sanat ile oynanis ayni dikdortgeni mi kullaniyor" sorusunu ispatlanabilir
+     * kilar; asagidaki dort alan geriye donuk uyum icin duruyor.
+     */
+    var fieldRect: GameConfig.MapFieldRect =
+        GameConfig.MapFieldRect(left = 0f, top = 0f, width = 1280f, height = 720f)
+        private set
+
     var fieldLeftPx: Float = 0f
         private set
     var fieldTopPx: Float = 0f
@@ -754,6 +767,7 @@ class GameEngine(
         // asagidaki iki satirin disinda hicbir sey degismedi: formul ayni,
         // orani artik veri veriyor.
         val rect = GameConfig.computeFieldRect(activeMapId, width, height, hudTopInsetPx)
+        fieldRect = rect
         fieldWidthPx = rect.width
         fieldHeightPx = rect.height
         fieldLeftPx = rect.left
@@ -779,9 +793,13 @@ class GameEngine(
      * Olcu degistiginde ve bolum yuklendiginde cagrilir; kare dongusunde DEGIL.
      */
     private fun rescaleGeometry() {
+        // Normalize -> ekran donusumu GameConfig'te; renderer harita bitmap'ini
+        // AYNI dikdortgene cizer, boylece boyali yol ile yurunen rota arasinda
+        // kayma matematiksel olarak imkansizdir (bkz. MapArtAlignmentTest).
+        val f = fieldRect
         scaledRoutes = routes.map { route ->
             route.map {
-                PointF(fieldLeftPx + it.x * fieldWidthPx, fieldTopPx + it.y * fieldHeightPx)
+                PointF(GameConfig.normXToScreen(f, it.x), GameConfig.normYToScreen(f, it.y))
             }
         }
         scaledWaypoints = scaledRoutes.firstOrNull() ?: emptyList()
@@ -804,8 +822,8 @@ class GameEngine(
             .map {
                 BuildSpot(
                     it.id,
-                    fieldLeftPx + it.normX * fieldWidthPx,
-                    fieldTopPx + it.normY * fieldHeightPx
+                    GameConfig.normXToScreen(f, it.normX),
+                    GameConfig.normYToScreen(f, it.normY)
                 )
             }
 
@@ -1470,7 +1488,10 @@ class GameEngine(
     private fun updateScreenShake(dt: Float) {
         if (screenShakeDuration > 0f) {
             screenShakeDuration -= dt
-            val intensity = (screenShakeDuration * 15f).coerceAtMost(10f)
+            // Genlik sabitleri GameConfig'te: harita kenar sivamasinin bu
+            // genligi KAPATTIGI testle dogrulaniyor (MapArtAlignmentTest).
+            val intensity = (screenShakeDuration * GameConfig.SHAKE_INTENSITY_RAMP_PER_SECOND)
+                .coerceAtMost(GameConfig.SHAKE_MAX_INTENSITY_PX)
             _screenShake.value = Offset(
                 Random.nextFloat() * intensity - intensity / 2f,
                 Random.nextFloat() * intensity - intensity / 2f
@@ -1901,6 +1922,7 @@ class GameEngine(
                 // ates eder, 11 pad'li haritada saniyede ~35 mermi.
                 id = EntityIds.next(),
                 type = pType,
+                ownerTowerId = tower.id,
                 posX = tower.posX,
                 posY = tower.posY,
                 startX = tower.posX,
@@ -1964,8 +1986,8 @@ class GameEngine(
 
         enemiesWithin(proj.targetX, proj.targetY, proj.splashRadius).forEach { enemy ->
             applyDamageToEnemy(
-                enemy, proj.damage, proj.armorPierce,
-                proj.slowFactor, proj.slowDuration, isSplash = true
+                enemy, proj.damage, proj.armorPierce,                proj.slowFactor, proj.slowDuration, isSplash = true,
+                ownerTowerId = proj.ownerTowerId
             )
         }
     }
@@ -1994,7 +2016,8 @@ class GameEngine(
         enemiesWithin(proj.targetX, proj.targetY, proj.slowPulseRadius).forEach { enemy ->
             applyDamageToEnemy(
                 enemy, proj.damage, proj.armorPierce,
-                proj.slowFactor, proj.slowDuration
+                proj.slowFactor, proj.slowDuration,
+                ownerTowerId = proj.ownerTowerId
             )
         }
     }
@@ -2022,14 +2045,14 @@ class GameEngine(
 
         val primary = enemies.find { it.id == proj.targetEnemyId }
         primary?.let {
-            applyDamageToEnemy(it, proj.damage, proj.armorPierce, proj.slowFactor, proj.slowDuration)
+            applyDamageToEnemy(it, proj.damage, proj.armorPierce, proj.slowFactor, proj.slowDuration, ownerTowerId = proj.ownerTowerId)
         }
 
         if (proj.impactRadius > 0f && proj.impactDamageFraction > 0f) {
             val splashDamage = proj.damage * proj.impactDamageFraction
             enemiesWithin(proj.targetX, proj.targetY, proj.impactRadius).forEach { enemy ->
                 if (enemy.id == primary?.id) return@forEach
-                applyDamageToEnemy(enemy, splashDamage, proj.armorPierce, 0f, 0f)
+                applyDamageToEnemy(enemy, splashDamage, proj.armorPierce, 0f, 0f, ownerTowerId = proj.ownerTowerId)
             }
         }
     }
@@ -2051,7 +2074,7 @@ class GameEngine(
         // isabet sesi ve kivilcim ciziliyordu: oyuncu vurdugunu sanip can
         // barinin kimildamadigini goruyordu — yanlis geri bildirim.
         val enemy = target ?: return
-        applyDamageToEnemy(enemy, proj.damage, proj.armorPierce, proj.slowFactor, proj.slowDuration)
+        applyDamageToEnemy(enemy, proj.damage, proj.armorPierce, proj.slowFactor, proj.slowDuration, ownerTowerId = proj.ownerTowerId)
 
         // Faz 3: tek hedef isabetinde artik NAMLU ALEVI degil, isabet
         // kivilcimi cizilir. Namlu alevi yalnizca ates aninda kullanilir.
@@ -2081,7 +2104,12 @@ class GameEngine(
         armorPierce: Float,
         slowFactor: Float,
         slowDuration: Float,
-        isSplash: Boolean = false
+        isSplash: Boolean = false,
+        /**
+         * Faz 17: oldurucu vurusu yapan kule. Panel'deki "IMHA" sayaci
+         * bunun uzerinden dolar. `null` = kule kaynakli degil (hava destegi).
+         */
+        ownerTowerId: String? = null,
     ) {
         val finalDamage = if (isSplash) {
             rawDamage * enemy.stats.splashVulnerability
@@ -2109,11 +2137,14 @@ class GameEngine(
         }
 
         if (enemy.isDead) {
-            onEnemyKilled(enemy)
+            onEnemyKilled(enemy, ownerTowerId)
         }
     }
 
-    private fun onEnemyKilled(enemy: EnemyEntity) {
+    private fun onEnemyKilled(enemy: EnemyEntity, byTowerId: String? = null) {
+        // Faz 17: "IMHA" sayaci paneled hep 0 gosteriyordu — alan vardi ama
+        // motorda HIC artirilmiyordu. Oyuncuya yalan soyleyen bir sayacti.
+        if (byTowerId != null) towers.find { it.id == byTowerId }?.let { it.killsCount += 1 }
         enemies.remove(enemy)
         _gold.value += enemy.rewardGold
         _score.value += enemy.rewardGold * 10

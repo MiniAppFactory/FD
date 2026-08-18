@@ -269,6 +269,20 @@ fun GameScreen(
     val battleEpoch by gameEngine.battleEpoch.collectAsState()
     LaunchedEffect(battleEpoch) {
         campaignProgress.beginBattle(gameEngine.levelSpec.levelId)
+
+        // Faz 15 — OLCUM TABANI. Iki alan icin "olculmedi" ile "olculdu ve
+        // sifir/1x" ayrimini SAVAS BASINDA kurmak zorundayiz; `beginBattle`
+        // raporu UNREPORTED'a cekiyor ve o durumda iki beceri gorevi de
+        // hicbir zaman hak edilemez.
+        //
+        //  - `noteSellTrackingActive()` -> towersSold = 0. "Hic satmadi"
+        //    ancak boyle ISPATLANIR; olculmemis bir alan `d_s_no_sell`i
+        //    kazandirmaz (ve kazandirmamali — satan oyuncu 120 coin alirdi).
+        //  - `noteGameSpeed(...)` -> clearedAtDoubleSpeed = false. Motor her
+        //    `startNewGame`de hizi 1x'e cekiyor, yani bu taban dogru; HUD'daki
+        //    dugme 2x'e cikardigi anda deger true'ya kilitlenir.
+        campaignProgress.noteSellTrackingActive()
+        campaignProgress.noteGameSpeed(gameEngine.gameSpeed.value)
     }
 
     /** Reklam yolu istenen guclendirici; sheet bunun uzerinden acilir. */
@@ -334,6 +348,14 @@ fun GameScreen(
                 // 3 yildiz, 10 sizintiyla Kusursuz Savunma (+80 coin)
                 // aliyordu. Ayni duzeltme motorun kendi yildiz hesabinda da
                 // var; iki taraf AYNI girdiyi kullaniyor.
+                // Faz 15 — SAVAS RAPORU BURADA AYRICA GECILMEZ, gecmesi de
+                // GEREKMEZ. Savas boyunca `BattleTelemetry` cagrilari olcumu
+                // ekonominin KENDI `battleReport` alaninda biriktirdi;
+                // `onLevelCleared` once o birikimi dalga tablosundan turetilen
+                // tabanla birlestiriyor, sonra tek seferde goreve isliyor.
+                // Buradan ikinci bir `BattleReport` yollamak ayni olcumu iki
+                // kaynaktan gonderip alan bazinda maks alma kuralina gereksiz
+                // yuk bindirirdi.
                 lastClearResult = campaignProgress.onLevelCleared(
                     levelId = gameEngine.levelSpec.levelId,
                     livesLeft = gameEngine.victoryStarHealth,
@@ -527,25 +549,16 @@ fun GameScreen(
                         LevelSelectScreen(
                             progress = campaignProgress,
                             onPlayLevel = { levelNo -> gameEngine.startNewGame(levelNo) },
-                            onBack = { gameEngine.returnToMainMenu() }
-                        )
-                        // CEPHANELIK girisi — coin'in gidecek gorunur yeri.
-                        // Sag ust kosede, coin bakiyesinin hemen ALTINDA:
-                        // "param var" ile "harcayacak yer" yan yana duruyor.
-                        Text(
-                            text = stringResource(R.string.shop_open),
-                            color = SleekGold,
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 13.sp,
-                            maxLines = 1,
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .padding(top = 62.dp, end = 20.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(Color(0x334C7A2E))
-                                .clickable { shopOpen = true }
-                                .padding(horizontal = 14.dp, vertical = 7.dp)
-                                .testTag("open_armory")
+                            onBack = { gameEngine.returnToMainMenu() },
+                            // CEPHANELIK girisi ARTIK BOLUM SECIM EKRANININ
+                            // BASLIK SATIRINDA. Eskiden burada `TopEnd` +
+                            // `top = 62.dp` ile serbest bir katmandi ve yatayda
+                            // (360 dp yukseklik) bolum kartlarinin USTUNE
+                            // biniyordu — cihazda 5. kartin basligini
+                            // ortuyordu. Sabit dp ofseti, kart konumu ekran
+                            // boyutuna gore degistigi icin bu carpismayi
+                            // kacinilmaz kiliyordu.
+                            onOpenArmory = { shopOpen = true }
                         )
                     }
                     // R1 seridi banner ile bolum kartlari ARASINDA: hicbir
@@ -603,18 +616,21 @@ fun GameScreen(
                 HUDOverlay(
                     gameEngine = gameEngine,
                     onOpenPauseMenu = { gameEngine.togglePause() },
+                    telemetry = campaignProgress,
                     modifier = Modifier.onSizeChanged { hudInsetPx = it.height.toFloat() }
                 )
 
                 // Bottom Build Drawer when build spot is selected
                 TowerBuildBar(
                     gameEngine = gameEngine,
+                    telemetry = campaignProgress,
                     modifier = Modifier.align(Alignment.BottomCenter)
                 )
 
                 // Bottom Inspector Drawer when tower is selected
                 SelectedTowerInspector(
                     gameEngine = gameEngine,
+                    telemetry = campaignProgress,
                     modifier = Modifier.align(Alignment.BottomCenter)
                 )
 

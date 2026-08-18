@@ -146,6 +146,19 @@ fun LevelSelectScreen(
     progress: CampaignProgress,
     onPlayLevel: (Int) -> Unit,
     onBack: () -> Unit,
+    /**
+     * Faz 17: Cephanelik girisi ARTIK BU EKRANIN ISI.
+     *
+     * CIHAZDA GORULDU: giris `GameScreen` icinde `TopEnd` + `top = 62.dp` ile
+     * SERBEST katman olarak duruyordu ve yatayda (360 dp yukseklik) tam olarak
+     * bolum kartlarinin ustune biniyordu — 5. kartin basligini ortuyordu.
+     * Kartlarin konumu ekran boyutuna gore degistigi icin sabit bir dp ofseti
+     * bu carpismayi kacinilmaz kilar.
+     *
+     * Artik baslik satirinin ICINDE, Gorevler ve Coin ile ayni sag blokta.
+     * Uc cip tek bir saga yasli grup olusturur, aralarinda bosluk kalmaz.
+     */
+    onOpenArmory: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     // Bir sonraki oynanabilir bolum — ekran bunu vurgular.
@@ -257,6 +270,23 @@ fun LevelSelectScreen(
 
                     Spacer(Modifier.width(8.dp))
                 }
+
+                // CEPHANELIK — Gorevler ile Coin arasinda, ayni sag blokta.
+                Text(
+                    text = stringResource(R.string.shop_open),
+                    color = SleekGold,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    maxLines = 1,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0x334C7A2E))
+                        .clickable { onOpenArmory() }
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                        .testTag("open_armory")
+                )
+
+                Spacer(Modifier.width(8.dp))
 
                 // Coin — SADECE bu ekranda. Savas HUD'inda asla.
                 Row(

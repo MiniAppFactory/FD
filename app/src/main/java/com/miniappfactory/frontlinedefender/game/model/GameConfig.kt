@@ -29,12 +29,72 @@ object GameConfig {
     /** bg_level_01.webp 1920x1081 -> 1.7761. Letterbox hesabi bunu kullanir. */
     const val MAP_ASPECT_RATIO = 1920f / 1081f
 
+    // ------------------------------------------------------------------------
+    // SANAT ILE OYNANIS AYNI KOORDINAT UZAYINDA — P0 DUZELTMESI
+    //
+    // ESKI DAVRANIS (`SHAKE_OVERSCAN_REF_PX = 10`): harita bitmap'i oynanis
+    // dikdortgeninden 10 ref-px TASIRILARAK, yani GERILEREK ciziliyordu:
+    //
+    //   sanatX = (sol - tasma) + nx * (genislik + 2*tasma)
+    //          = sol + nx*genislik + tasma * (2*nx - 1)
+    //
+    // Yani boyali yol ile dusmanin YURUDUGU rota arasinda merkezde 0, sol/sag
+    // kenarda 10 ref-px, kosede 10*sqrt(2) = 14,1 ref-px SISTEMATIK kayma
+    // vardi (yol yarim genisliginin ~%22'si). Kullanicinin cihazda gordugu
+    // "yoldan gelmeyen askerler" bulgusunun kalan payi buradan geliyordu:
+    // rota dogru yerdeydi, HARITA yanlis yerde ciziliyordu. Ve kayma
+    // SUREKLIYDI — sarsinti olmayan karelerde de.
+    //
+    // YENI DAVRANIS: harita TAM oynanis dikdortgenine cizilir ([mapArtRect]),
+    // kayma sifirdir. Sarsintida kenarin acilmamasi icin gereken tasma artik
+    // GERME ile degil, bitmap'in en dis piksel siralarinin disari dogru
+    // SIVANMASI ile saglanir ([mapEdgeBleedPx], GameCanvas.drawMapEdgeBleed).
+    // Sivama sanat icerigini KAYDIRMAZ: dikdortgenin ICI birebir yerinde
+    // kalir, yalnizca disina 1 piksellik kenar rengi uzatilir.
+    // ------------------------------------------------------------------------
+
     /**
-     * Harita bitmap'i oynanis dikdortgeninden bu kadar px tasarak cizilir.
-     * Sarsinti (maks ~+-5 px) sirasinda kenarda koyu serit gorunmesini onler.
-     * Oynanis koordinatlari tasmayan gercek dikdortgene gore hesaplanir.
+     * Oynanis dikdortgeninin DISINA sivanan kenar bandinin genisligi
+     * (referans tuval px). Sarsintida letterbox/ekran kenarinda koyu serit
+     * acilmasini onler.
      */
-    const val SHAKE_OVERSCAN_REF_PX = 10f
+    const val MAP_EDGE_BLEED_REF_PX = 10f
+
+    /**
+     * EKRAN SARSINTISI — motorun ve cizimin ORTAK sabitleri.
+     *
+     * Buraya tasindi cunku kenar sivamasinin YETERLI olmasi sarsintinin en
+     * buyuk genligine baglidir; iki sayi ayri yerlerde dururken "sivama
+     * sarsintiyi kapatiyor mu" sorusu test edilemezdi
+     * (bkz. `MapArtAlignmentTest.edgeBleedCoversTheWorstCaseShake`).
+     *
+     * Genlik HAM px'tir (renderScale ile carpilmaz) — bu bilincli DEGIL,
+     * mevcut davranisin oldugu gibi korunmasidir; degistirmek tum cihazlarda
+     * oyun hissini degistirir ve ayri bir karardir.
+     */
+    const val SHAKE_INTENSITY_RAMP_PER_SECOND = 15f
+    const val SHAKE_MAX_INTENSITY_PX = 10f
+
+    /** Sarsintinin bir eksende ulasabilecegi EN BUYUK sapma (px). */
+    const val SHAKE_MAX_AMPLITUDE_PX = SHAKE_MAX_INTENSITY_PX / 2f
+
+    /**
+     * Sarsinti genligine gore emniyet payi. Tam esitlik (1,0) matematiksel
+     * olarak yeterli olurdu ama float yuvarlamasi kenarda bir piksellik kil
+     * cizgi birakabilir; sivama band genisligi ucuz, kil cizgi degil.
+     */
+    const val MAP_EDGE_BLEED_SAFETY = 1.5f
+
+    /**
+     * Kenar sivamasinin px genisligi. Referans tuvale gore olceklenir ama
+     * HICBIR ZAMAN sarsintinin en buyuk genliginin altina inmez — kucuk
+     * ekranlarda (renderScale ~0,30) yalniz olcekli deger 3 px kalir ve
+     * 5 px'lik sarsinti bandi acardi.
+     */
+    fun mapEdgeBleedPx(renderScale: Float): Float = maxOf(
+        MAP_EDGE_BLEED_REF_PX * renderScale,
+        SHAKE_MAX_AMPLITUDE_PX * MAP_EDGE_BLEED_SAFETY
+    )
 
     /**
      * ------------------------------------------------------------------------
@@ -75,6 +135,70 @@ object GameConfig {
 
     /** HUD seridi olculemezse kullanilan varsayilan (HUDOverlay ~56 dp). */
     const val HUD_TOP_INSET_DP = 56f
+
+    // ------------------------------------------------------------------------
+    // ALT CEKMECE ORTMESI — "bastigim pad'i acilan panel yuttu"
+    //
+    // OLCUM (`MapLayoutSafetyTest.bottomDrawerOcclusionIsMeasuredAndReported`):
+    // TowerBuildBar (63 dp) acilinca 740x360 dp'de harita 2'de 4 pad, harita
+    // 4'te 3 pad cekmecenin altinda kaliyor. Oyuncu pad'e basiyor, acilan
+    // panel hem pad'i hem BIRAKMA ONIZLEMESINI kapatiyor — yani neye
+    // kurdugunu goremiyor. Klasik "parmak/panel hedefi ortuyor" durumu.
+    //
+    // NEDEN ALANI KUCULTMUYORUZ: 63 dp daha kucultmek 740x360'ta yuksekligin
+    // %20'sini goturur ve bu bedel KALICI olurdu — cekmece ise GECICI, sadece
+    // secim varken acik. Bunun yerine secilen hedef cekmecenin USTUNDE
+    // tekrarlanir (ofsetli hayalet + bagli cizgi), yani bilgi tasindi, alan
+    // degil.
+    //
+    // Yukseklikler burada cunku CIZIM tarafinin (GameCanvas) cekmecenin ne
+    // kadar yer kapladigini bilmesi gerekiyor ve iki taraf ayni sayiyi
+    // okumali. TowerBuildBar / SelectedTowerInspector de bu sabitlere
+    // baglanmali (ayri ajan kapsaminda — bkz. gorev raporu).
+    // ------------------------------------------------------------------------
+
+    /** TowerBuildBar'in olculen yuksekligi (dp). */
+    const val BUILD_DRAWER_HEIGHT_DP = 63f
+
+    /** SelectedTowerInspector'in olculen yuksekligi (dp). */
+    const val INSPECTOR_DRAWER_HEIGHT_DP = 56f
+
+    /** Hayalet gostergenin yaricapi (referans tuval px). */
+    const val OCCLUSION_CALLOUT_RADIUS_REF_PX = 62f
+
+    /** Hayalet ile cekmecenin ust kenari arasinda birakilan bosluk (ref px). */
+    const val OCCLUSION_CALLOUT_GAP_REF_PX = 24f
+
+    /**
+     * Verilen ekran-y'sindeki hedef (pad ya da kule) alt cekmecenin altinda mi
+     * kaliyor? Yaricap dokunma dairesidir: merkez gorunse bile dairenin alti
+     * panelin altina giriyorsa oyuncu hedefi "yarim" gorur.
+     */
+    fun isOccludedByBottomDrawer(
+        targetScreenY: Float,
+        targetRadiusPx: Float,
+        screenHeightPx: Float,
+        drawerHeightPx: Float
+    ): Boolean = targetScreenY + targetRadiusPx > screenHeightPx - drawerHeightPx
+
+    /**
+     * Hayalet gostergenin merkez y'si: cekmecenin TAM ustunde, HUD'in altinda.
+     *
+     * Deger her zaman ortulen hedefin YUKARISINDA kalir (bagli cizgi bu yuzden
+     * daima yukari gosterir): ortulme sarti `y > ekran - cekmece - dokunmaR`,
+     * capa ise `ekran - cekmece - bosluk - yaricap` ve
+     * `bosluk + yaricap (86 ref) > dokunmaR (46 ref)`.
+     */
+    fun occlusionCalloutY(
+        screenHeightPx: Float,
+        drawerHeightPx: Float,
+        hudTopInsetPx: Float,
+        renderScale: Float
+    ): Float {
+        val r = OCCLUSION_CALLOUT_RADIUS_REF_PX * renderScale
+        val gap = OCCLUSION_CALLOUT_GAP_REF_PX * renderScale
+        return (screenHeightPx - drawerHeightPx - gap - r).coerceAtLeast(hudTopInsetPx + r)
+    }
 
     /** true yapilirsa waypoint cizgisi ve pad merkezleri debug icin cizilir. */
     const val DEBUG_DRAW_PATH = false
@@ -120,7 +244,7 @@ object GameConfig {
     const val LETTERBOX_COLOR = 0xFF0B0E08
 
     /**
-     * SPRITE YONU — olculdu, tahmin edilmedi (bkz. docs/ASSET_INTEGRATION.md).
+     * SPRITE YONU — olculdu, tahmin edilmedi (olcum sonucu hemen asagida).
      * atan2(dy, dx) ekran koordinatlarinda 0 derece = SAG, +90 derece = ASAGI.
      *
      * enemy_infantry / fast_soldier / jeep / tank: hepsi ASAGI (guney) bakiyor.
@@ -203,7 +327,24 @@ object GameConfig {
         ),
         // Altin/kizil tint + komuta flamasi, tank sprite'i uzerine.
         EnemyType.COMMAND_TANK to EnemySpriteSpec(
-            widthRefPx = 96f,
+            // 96 -> 80 (2026-08-19, kullanici karari).
+            //
+            // OLCUM: yolun yarim genisligi haritalara gore 37-49 ref-px, yani
+            // tam genislik 74-98. 96 ref-px'lik boss HICBIR rotaya tam
+            // sigmiyordu — palet kenarlari surekli cimde yuruyordu ve
+            // "dusmanlar yoldan cikiyor" sikayetinin bir parcasi buydu.
+            //
+            // 80 secildi: normal TANK'tan (72) %11 daha genis, yani boss
+            // hala belirgin sekilde daha agir okunuyor; yari genisligi 40+
+            // olan rotalara TAM sigiyor. En dar rotada (37) taraf basina
+            // ~3 ref-px tasma kaliyor — kabul edildi, cunku tam sigdirmak
+            // 74'e inmek yani normal tankla ayni gorunmek demekti.
+            //
+            // ⚠ ASIL KUSUR EN'DE DEGIL ORANDA: uretilen boss sprite'i
+            // 188x190 (neredeyse KARE), normal tank 140x207 (0,68). Tank
+            // uzun ve dar olmali; kare bir tank yoldan tasmaya mahkumdur.
+            // Kalici cozum, dogru oranli (uzun-dar) bir boss sprite'i.
+            widthRefPx = 80f,
             pivotYFrac = 0.50f,
             baseSprite = EnemyType.TANK,
             tintArgb = 0xFFC98A2E,
@@ -363,6 +504,37 @@ object GameConfig {
             height = fh
         )
     }
+
+    // ------------------------------------------------------------------------
+    // NORMALIZE -> EKRAN: TEK FORMUL
+    //
+    // Hem motor (rota/pad olcekleme, `GameEngine.rescaleGeometry`) hem cizim
+    // (harita bitmap'inin dikdortgeni, `GameCanvas`) BU iki fonksiyondan
+    // gecer. Ayri formuller yazildigi surece "sanat ile oynanis ayni yerde mi"
+    // sorusu ancak gozle kontrol edilebilirdi; simdi testle kilitli
+    // (`MapArtAlignmentTest`).
+    // ------------------------------------------------------------------------
+
+    fun normXToScreen(field: MapFieldRect, normX: Float): Float =
+        field.left + normX * field.width
+
+    fun normYToScreen(field: MapFieldRect, normY: Float): Float =
+        field.top + normY * field.height
+
+    /**
+     * Harita bitmap'inin CIZILECEGI dikdortgen.
+     *
+     * **SANAT = OYNANIS.** Birebir [field] doner; bu fonksiyon var cunku
+     * kimlik olmasi bir KARARDIR ve karar tek bir yerde durmali. Buraya bir
+     * gun yeniden tasma eklenirse (`MAP_EDGE_BLEED_REF_PX` ile gerdirme gibi)
+     * `MapArtAlignmentTest` DUSER: normalize bir koordinat hem harita
+     * ciziminde hem oynanis hesabinda ayni ekran noktasina dusmek zorunda —
+     * merkezde de kosede de.
+     *
+     * Sarsintida kenarin acilmamasi ayri bir mekanizmadir ve icerigi
+     * kaydirmaz: bkz. [mapEdgeBleedPx].
+     */
+    fun mapArtRect(field: MapFieldRect): MapFieldRect = field
 
     /** Namlu alevinin kule merkezinden namlu ucuna ofseti (referans tuvalde). */
     const val MUZZLE_OFFSET_REF_PX = 44f
@@ -1057,7 +1229,8 @@ object GameConfig {
      *   Her ikisi de **DONDURULMUS** listedir (LEVEL_DESIGN.md F.4): calisma
      *   aninda algoritma KOSMAZ, cunku geometri degisirse sessizce farkli bir
      *   bulmaca uretir ve oyuncunun ogrendigi bolum bozulur. Uretim:
-     *   docs/CAMPAIGN_INTEGRATION.md, olcum: docs/PAD_COVERAGE_REPORT.md.
+     *   docs/LEVEL_DESIGN.md §F.3 (uretim algoritmasi) ve §F.4 (dondurma
+ *   yukumlulugu); olcum: docs/PAD_COVERAGE_REPORT.md.
      */
     data class LevelSpec(
         val levelId: Int,
@@ -1106,7 +1279,8 @@ object GameConfig {
      *
      * 10 bitmap `drawable-nodpi`'ye girdiginde burasi `(1..11).toSet()` olur,
      * motorda baska degisiklik GEREKMEZ.
-     * Detay + donusum komutu: docs/CAMPAIGN_INTEGRATION.md.
+     * (Not: bu KDoc bloguna dikkat — 11 haritanin TAMAMI pakette, yorumun
+ * "yalnizca bg_level_01" varsayimi bayat.)
      * ---------------------------------------------------------------------
      */
     // Faz 4b: 11 harita bitmap'i de `drawable-nodpi/bg_level_01..11.webp` olarak
@@ -1295,7 +1469,7 @@ object GameConfig {
     /**
      * Act II krater kisiti — LEVEL_DESIGN.md F.3 algoritmasi geometri uzerinde
      * BIR KEZ kosturuldu ve F.4 uyarinca donduruldu. Uretici betik ve dogrulama
-     * tablosu: docs/CAMPAIGN_INTEGRATION.md.
+     * tablosu: docs/PAD_COVERAGE_REPORT.md §5.2.
      *
      * Hepsi D1 (%25-40 devre disi), D2 (kalan >= max(6, 0.60x toplam)),
      * D3 (her dolu bolgede >=1 CANLI pad), D4 (900 ref-px'lik kapsamasiz yol
@@ -1751,9 +1925,13 @@ object GameConfig {
      * ESKI 6 dalgalik tek-bolum listesi.
      *
      * Faz 4'ten itibaren dalgalarin kaynagi `WaveDefinitions.CAMPAIGN`'dir
-     * (22 bolum x 259 dalga). Bu liste SILINMEDI cunku `HUDOverlay.kt` hâlâ
-     * `GameConfig.WAVES.size` okuyor (bkz. docs/CAMPAIGN_INTEGRATION.md — HUD
-     * `gameEngine.totalWaves` akisina gecirilecek).
+     * (bugun **55 bolum x 359 dalga**; bu yorum 22x259 diyordu, bayatlamisti).
+     *
+     * Bu liste eskiden SILINEMIYORDU cunku `HUDOverlay` `GameConfig.WAVES.size`
+     * okuyordu ve kampanyada dalga sayisi bolume gore degistigi icin "DALGA
+     * 9/6" gibi imkansiz degerler cikiyordu. **O goc TAMAMLANDI**: HUD artik
+     * `gameEngine.totalWaves` akisini okuyor. Liste yalnizca geriye donuk
+     * uyumluluk icin duruyor ve `@Deprecated`.
      */
     @Deprecated(
         message = "Bolum basina dalga icin WaveDefinitions.wavesFor(levelId) / " +

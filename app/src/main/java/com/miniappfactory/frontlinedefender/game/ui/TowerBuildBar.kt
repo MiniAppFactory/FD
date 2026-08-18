@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.miniappfactory.frontlinedefender.R
 import com.miniappfactory.frontlinedefender.game.audio.rememberHaptics
+import com.miniappfactory.frontlinedefender.game.economy.BattleTelemetry
 import com.miniappfactory.frontlinedefender.game.engine.GameEngine
 import com.miniappfactory.frontlinedefender.game.model.GameConfig
 import com.miniappfactory.frontlinedefender.ui.theme.*
@@ -62,10 +63,17 @@ import com.miniappfactory.frontlinedefender.ui.theme.*
  *    "birakma onizlemesi her zaman gorunur" kurali ihlal ediliyordu.
  *    Olculen yeni yukseklik ~132 px; en alttaki pad (normY=0.80) ve halkasinin
  *    buyuk kismi acikta kalir.
+ *
+ * @param telemetry gorev olcumu ([BattleTelemetry]). **Varsayilani YOKTUR**:
+ *   `d_v_build15` ve `d_s_all_towers` gorevlerinin tek besleyicisi bu cagri
+ *   yeridir, dolayisiyla baglanti kopmasi derleme hatasi olmali — sessiz bir
+ *   `null` degil (kapi tam bu yuzden aylarca kapali kalmisti, bkz.
+ *   `BATTLE_TELEMETRY_WIRED`).
  */
 @Composable
 fun TowerBuildBar(
     gameEngine: GameEngine,
+    telemetry: BattleTelemetry,
     modifier: Modifier = Modifier
 ) {
     val selectedBuildSpot by gameEngine.selectedBuildSpot.collectAsState()
@@ -84,7 +92,21 @@ fun TowerBuildBar(
             color = SleekDarkBg,
             border = androidx.compose.foundation.BorderStroke(1.dp, SleekBorderDark),
             shadowElevation = 16.dp,
-            modifier = Modifier.fillMaxWidth()
+            // YUKSEKLIK ARTIK TEK YERDE. `GameCanvas`in "ortulen secim
+            // hayaleti" bu cekmecenin ust kenarini capa olarak kullaniyor ve
+            // capayi `GameConfig.BUILD_DRAWER_HEIGHT_DP`den hesapliyor. Sabit
+            // buradan OKUNMASAYDI ic bosluklarda yapilan bir degisiklik
+            // cekmeceyi buyutur, hayaletin capasi sessizce kayar ve plaka
+            // cekmecenin ALTINDA kalirdi — hicbir test kirilmadan.
+            //
+            // `defaultMinSize`, `height` DEGIL: buyuk sistem yazi olceginde
+            // icerik bu sinirin ustune cikarsa kirpilmasin. Iki degerin
+            // gercekten esit oldugunu `MissionTelemetryWiringTest` OLCEREK
+            // dogruluyor, yani sapma sessiz kalmiyor.
+            modifier = Modifier
+                .fillMaxWidth()
+                .defaultMinSize(minHeight = GameConfig.BUILD_DRAWER_HEIGHT_DP.dp)
+                .testTag("build_drawer")
         ) {
             Row(
                 modifier = Modifier
@@ -108,7 +130,13 @@ fun TowerBuildBar(
                             // koymak parmagin altinda olculebilir bir gecikme
                             // yaratirdi.
                             haptics.onTowerBuilt()
-                            gameEngine.buildTower(towerType)
+                            // GOREV OLCUMU yalnizca motor GERCEKTEN kurduysa.
+                            // `buildTower` kilit/Tedarik/girdi kontrollerinde
+                            // false donebilir; reddedilen bir dokunusu saymak
+                            // `d_v_build15`i bedava doldururdu.
+                            if (gameEngine.buildTower(towerType)) {
+                                telemetry.noteTowerBuilt(towerType.name)
+                            }
                         },
                         onPreview = { pressed ->
                             if (pressed) {
