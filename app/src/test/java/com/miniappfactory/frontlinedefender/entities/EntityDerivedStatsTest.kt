@@ -1,5 +1,7 @@
 package com.miniappfactory.frontlinedefender.entities
 
+import com.miniappfactory.frontlinedefender.game.economy.EconomyConfig
+import com.miniappfactory.frontlinedefender.game.economy.UpgradeLine
 import com.miniappfactory.frontlinedefender.game.model.EnemyEntity
 import com.miniappfactory.frontlinedefender.game.model.GameConfig
 import com.miniappfactory.frontlinedefender.game.model.GameConfig.EnemyType
@@ -22,7 +24,11 @@ import org.junit.Test
  */
 class EntityDerivedStatsTest {
 
-    private fun tower(type: TowerType, level: Int = 1): TowerEntity {
+    private fun tower(
+        type: TowerType,
+        level: Int = 1,
+        tierCap: Int = Int.MAX_VALUE
+    ): TowerEntity {
         val spec = GameConfig.TOWER_SPECS.getValue(type)
         return TowerEntity(
             type = type,
@@ -30,7 +36,8 @@ class EntityDerivedStatsTest {
             posX = 0f,
             posY = 0f,
             level = level,
-            totalInvestedGold = spec.buildCost
+            totalInvestedGold = spec.buildCost,
+            tierCap = tierCap
         )
     }
 
@@ -50,6 +57,21 @@ class EntityDerivedStatsTest {
     }
 
     // ------------------------------------------------------------------- kule
+
+    /**
+     * `GameEngine.upgradeSelectedTower` KARAR kisminin aynasi (GameEngine.kt).
+     * Motor Android'e bagli oldugu icin dogrudan cagrilamiyor — ayni yaklasim
+     * hasar formulu icin de kullaniliyor (bkz. dosyanin sonu).
+     *
+     * @return yukseltme gerceklestiyse kalan Tedarik, reddedildiyse `null`.
+     */
+    private fun engineUpgrade(t: TowerEntity, supply: Int): Int? {
+        val cost = t.upgradeCost ?: return null
+        if (supply < cost) return null
+        t.level += 1
+        t.totalInvestedGold += cost
+        return supply - cost
+    }
 
     @Test
     fun levelOneTowerReportsItsLevelOneStats() {
@@ -74,28 +96,76 @@ class EntityDerivedStatsTest {
     }
 
     @Test
-    fun upgradeCostIsOfferedAtLevelOneAndWithheldAtLevelTwo() {
+    fun everyTierExceptTheLastOffersTheNextTiersPrice() {
         TowerType.values().forEach { type ->
             val spec = GameConfig.TOWER_SPECS.getValue(type)
-            assertEquals(
-                "$type kademe 1'de yukseltme maliyeti gostermeli",
-                spec.level2UpgradeCost, tower(type, 1).upgradeCost
-            )
-            assertNull(
-                "$type kademe 2'de yukseltme maliyeti OLMAMALI (maks kademe) — " +
-                    "null olmazsa oyuncu ayni kule icin ikinci kez odeme yapar",
-                tower(type, 2).upgradeCost
-            )
+            for (tier in 1 until spec.maxTier) {
+                assertEquals(
+                    "$type kademe $tier, kademe ${tier + 1} bedelini gostermeli",
+                    spec.tier(tier + 1).upgradeCost, tower(type, tier).upgradeCost
+                )
+            }
         }
     }
 
+    /**
+     * Son kademede yukseltme YOKTUR. Bu, kademe sayisindan (2 veya 3, ileride
+     * 4) BAGIMSIZ olarak dogru olmali: sabit bir sayiya bakan bir kontrol
+     * kademe eklendigi gun sessizce oyuncuya ikinci kez odeme yaptirir.
+     */
     @Test
-    fun maxTowerLevelIsTwoInThisRelease() {
-        // DECISIONS B5: kademe 3 ONAYLANDI ama ilk APK'yi bloklamiyor.
-        // Kademe 3 geldiginde bu test kirilir ve UI/motor birlikte guncellenir.
+    fun theLastTierHasNoUpgradeAndTheEngineRefusesToChargeForOne() {
         TowerType.values().forEach { type ->
-            assertNotNull(tower(type, 1).upgradeCost)
-            assertNull(tower(type, 2).upgradeCost)
+            val spec = GameConfig.TOWER_SPECS.getValue(type)
+            for (tier in 1 until spec.maxTier) {
+                assertNotNull("$type kademe $tier yukseltilebilmeli", tower(type, tier).upgradeCost)
+            }
+
+            val maxed = tower(type, spec.maxTier)
+            assertNull(
+                "$type son kademede (${spec.maxTier}) yukseltme maliyeti OLMAMALI — " +
+                    "null olmazsa oyuncu ayni kule icin ikinci kez odeme yapar",
+                maxed.upgradeCost
+            )
+
+            val investedBefore = maxed.totalInvestedGold
+            assertNull(
+                "$type: motor son kademedeki kuleyi yukseltmeyi REDDETMELI",
+                engineUpgrade(maxed, supply = Int.MAX_VALUE)
+            )
+            assertEquals("$type: reddedilen yukseltme yatirimi degistirmemeli", investedBefore, maxed.totalInvestedGold)
+            assertEquals("$type: reddedilen yukseltme kademeyi degistirmemeli", spec.maxTier, maxed.level)
+        }
+    }
+
+    /**
+     * Faz 13 / DECISIONS B5 — KAMPANYA KILIDI. Kademe 3 Act II'de acilir; Act
+     * I'de kurulan bir kule icin panel MAKS gostermeli, yani `upgradeCost`
+     * kademe 2'de null olmali.
+     */
+    @Test
+    fun aTowerBuiltBeforeTheTierUnlockStopsAtTheTierItsCampaignLevelAllows() {
+        val unlockLevel = GameConfig.TIER_THREE_UNLOCK_LEVEL
+        TowerType.values().forEach { type ->
+            val spec = GameConfig.TOWER_SPECS.getValue(type)
+
+            val beforeUnlock = (unlockLevel - 1).coerceAtLeast(spec.unlockedAtLevel)
+            val cappedTier = GameConfig.maxTowerTier(type, beforeUnlock)
+            val capped = tower(type, cappedTier, tierCap = cappedTier)
+            assertNull(
+                "$type: bolum $beforeUnlock'de kademe $cappedTier son kademe olmali",
+                capped.upgradeCost
+            )
+
+            val openTier = GameConfig.maxTowerTier(type, unlockLevel)
+            assertEquals(
+                "$type: kademe kilidi bolum $unlockLevel'de merdivenin tamamini acmali",
+                spec.maxTier, openTier
+            )
+            assertNotNull(
+                "$type: bolum $unlockLevel'de kademe $cappedTier hâlâ yukseltilebilmeli",
+                tower(type, cappedTier, tierCap = openTier).upgradeCost
+            )
         }
     }
 
@@ -135,6 +205,87 @@ class EntityDerivedStatsTest {
                     t.sellValue < invested
                 )
             }
+        }
+    }
+
+    /**
+     * Faz 13 / DECISIONS B5 — **"YUKSELT SONRA SAT" ARBITRAJI OLMAMALI.**
+     *
+     * Kademe 3 yukseltme bedellerini iki katina cikardi. Eger geri odeme orani
+     * bir gun 1.0'a yaklastirilirsa "kur -> maksa cikar -> sat" dongusu para
+     * uretir ve gec oyun ekonomisi coker — ustelik bunu yalnizca kademe 3'u
+     * olan oyuncu yapabildigi icin sorun tam da bu fazda dogar.
+     *
+     * Test butun kule tiplerini, butun kademe basamaklarini ve butun SALVAGE
+     * meta rank'larini tarar. Sayilarin hicbiri elle yazilmadi.
+     */
+    @Test
+    fun upgradingThenSellingIsNeverMoreProfitableThanSellingRightAway() {
+        val ranks = 0..UpgradeLine.SALVAGE.maxRank
+        TowerType.values().forEach { type ->
+            val spec = GameConfig.TOWER_SPECS.getValue(type)
+            ranks.forEach { rank ->
+                val rate = (EconomyConfig.BASE_SALVAGE_RATIO +
+                    EconomyConfig.SALVAGE_PER_RANK * rank).toFloat()
+                assertTrue("salvage rank $rank orani 1.0'i gecemez", rate < 1f)
+
+                var invested = spec.buildCost
+                for (tier in 1 until spec.maxTier) {
+                    val cost = spec.tier(tier + 1).upgradeCost
+                    val sellNow = TowerEntity(
+                        type = type, buildSpotId = 1, posX = 0f, posY = 0f,
+                        level = tier, totalInvestedGold = invested, salvageRate = rate
+                    ).sellValue
+                    val sellAfterUpgrade = TowerEntity(
+                        type = type, buildSpotId = 1, posX = 0f, posY = 0f,
+                        level = tier + 1, totalInvestedGold = invested + cost, salvageRate = rate
+                    ).sellValue
+
+                    assertTrue(
+                        "$type kademe $tier -> ${tier + 1} (salvage rank $rank): " +
+                            "$cost ode, geri odeme $sellNow -> $sellAfterUpgrade — " +
+                            "yukseltip satmak para URETIYOR",
+                        sellAfterUpgrade - cost < sellNow
+                    )
+                    invested += cost
+                }
+
+                // Merdivenin tamami: tam yatirimin geri odemesi yatirimin altinda.
+                val maxed = TowerEntity(
+                    type = type, buildSpotId = 1, posX = 0f, posY = 0f,
+                    level = spec.maxTier, totalInvestedGold = invested, salvageRate = rate
+                )
+                assertTrue(
+                    "$type maks kademe (yatirim $invested, salvage rank $rank): " +
+                        "geri odeme ${maxed.sellValue} yatirimin altinda olmali",
+                    maxed.sellValue < invested
+                )
+            }
+        }
+    }
+
+    /**
+     * Motorun muhasebesi: her yukseltme `totalInvestedGold`e EKLENIR, uzerine
+     * yazilmaz. Aksi halde kademe 3'e cikan bir kule satildiginda oyuncu
+     * kademe 2 yatirimini kaybederdi (ya da tersi: iki kez geri alirdi).
+     */
+    @Test
+    fun climbingTheWholeTierLadderAccumulatesEveryPaymentIntoTheSellValue() {
+        TowerType.values().forEach { type ->
+            val spec = GameConfig.TOWER_SPECS.getValue(type)
+            val t = tower(type)
+            var paid = spec.buildCost
+            while (t.upgradeCost != null) {
+                val cost = t.upgradeCost!!
+                assertNotNull("$type: yukseltme kabul edilmeli", engineUpgrade(t, supply = cost))
+                paid += cost
+                assertEquals("$type kademe ${t.level}: birikmis yatirim", paid, t.totalInvestedGold)
+            }
+            assertEquals("$type merdivenin sonuna cikmali", spec.maxTier, t.level)
+            assertEquals(
+                "$type: satis degeri TUM yatirimdan hesaplanmali",
+                (paid * t.salvageRate).toInt(), t.sellValue
+            )
         }
     }
 

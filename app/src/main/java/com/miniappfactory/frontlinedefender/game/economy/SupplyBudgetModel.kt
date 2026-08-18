@@ -65,15 +65,24 @@ package com.miniappfactory.frontlinedefender.game.economy
 object SupplyBudgetModel {
 
     /**
-     * Modelin SPI olcebildigi bolum sayisi.
+     * Modelin SPI olcebildigi bolum sayisi — **8 -> 55** (CAMPAIGN_55.md 8.1).
      *
-     * Sinir keyfi degil: SPI'nin bolen tarafi [DESIGNED_ROSTER_SIZE], kule ajaninin
-     * `docs/tools/difficulty_audit.py` ile OLCTUGU "gereken kule" sayisina dayanir ve
-     * o olcum Act I'in ilk 8 bolumu icin yapildi. L9+ icin olculmus bir kadro
-     * olmadigindan SPI **uydurulmaz**; gelir tarafi ([waveKillSupply]) yine 22 bolum
-     * icin canli hesaplanir.
+     * Eskiden 8'de duruyordu, cunku bolen ([DESIGNED_ROSTER_SIZE]) yalnizca Act
+     * I'in ilk 8 bolumu icin OLCULMUSTU. CAMPAIGN_55.md tasarimi bu iliskiyi
+     * TERSINE cevirdi: SPI artik bir KONTROL degil bir URETIM KURALI —
+     * hedef bant -> butce -> dalga kompozisyonu. Yani L23..L55'in kadrosu
+     * (9. tablonun `R` ve `kd3` kolonlari) tasarimin GIRDISIDIR, olcumu degil;
+     * dolayisiyla bolen artik 55 bolumun tamami icin tanimli.
+     *
+     * **BANT ISTISNASI KALKTI.** Eskiden L9..L22 SPI bandindan MUAFTI
+     * (`BAND_EXEMPT_LEVELS = 9..22`): o bolumler 10-18 dalga uzunlugundaydi,
+     * butce tahtanin kapasitesini asiyordu (L22 SPI 5,37) ve muafiyet bunu
+     * "kanit olarak" pinliyordu. Bolum sekli tek ritme (5-7 dalga) tasininca
+     * muafiyetin sebebi ortadan kalkti; 55 bolumun 55'i banda giriyor
+     * (olculen aralik 1,54..2,52) ve `SupplyBudgetTest` bunu istisnasiz
+     * dogruluyor.
      */
-    const val MODELLED_LEVELS: Int = 8
+    const val MODELLED_LEVELS: Int = 55
 
     // =================================================================================
     // Karsilastirma tabani — Faz 10 ONCESI ekonomi
@@ -153,24 +162,21 @@ object SupplyBudgetModel {
     const val WAVE_CLEAR_SUPPLY_BONUS: Int = 18
 
     /**
-     * **`LevelSpec.startingSupply`, bolum 1..6** (uygulandi, Faz 10).
+     * **OGRETICI SERMAYE — yalnizca L1 ve L2.**
      *
-     * Tasarim niyeti bolum bolum:
-     *  L1  80 — bir Gatling (60) + 20 artik. "Tek silahini NEREYE koyacaksin" karari.
-     *  L2  90 — hala tek kule acilisi; ikinci kule dalga geliriyle gelir.
-     *  L3 110 — Heavy Cannon (95) acilir: "iki Gatling mi, bir Cannon mi" ilk gercek
-     *           kule-kimligi karari.
-     *  L4 120 — iki Gatling TAM butce. Sifir artik.
-     *  L5 140 — Frost Field (100) acilir; 140 ile Frost + hicbir sey ya da iki Gatling.
-     *  L6 150 — taban degere geri doner; buradan sonrasini dalga geliri tasir.
+     *  L1  80 — bir Gatling (60) + 20 artik. "Tek silahini NEREYE koyacaksin".
+     *  L2  90 — hâlâ tek kule acilisi; ikinci kule dalga geliriyle KAZANILIR.
      *
-     * L7..L22 [EconomyConfig.BASE_STARTING_SUPPLY] (150) kalir.
+     * L3'ten itibaren sermaye [startingSupply]in kadro kuralindan gelir. Eski
+     * tablo (110/120/140/150 ve L7..L22 duz 150) bolumler 5-7 dalgaya inince
+     * gelirin yarisini goturdu ve SPI'yi bandin ALTINA dusurdu (L4 1,33 ·
+     * L5 1,31 · L7 1,41). Ayni tablo gec bolumlerde acilis dalgasini
+     * gecilemez yapiyordu (270 Tedarik = 2 kule, W1 = 40 govde).
      *
      * Meta yukseltme (STARTING_SUPPLY, +25/rank) bunun **UZERINE** biner; motor
-     * `levelSpec.startingSupply + (meta - 150)` isletiyor. Sikilastirma yeni oyuncuyu
-     * vurur, yatirim yapmis oyuncuyu odullendirir — istenen sey tam olarak bu.
+     * `levelSpec.startingSupply + (meta - 150)` isletiyor.
      */
-    val EARLY_STARTING_SUPPLY: IntArray = intArrayOf(80, 90, 110, 120, 140, 150)
+    val EARLY_STARTING_SUPPLY: IntArray = intArrayOf(80, 90)
 
     /**
      * **TASARLANAN KADRO ADEDI**, L1..L8 — SPI'nin bolen tarafinin *niyet* kismi.
@@ -217,7 +223,48 @@ object SupplyBudgetModel {
      * L5'in olculen ihtiyaci 2'ye dusuyor (zirh geliyor ama sayi azaliyor); kadro
      * L4'un 4'unde kalir.
      */
-    val DESIGNED_ROSTER_SIZE: IntArray = intArrayOf(2, 3, 3, 4, 4, 4, 4, 4)
+    val DESIGNED_ROSTER_SIZE: IntArray = intArrayOf(
+        // ---- L1..L22: YENIDEN OLCULDU. Bolumler 6-18 dalgadan 5-7'ye inince
+        // ---- gelir yariya dustu; eski kadro (5 kule) SPI'yi bandin ALTINA
+        // ---- itiyordu (L4 1,33 · L5 1,31 · L7 1,41). Kadro artik hem SAYI hem
+        // ---- PAHALILIK ile buyuyor: L7'de Fuze acilir (kademe-2 495 -> 725),
+        // ---- L17'de bes kuleye cikar. `GameConfig.DESIGNED_ROSTER_SIZE` ile
+        // ---- birebir ayni olmasi `BalanceConsistencyTest`te kilitli.
+        2, 3, 3, 3, 3, 3, 4, 4,
+        4, 4, 4,
+        4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5,
+        // ---- L23..L33 (Act III / kis)
+        5, 5, 5, 6, 5, 6, 6, 6, 5, 6, 6,
+        // ---- L34..L44 (Act IV / col)
+        6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 7,
+        // ---- L45..L55 (Act V / sonbahar)
+        6, 6, 6, 7, 6, 7, 7, 7, 6, 7, 7,
+    )
+
+    /**
+     * **KADRONUN KADEME 3'E CIKAN UYE SAYISI** (`kd3`, CAMPAIGN_55.md 9. tablo).
+     *
+     * NEDEN AYRI BIR KOLON: kademe 3 `GameConfig.TIER_THREE_UNLOCK_LEVEL`de
+     * (L12) **bedava** acilir, ama YUKSELTMESI Tedarik ister (130-230). Bolen
+     * yalnizca kademe 2'yi sayarsa gec bolumlerde oyuncunun gercekten odedigi
+     * paranin ~%40'i modelin disinda kalir ve SPI oldugundan yuksek olculur —
+     * yani "para bol" teshisi bir OLCUM hatasi olur. Bu, projede ikinci kez
+     * yasanan hata sinifi (bkz. dosya basi); bu kolon onu kapatiyor.
+     *
+     * L1..L11 icin 0: kademe 3 henuz acik degil.
+     */
+    val DESIGNED_TIER_THREE_COUNT: IntArray = intArrayOf(
+        // L1..L11
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        // L12..L22 (kadro 5'ten 4'e indigi icin kd3 de yeniden olculdu)
+        1, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3,
+        // L23..L33 (L33 4 -> 3, bkz. WaveDefinitions.LATE_PLAN gerekcesi)
+        2, 3, 3, 3, 3, 3, 4, 4, 3, 4, 3,
+        // L34..L44
+        3, 4, 4, 4, 4, 4, 5, 5, 4, 5, 5,
+        // L45..L55 (L53 5 -> 3, bkz. WaveDefinitions.LATE_PLAN gerekcesi)
+        4, 4, 5, 5, 4, 5, 5, 6, 3, 5, 6,
+    )
 
     /** SPI'nin kabul edilebilir bandi. Disina cikan bolum tasarim hatasidir. */
     const val SPI_TARGET_MIN: Double = 1.5
@@ -265,7 +312,14 @@ object SupplyBudgetModel {
         facts: CampaignFacts,
     ): Int {
         requireCampaign(level)
-        val actMul = facts.actRewardMultiplier(level)
+        // ⚠ CARPMA **FLOAT**'TA YAPILIR — motor `actRewardMul: Float` tutuyor
+        // (`GameEngine.kt:1150`). Double'da yapmak sessiz bir 1 Tedarik farki
+        // uretiyordu: 1,30f gercekte 1,2999999523... oldugu icin Double'da
+        // 20 x 1,3 -> 25,999999 -> **25**, Float'ta ayni carpim 26,0f -> **26**;
+        // boss'ta ise ters yonde (77 / 78). Tank ve boss agirlikli gec
+        // bolumlerde bu bolum basina 30-50 Tedarik hatasi demek ve modelin
+        // "motorun aritmetigini birebir aynalar" iddiasini bozar.
+        val actMul = facts.actRewardMultiplier(level).toFloat()
         return facts.enemyCounts(level).entries.sumOf { (enemy, count) ->
             val nominal = rewards[enemy]
                 ?: error("odul tablosunda '$enemy' yok — dalga tablosu yeni bir dusman tipi getirdi")
@@ -305,15 +359,55 @@ object SupplyBudgetModel {
         legacyWaveKillSupply(level, facts) +
             waveClearBonusTotal(level, LEGACY_WAVE_CLEAR_BONUS, facts)
 
-    /** Bolum basi baslangic Tedariki (meta yukseltme HARIC). L7..L22 icin taban 150. */
-    fun startingSupply(level: Int): Int {
+    /**
+     * Bolum basi baslangic Tedariki (meta yukseltme HARIC).
+     *
+     * L1..L6 [EARLY_STARTING_SUPPLY] · L7..L22 taban 150 · L23+ perde rampasi
+     * (Act III 220 · IV 270 · V 320, CAMPAIGN_55.md 8.2).
+     *
+     * Perde rampasi bir ZORLUK KOLU DEGIL, bolum bolme kararinin zorunlu
+     * sonucudur: 6-7 dalgalik bir bolumde oldurme geliri kadroyu kurmaya
+     * yetismez; ya bolum uzar (K-2'ye aykiri) ya sermaye artar.
+     *
+     * Tek dogruluk kaynagi `GameConfig.CAMPAIGN[L].startingSupply`; buradaki
+     * hesabin onunla ayni olmasi `SupplyBudgetTest` icinde kilitli.
+     */
+    fun startingSupply(
+        level: Int,
+        facts: CampaignFacts = GameConfigCampaignFacts,
+    ): Int {
         requireCampaign(level)
-        return if (level <= EARLY_STARTING_SUPPLY.size) {
-            EARLY_STARTING_SUPPLY[level - 1]
+        if (level <= EARLY_STARTING_SUPPLY.size) return EARLY_STARTING_SUPPLY[level - 1]
+        // Kadronun KADEME-1 maliyeti: oyuncu bolume savunmasini KURABILECEK
+        // sermaye ile girer, yukseltmeleri kazanir. Fiyatlar canli TOWER_SPECS'ten.
+        val order = facts.unlockedTowersInOrder(level)
+        val roster = DESIGNED_ROSTER_SIZE[level - 1]
+        val base = (0 until roster).sumOf { facts.towerBuildCost.getValue(order[it % order.size]) }
+        return if (facts.hasScarceCoverage(level)) {
+            Math.round(base * COVERAGE_SCARCITY_SUPPLY_FACTOR)
         } else {
-            EconomyConfig.BASE_STARTING_SUPPLY
+            base
         }
     }
+
+    /**
+     * KAPSAMA KITLIGI SERMAYE CARPANI — `GameConfig.COVERAGE_SCARCITY_SUPPLY_FACTOR`
+     * ile ayni olmasi `BalanceConsistencyTest` icinde kilitli.
+     *
+     * Iki sebep ayni sonucu verir: (a) catallanan harita (1, 2, 4, 11) — pad'in
+     * gordugu yol PAYI yariya iner; (b) dar tahta — acik pad, kadronun ancak
+     * bir fazlasi kadardir, yani yerlestirme secenegi yoktur.
+     *
+     * Olcum: sermaye kurali kadro kademe-1 maliyetine cikarildiginda gecilemeyen
+     * bolum 38 -> 11 dustu ve kalan 11'in 11'i de catallanan haritalardaydi;
+     * carpan 1,5 ile 11 -> 2. Dar tahta kolu ise "yalnizca TEK bir oynanis
+     * bicimiyle gecilebilen bolum" olcumunden geldi (L33 / L46 / L53).
+     */
+    const val COVERAGE_SCARCITY_SUPPLY_FACTOR: Float = 1.5f
+
+    // KALDIRILDI: perde basina duz sermaye (`LATE_ACT_STARTING_SUPPLY =
+    // [220, 270, 320]`, CAMPAIGN_55.md 8.2). Bolum 5-7 dalgaya inince yetmedi;
+    // sermaye artik perdeden degil KADRODAN turer — bkz. [startingSupply].
 
     /** TAM bolum butcesi: baslangic + dalga geliri. */
     fun supplyBudget(level: Int, facts: CampaignFacts = GameConfigCampaignFacts): Int =
@@ -349,8 +443,12 @@ object SupplyBudgetModel {
      * `TOWER_SPECS`ten gelir, yani kule fiyati degisirse bolen kendiliginden takip
      * eder ve bu dizi bir daha bayatlamaz.
      */
-    fun designedLoadoutCost(level: Int, facts: CampaignFacts = GameConfigCampaignFacts): Int =
-        designedRoster(level, facts).sumOf { facts.tierTwoCost(it) }
+    fun designedLoadoutCost(level: Int, facts: CampaignFacts = GameConfigCampaignFacts): Int {
+        val roster = designedRoster(level, facts)
+        val tierThree = DESIGNED_TIER_THREE_COUNT[level - 1]
+        return roster.sumOf { facts.tierTwoCost(it) } +
+            roster.take(tierThree).sumOf { facts.tierThreeStep(it) }
+    }
 
     /** SPI(L) = butce / tasarlanan kadro. Hedef bant [SPI_TARGET_MIN]..[SPI_TARGET_MAX]. */
     fun supplyPressureIndex(level: Int, facts: CampaignFacts = GameConfigCampaignFacts): Double {

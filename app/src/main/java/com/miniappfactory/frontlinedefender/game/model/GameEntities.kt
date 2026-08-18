@@ -2,6 +2,16 @@ package com.miniappfactory.frontlinedefender.game.model
 
 import java.util.UUID
 
+/**
+ * Isabet parlamasinin suresi, saniye.
+ *
+ * TEK KAYNAK: motor bu degeri `EnemyEntity.hitFlashTimerSeconds`e yazar,
+ * renderer AYNI degerle 1'e normalize eder. Onceden iki dosyada da ciplak
+ * `0.12f` yaziyordu; birini degistirip digerini unutmak parlamayi ya erken
+ * kesilmis ya da hic sonmemis gosterirdi.
+ */
+const val HIT_FLASH_DURATION_SECONDS = 0.12f
+
 data class TowerEntity(
     val id: String = UUID.randomUUID().toString(),
     val type: GameConfig.TowerType,
@@ -31,9 +41,33 @@ data class TowerEntity(
     // ------------------------------------------------------------------------
     val damageMultiplier: Float = 1f,
     val rangeMultiplier: Float = 1f,
-    val salvageRate: Float = 0.70f
+    val salvageRate: Float = 0.70f,
+
+    /**
+     * Faz 13 / DECISIONS B5 — bu kulenin BU BOLUMDE ulasabilecegi en yuksek
+     * kademe (kampanya kilidi, `GameConfig.maxTowerTier`).
+     *
+     * Meta carpanlari gibi motor tarafindan insa aninda BIR KEZ verilir. Neden
+     * entity'de duruyor: panel "yukselt" butonunu bu kuleye BAKARAK ciziyor.
+     * Kilit yalnizca motorda olsaydi panel kademe 3 butonunu bolum 5'te de
+     * gosterir, oyuncu basar ve motor sessizce reddederdi — "teknik olarak
+     * dogru ama tatminsiz" tam olarak bu.
+     *
+     * Varsayilan sinirsiz: kilidi bilmeyen bir cagiran (test, arac) kulenin
+     * TAM merdivenini gorur, uydurma bir tavan gormez.
+     */
+    val tierCap: Int = Int.MAX_VALUE
 ) {
     val stats: GameConfig.TowerStats get() = GameConfig.TOWER_SPECS[type]!!
+
+    /**
+     * Bu kulenin cikabilecegi son kademe: veri merdiveni ile kampanya kilidinin
+     * KUCUGU. "Son kademe mi" sorusunun TEK kaynagi — sabit bir 2 ya da 3 yok.
+     */
+    val maxTier: Int get() = minOf(stats.maxTier, tierCap)
+
+    /** Bu kulenin su anki kademesinin denge satiri. */
+    val currentTier: GameConfig.TowerTier get() = stats.tier(level)
 
     /**
      * Menzil **1920 REFERANS TUVALINDE** (DECISIONS B3) — ham canvas px DEGIL.
@@ -41,7 +75,7 @@ data class TowerEntity(
      * kiyaslamak icin [rangePx] kullanilir.
      */
     val range: Float
-        get() = (if (level == 1) stats.level1Range else stats.level2Range) * rangeMultiplier
+        get() = currentTier.range * rangeMultiplier
 
     /**
      * Menzil CANVAS px cinsinden.
@@ -56,9 +90,26 @@ data class TowerEntity(
     fun rangePx(renderScale: Float): Float = range * renderScale
 
     val damage: Float
-        get() = (if (level == 1) stats.level1Damage else stats.level2Damage) * damageMultiplier
-    val fireRate: Float get() = if (level == 1) stats.level1FireRate else stats.level2FireRate
-    val upgradeCost: Int? get() = if (level == 1) stats.level2UpgradeCost else null
+        get() = currentTier.damage * damageMultiplier
+    val fireRate: Float get() = currentTier.fireRate
+
+    /**
+     * Bir sonraki kademenin bedeli; SON kademede `null`.
+     *
+     * `null` iki ayri sebeple gelebilir ve ikisi de ayni cevabi hak eder
+     * ("MAKS"): merdivenin sonuna gelinmistir, ya da kampanya kilidi
+     * ([tierCap]) o kademeyi henuz acmamistir.
+     */
+    val upgradeCost: Int? get() = if (level >= maxTier) null else stats.upgradeCostFrom(level)
+
+    /**
+     * Satis geri odemesi. **Yatirimin tamamindan** hesaplanir, kademeden degil:
+     * her yukseltme `totalInvestedGold`e eklendigi icin kademe 3 muhasebeye
+     * kendiliginden dahil olur. `salvageRate` her zaman 1.0'in altinda kaldigi
+     * surece (meta tavani 0.70) "yukselt sonra sat" ASLA kar etmez —
+     * `EntityDerivedStatsTest` bunu her kademe ve her salvage rank'i icin
+     * kilitler.
+     */
     val sellValue: Int get() = (totalInvestedGold * salvageRate).toInt()
 }
 
@@ -162,7 +213,19 @@ enum class EffectType {
      */
     FROST_PULSE_RING,
     COIN_POPUP,
-    DAMAGE_TEXT
+    DAMAGE_TEXT,
+
+    /**
+     * Faz 14 - ZINCIR (kill-streak) kademe atlama patlamasi.
+     *
+     * Her oldurmede DEGIL, yalnizca zincir bir kademe TIRMANDIGINDA uretilir
+     * (bkz. ComboTracker). Boylece 18 dusmanlik bir dalgada ekrana 18 degil
+     * en fazla 4 tane cikar: tirmanma hissi verir, ekrani bogmaz.
+     *
+     * Renk/olcek [VisualEffect.tier] uzerinden surulur; ses, sarsinti ve
+     * hit stop ile AYNI KAREDE tetiklenir.
+     */
+    COMBO_BURST
 }
 
 data class VisualEffect(
@@ -188,5 +251,11 @@ data class VisualEffect(
      * Faz 3: yonlu sprite'lar (namlu alevi) icin bakis acisi. Ekran
      * koordinatlarinda atan2(dy, dx); 0 = sag. Radyal efektlerde kullanilmaz.
      */
-    val angleRad: Float = 0f
+    val angleRad: Float = 0f,
+    /**
+     * Faz 14 - zincir kademesi (0 = zincir yok). Yuzen yazinin RENGI ve
+     * OLCEGI bundan turer: kademe yukseldikce yazi buyur ve rengi soguktan
+     * sicaga kayar. Uc kanal (olcek / renk / ses) birlikte tirmanir.
+     */
+    val tier: Int = 0
 )

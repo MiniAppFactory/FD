@@ -121,12 +121,79 @@ class LevelGeometryDataTest {
         }
     }
 
+    /**
+     * Betik her rotayi yay uzunlugunun %5'i araligiyla ornekler -> 21 OLCULMUS
+     * nokta. v1'de buna 2 ekran disi uc eklendigi icin sayi 23'tu; uclar
+     * kaldirildi. Sayi kilitli ki uc uzatmasi sessizce geri gelmesin.
+     */
     @Test
-    fun everyRouteStartsOffScreenLeftAndEndsOffScreenRight() {
+    fun everyRouteHasExactlyTheTwentyOneMeasuredWaypoints() {
         allRoutes().forEach { (label, route) ->
-            assertEquals("$label ilk nokta x", -0.05f, route.first().x, 1e-4f)
-            assertEquals("$label son nokta x", 1.05f, route.last().x, 1e-4f)
+            assertEquals("$label waypoint sayisi", 21, route.size)
         }
+    }
+
+    /**
+     * KALICI KILIT — hicbir rota noktasi ekranin disinda olamaz.
+     *
+     * v1 geometrisi her rotanin iki ucunu YATAY olarak ekran disina uzatiyordu
+     * (`extract_geometry.py::extend_ends`, ilk x=-0.05 / son x=1.05). Cihazda
+     * iki gorunur hataya yol acti:
+     *   1. Dusman ekran DISINDA doguyor, cikis bunkerinin agzindan degil onun
+     *      USTUNDEN geciyordu.
+     *   2. Hedef ussun rampasini gecip ekrandan disari yuruyor, can ancak orada
+     *      dusuyordu — "usse girip kayboluyor" hissi yoktu.
+     *
+     * Uclar kaldirildi: her rotanin ilk noktasi bunker yol agzi, son noktasi us
+     * rampasidir. Bu test o hatanin geri gelmesini engeller.
+     */
+    @Test
+    fun everyRouteWaypointStaysInsideTheUnitSquare() {
+        allRoutes().forEach { (label, route) ->
+            route.forEachIndexed { i, p ->
+                assertTrue(
+                    "$label nokta $i x=${p.x} 0..1 disinda — ekran disi rota ucu geri geldi",
+                    p.x in 0f..1f
+                )
+                assertTrue(
+                    "$label nokta $i y=${p.y} 0..1 disinda — ekran disi rota ucu geri geldi",
+                    p.y in 0f..1f
+                )
+            }
+        }
+    }
+
+    /**
+     * Ucu kaldirmak yetmez: uc noktanin OLCULEN kapi agzinda kalmasi gerekir.
+     * Bir rota kenara cok yakin baslar/biterse dusman yine ekran kenarindan
+     * belirmis gibi gorunur.
+     */
+    @Test
+    fun everyRouteStartsAndEndsAtAMeasuredGateMouthNotAtTheScreenEdge() {
+        allRoutes().forEach { (label, route) ->
+            assertTrue(
+                "$label spawn ucu x=${route.first().x} — ekran kenarina yapisik",
+                route.first().x in 0.05f..0.30f
+            )
+            assertTrue(
+                "$label us ucu x=${route.last().x} — ekran kenarina yapisik",
+                route.last().x in 0.70f..0.95f
+            )
+        }
+    }
+
+    /**
+     * Harita 1 uc noktalari cihazda gozle dogrulandi: sol kenardaki cikis
+     * bunkerinin yol agzi ve sagdaki sekizgen ussun rampasi. Bu iki deger
+     * pinlenir ki uretici betik degistiginde sessizce kaymasinlar.
+     */
+    @Test
+    fun mapOneEndpointsMatchTheVisuallyVerifiedGateMouths() {
+        val wp = LevelData.forMapId(1).waypoints
+        assertEquals("harita 1 bunker agzi x", 0.1388f, wp.first().x, 1e-4f)
+        assertEquals("harita 1 bunker agzi y", 0.4638f, wp.first().y, 1e-4f)
+        assertEquals("harita 1 us rampasi x", 0.8804f, wp.last().x, 1e-4f)
+        assertEquals("harita 1 us rampasi y", 0.6638f, wp.last().y, 1e-4f)
     }
 
     @Test
@@ -265,56 +332,66 @@ class LevelGeometryDataTest {
     // ------------------------------------------- pad <-> yol erisilebilirligi
 
     /**
-     * Bir pad'e kurulan kule yola ATES EDEBILMELI. Pad, oyundaki en uzun kule
-     * menzilinden daha uzaktaysa o pad OLUDUR: uzerine ne kurulursa kurulsun
-     * hicbir dusmani vuramaz.
+     * OLU PAD TABLOSU — harita basina, KANONIK kol uzerinde.
      *
-     * Faz 10: en uzun menzil ANTI_ARMOR kademe 2 (280) DEGIL, artik SLOW
-     * kademe 2 (320 ref-px) — destek kulesinin menzili bilincli olarak en genis
-     * (testci: "buz kulesinin kapsama alani buyuk olmali").
+     * ESKI HALI YANLISTI, iki ayri sebepten (docs/PAD_COVERAGE_REPORT.md 5):
+     *  1. Mesafeyi `routes.minOf { }` ile, yani TUM kollarin minimumu olarak
+     *     oluyordu. Harita 1 pad 3 icin ikinci kolun 116'sini goruyor, bolum
+     *     1'de gecerli olan 444'u HIC gormuyordu — oysa ikinci kol bolum <
+     *     [GameConfig.ALT_ROUTE_FIRST_LEVEL] iken motorda hic kullanilmaz.
+     *     Sonuc: test 7 olu pad rapor ederken gercek sayi 34 pad-bolum ornegiydi.
+     *  2. Esik olarak 320 (SLOW kademe-2) kullanilmisti. Oyuncu kuleyi once
+     *     KURAR sonra yukseltir; kurulum aninda erisilebilen en genis menzil
+     *     kademe-1'inkidir (SLOW 270). 320 hicbir bolumde gecerli degil.
      *
-     * Menzil buyudugu icin OLU PAD SAYISI 11'DEN 7'YE DUSTU: harita 7 pad 3,
-     * harita 8 pad 8 ve 11, harita 10 pad 17 artik (yalnizca Frost Field ile)
-     * yola erisiyor. Kalan 7 pad hâlâ olu ve DECISIONS bunlari sanat karari
-     * olarak kabul etmis durumda. Liste yine donduruluyor ki gelecekte sessizce
-     * degismesin.
+     * Bu test artik **harita geometrisinin kendisini** dondurur: her haritada,
+     * o haritanin KANONIK kolunda (harita 3 icin `ALT_ROUTES[3]`, digerleri
+     * icin `waypoints` — yani `routesForMapId(...).first()`) oyundaki en genis
+     * kademe-1 menzilinin disinda kalan pad'ler. Bunlar hicbir bolumde, hicbir
+     * kule ile calismayan pad'lerdir; sanatta pad'i tasimadan duzelmezler.
      *
-     * DECISIONS bu "uzak pad"leri sanat karari olarak KABUL ETTI, bu yuzden
-     * test hard-fail etmiyor; bunun yerine listeyi **donduruyor**. Yeni bir olu
-     * pad eklenirse ya da mevcut biri duzeltilirse bu test kirilir ve karar
-     * yeniden gozden gecirilir.
-     *
-     * Oynanis etkisi ve tam mesafe tablosu: docs/QA_REPORT.md.
+     * BOLUM BAZINDA oynanabilirlik burada DEGIL, [PadReachabilityPerLevelTest]
+     * icinde zorlanir — orasi hard-fail eder. Bu test yalnizca veri kaymasini
+     * yakalar: liste buyurse yeni bir pad kullanilamaz hale gelmis demektir.
      */
     @Test
     fun theSetOfDeadBuildPadsMatchesTheFrozenKnownList() {
-        val maxRange = GeometryTestSupport.maxTowerRange()
-        assertEquals("en uzun kule menzili degisti — dondurulmus liste yenilenmeli", 320f, maxRange, 0.01f)
+        val widestTier1 = GameConfig.TOWER_SPECS.values.maxOf { it.level1Range }
+        assertEquals(
+            "oyundaki en genis kademe-1 menzili degisti — dondurulmus liste yenilenmeli",
+            270f, widestTier1, 0.01f
+        )
 
-        // Faz 10 olcumu (maxRange 320 ref-px). Onceki liste (maxRange 280):
-        //   3=[10], 6=[4,10], 7=[3,6], 8=[6,8,11], 9=[5], 10=[8,17]
+        // Olcum: docs/PAD_COVERAGE_REPORT.md 2. tablo (kanonik kol, esik 270).
         val frozenDeadPads: Map<Int, Set<Int>> = mapOf(
-            3 to setOf(10),
-            6 to setOf(4, 10),
-            7 to setOf(6),
-            8 to setOf(6),
-            9 to setOf(5),
-            10 to setOf(8)
+            1 to setOf(3, 7, 9),            // 444 / 346 / 295 ref-px
+            2 to setOf(3, 4, 7, 8, 10, 12), // 372 / 409 / 582 / 383 / 553 / 272
+            3 to setOf(10),                 // 327
+            4 to setOf(4, 7, 9, 12),        // 406 / 487 / 621 / 383
+            5 to setOf(3),                  // 274
+            6 to setOf(4, 10),              // 324 / 355
+            7 to setOf(3, 6),               // 311 / 347
+            8 to setOf(6, 8, 11),           // 336 / 316 / 311
+            9 to setOf(5),                  // 320
+            10 to setOf(8, 17),             // 535 / 316
+            11 to setOf(1, 4, 5, 8, 10)     // 388 / 355 / 497 / 359 / 434
         )
 
         val measured = sortedMapOf<Int, Set<Int>>()
         for (mapId in 1..11) {
-            val routes = LevelData.routesForMapId(mapId)
+            val canonical = listOf(LevelData.routesForMapId(mapId).first())
             val dead = LevelData.forMapId(mapId).buildSpots
-                .filter { GeometryTestSupport.padToNearestRoute(it.normX, it.normY, routes) > maxRange }
+                .filter {
+                    GeometryTestSupport.padToNearestOfRoutes(it.normX, it.normY, canonical) > widestTier1
+                }
                 .map { it.id }
                 .toSet()
             if (dead.isNotEmpty()) measured[mapId] = dead
         }
 
         assertEquals(
-            "olu pad kumesi degisti (harita -> pad id). Beklenen dondurulmus liste " +
-                "ile olculen farkli. docs/QA_REPORT.md B-02'yi guncelle.",
+            "olu pad kumesi degisti (harita -> pad id, kanonik kol, esik ${widestTier1.toInt()} " +
+                "ref-px). docs/PAD_COVERAGE_REPORT.md 2. tabloyu guncelle.",
             frozenDeadPads, measured.toMap()
         )
     }
@@ -323,13 +400,20 @@ class LevelGeometryDataTest {
      * `DECISIONS.md` P3 satiri "130 ref-px ile 106/134 pad karsilaniyor, medyan
      * 119" diyor. Medyan dogru; 106 sayisi DEGIL. Bu test gercek dagilimi
      * pinliyor ki dokumantasyon duzeltilene kadar sayi kaybolmasin.
+     *
+     * KAPSAM UYARISI: buradaki dagilim **HAM HARITA GEOMETRISIDIR** — pad'in
+     * haritadaki HERHANGI bir kola uzakligi. "Oyuncu bu pad'i kullanabilir mi"
+     * sorusunun cevabi DEGILDIR; o soru bolume gore degisir ve
+     * [PadReachabilityPerLevelTest] icinde AKTIF rota uzerinden olculur.
+     * Ikisini karistirmak tam olarak olu-pad hatasinin kok nedeniydi, bu yuzden
+     * fonksiyon adi da acikca `padToNearestOfRoutes`.
      */
     @Test
     fun padToRoadDistanceDistributionIsPinned() {
         val distances = (1..11).flatMap { mapId ->
             val routes = LevelData.routesForMapId(mapId)
             LevelData.forMapId(mapId).buildSpots.map {
-                GeometryTestSupport.padToNearestRoute(it.normX, it.normY, routes)
+                GeometryTestSupport.padToNearestOfRoutes(it.normX, it.normY, routes)
             }
         }.sorted()
 
@@ -391,17 +475,18 @@ class LevelGeometryDataTest {
 
     @Test
     fun routeLengthsAreWithinAPlausibleBand() {
-        // Olculen aralik 2353..3195 ref-px. Cok kisa bir rota dusmanin usse
+        // Olculen aralik 1660..2535 ref-px. Cok kisa bir rota dusmanin usse
         // kosarcasina varmasi, cok uzun rota olu bekleme demektir.
         //
-        // NOT: GEOMETRY_REPORT.md harita basina "yol=1785..2283 ref-px" diyor;
-        // o sayi maske uzerindeki Dijkstra yolu, buradaki ise waypoint
-        // polylinesinin uzunlugu (ekran disi spawn/us uzantilari dahil). Ayni
-        // metrik degil, bu yuzden rapordaki sayiya karsi assert EDILMEZ.
+        // Ekran disi uclar kaldirildiktan sonra bant ~690 ref-px asagi kaydi
+        // (eski aralik 2353..3195). Yeni degerler artik GEOMETRY_REPORT.md'nin
+        // Dijkstra "yol" uzunluklariyla (1697..2283 ref-px) ayni buyuklukte —
+        // yine de ayni metrik degil (biri maske yolu, digeri waypoint
+        // polylinesi), bu yuzden rapordaki sayiya karsi assert EDILMEZ.
         allRoutes().forEach { (label, route) ->
             val len = GeometryTestSupport.polylineLength(route)
-            assertTrue("$label rota uzunlugu $len ref-px — 2000'den kisa", len > 2000f)
-            assertTrue("$label rota uzunlugu $len ref-px — 3500'den uzun", len < 3500f)
+            assertTrue("$label rota uzunlugu $len ref-px — 1500'den kisa", len > 1500f)
+            assertTrue("$label rota uzunlugu $len ref-px — 3000'den uzun", len < 3000f)
         }
     }
 

@@ -13,8 +13,19 @@ package com.miniappfactory.frontlinedefender.game.model
  * `ALT_ROUTES[levelId]` icindedir. Her iki kol da ayni spawn ve ayni us
  * noktasinda baslar/biter.
  *
- * Her rotanin ilk noktasi x=-0.05 (ekran disi spawn), son noktasi x=1.05
- * (ekran disi us) olacak sekilde YATAY uzatilmistir.
+ * PAD MESAFELERI: "A-kolu" = `waypoints` (bolum 1-8'de TEK aktif rota),
+ * "B-kolu" = `ALT_ROUTES[mapId]` (yalnizca bolum >= ALT_ROUTE_FIRST_LEVEL).
+ * Harita 3'te kanonik rota `ALT_ROUTES[3]`'tur; oradaki yorumlar ona gore.
+ * Bir pad'in KULLANILABILIR olmasi icin O BOLUMDE AKTIF olan kola menzil
+ * icinde olmasi gerekir — iki kolun minimumuna bakmak yaniltir. Yorumlar
+ * daha once tam bu hatayi yapiyordu (harita 1 pad 3 icin "121" yaziyordu,
+ * bolum 1'de gercek deger 444); olcum: docs/PAD_COVERAGE_REPORT.md.
+ *
+ * EKRAN DISI UC YOK. Her rotanin ilk noktasi cikis bunkerinin YOL AGZI, son
+ * noktasi hedef ussun RAMPASIDIR - ikisi de olculmus, ikisi de 0.0..1.0
+ * icinde. (v1'de uclar x=-0.05 / x=1.05'e yatay uzatiliyordu; dusman ekran
+ * disinda doguyor, bunkerin USTUNDEN geciyor ve usse girmeden ekrandan disari
+ * yuruyordu. `extract_geometry.py::extend_ends` devre disi birakildi.)
  */
 object LevelGeometry {
 
@@ -25,8 +36,7 @@ object LevelGeometry {
         name = "Cayir Gecidi / Meadow Pass",
         description = "Yesil cayirda ciftlenmis toprak yol; yol spawn'da catallanip usse birlesir.",
         waypoints = listOf(
-            PointF(-0.0500f, 0.4638f),  // spawn (ekran disi)
-            PointF(0.1388f, 0.4638f),
+            PointF(0.1388f, 0.4638f),  // bunker yol agzi
             PointF(0.1818f, 0.4893f),
             PointF(0.2220f, 0.5287f),
             PointF(0.2419f, 0.6034f),
@@ -46,20 +56,19 @@ object LevelGeometry {
             PointF(0.7537f, 0.6717f),
             PointF(0.7999f, 0.6897f),
             PointF(0.8439f, 0.7083f),
-            PointF(0.8804f, 0.6638f),
-            PointF(1.0500f, 0.6638f),  // us (ekran disi)
+            PointF(0.8804f, 0.6638f),  // us rampasi
         ),
         buildSpots = listOf(
-            BuildSpot(id = 1, normX = 0.2772f, normY = 0.3777f),  // Z1  yola 124 ref-px
-            BuildSpot(id = 2, normX = 0.3146f, normY = 0.5760f),  // Z1  yola 125 ref-px
-            BuildSpot(id = 3, normX = 0.3322f, normY = 0.1674f),  // Z2  yola 121 ref-px
-            BuildSpot(id = 4, normX = 0.4312f, normY = 0.7528f),  // Z2  yola 127 ref-px
-            BuildSpot(id = 5, normX = 0.4653f, normY = 0.3024f),  // Z3  yola 128 ref-px
-            BuildSpot(id = 6, normX = 0.5243f, normY = 0.6010f),  // Z4  yola 119 ref-px
-            BuildSpot(id = 7, normX = 0.5787f, normY = 0.1679f),  // Z3  yola 124 ref-px
-            BuildSpot(id = 8, normX = 0.6654f, normY = 0.5809f),  // Z5  yola 133 ref-px
-            BuildSpot(id = 9, normX = 0.6932f, normY = 0.3508f),  // Z3  yola 117 ref-px
-            BuildSpot(id = 10, normX = 0.7641f, normY = 0.8011f),  // Z5  yola 133 ref-px
+            BuildSpot(id = 1, normX = 0.2772f, normY = 0.3777f),  // Z1  A-kolu 195 / B-kolu 124 ref-px
+            BuildSpot(id = 2, normX = 0.3146f, normY = 0.5760f),  // Z1  A-kolu 121 / B-kolu 298 ref-px
+            BuildSpot(id = 3, normX = 0.3322f, normY = 0.1674f),  // Z2  A-kolu 444 / B-kolu 116 ref-px
+            BuildSpot(id = 4, normX = 0.4312f, normY = 0.7528f),  // Z2  A-kolu 131 / B-kolu 533 ref-px
+            BuildSpot(id = 5, normX = 0.4653f, normY = 0.3024f),  // Z3  A-kolu 213 / B-kolu 132 ref-px
+            BuildSpot(id = 6, normX = 0.5243f, normY = 0.6010f),  // Z4  A-kolu 122 / B-kolu 364 ref-px
+            BuildSpot(id = 7, normX = 0.5787f, normY = 0.1679f),  // Z3  A-kolu 346 / B-kolu 115 ref-px
+            BuildSpot(id = 8, normX = 0.6654f, normY = 0.5809f),  // Z5  A-kolu 135 / B-kolu 153 ref-px
+            BuildSpot(id = 9, normX = 0.6932f, normY = 0.3508f),  // Z3  A-kolu 296 / B-kolu 116 ref-px
+            BuildSpot(id = 10, normX = 0.7641f, normY = 0.8011f),  // Z5  A-kolu 132 / B-kolu 133 ref-px
         )
     )
 
@@ -70,8 +79,7 @@ object LevelGeometry {
         name = "Selale Ormani / Waterfall Woods",
         description = "Orman icinde selale ve gol; yol iki kola ayrilip usse birlesir.",
         waypoints = listOf(
-            PointF(-0.0500f, 0.5021f),  // spawn (ekran disi)
-            PointF(0.1435f, 0.5021f),
+            PointF(0.1435f, 0.5021f),  // bunker yol agzi
             PointF(0.1865f, 0.5151f),
             PointF(0.2105f, 0.5780f),
             PointF(0.2201f, 0.6538f),
@@ -91,23 +99,22 @@ object LevelGeometry {
             PointF(0.7779f, 0.7234f),
             PointF(0.8195f, 0.7007f),
             PointF(0.8472f, 0.6404f),
-            PointF(0.8828f, 0.5957f),
-            PointF(1.0500f, 0.5957f),  // us (ekran disi)
+            PointF(0.8828f, 0.5957f),  // us rampasi
         ),
         buildSpots = listOf(
-            BuildSpot(id = 1, normX = 0.2104f, normY = 0.8193f),  // Z1  yola 141 ref-px
-            BuildSpot(id = 2, normX = 0.2726f, normY = 0.5081f),  // Z1  yola 136 ref-px
-            BuildSpot(id = 3, normX = 0.2874f, normY = 0.2212f),  // Z1  yola 148 ref-px
-            BuildSpot(id = 4, normX = 0.3599f, normY = 0.2952f),  // Z2  yola 119 ref-px
-            BuildSpot(id = 5, normX = 0.3953f, normY = 0.6314f),  // Z2  yola 117 ref-px
-            BuildSpot(id = 6, normX = 0.5226f, normY = 0.7688f),  // Z3  yola 101 ref-px
-            BuildSpot(id = 7, normX = 0.5569f, normY = 0.1302f),  // Z3  yola 118 ref-px
-            BuildSpot(id = 8, normX = 0.6225f, normY = 0.3458f),  // Z4  yola 109 ref-px
-            BuildSpot(id = 9, normX = 0.6559f, normY = 0.6318f),  // Z4  yola 115 ref-px
-            BuildSpot(id = 10, normX = 0.7237f, normY = 0.1687f),  // Z4  yola 154 ref-px
-            BuildSpot(id = 11, normX = 0.7456f, normY = 0.8241f),  // Z5  yola 104 ref-px
-            BuildSpot(id = 12, normX = 0.7470f, normY = 0.4622f),  // Z4  yola 116 ref-px
-            BuildSpot(id = 13, normX = 0.8716f, normY = 0.7690f),  // Z5  yola 121 ref-px
+            BuildSpot(id = 1, normX = 0.2104f, normY = 0.8193f),  // Z1  A-kolu 143 / B-kolu 413 ref-px
+            BuildSpot(id = 2, normX = 0.2726f, normY = 0.5081f),  // Z1  A-kolu 141 / B-kolu 141 ref-px
+            BuildSpot(id = 3, normX = 0.2874f, normY = 0.2212f),  // Z1  A-kolu 372 / B-kolu 155 ref-px
+            BuildSpot(id = 4, normX = 0.3599f, normY = 0.2952f),  // Z2  A-kolu 409 / B-kolu 119 ref-px
+            BuildSpot(id = 5, normX = 0.3953f, normY = 0.6314f),  // Z2  A-kolu 120 / B-kolu 225 ref-px
+            BuildSpot(id = 6, normX = 0.5226f, normY = 0.7688f),  // Z3  A-kolu  99 / B-kolu 408 ref-px
+            BuildSpot(id = 7, normX = 0.5569f, normY = 0.1302f),  // Z3  A-kolu 583 / B-kolu 113 ref-px
+            BuildSpot(id = 8, normX = 0.6225f, normY = 0.3458f),  // Z4  A-kolu 384 / B-kolu 102 ref-px
+            BuildSpot(id = 9, normX = 0.6559f, normY = 0.6318f),  // Z4  A-kolu 141 / B-kolu 116 ref-px
+            BuildSpot(id = 10, normX = 0.7237f, normY = 0.1687f),  // Z4  A-kolu 554 / B-kolu 159 ref-px
+            BuildSpot(id = 11, normX = 0.7456f, normY = 0.8241f),  // Z5  A-kolu 107 / B-kolu 146 ref-px
+            BuildSpot(id = 12, normX = 0.7470f, normY = 0.4622f),  // Z4  A-kolu 272 / B-kolu 107 ref-px
+            BuildSpot(id = 13, normX = 0.8716f, normY = 0.7690f),  // Z5  A-kolu 124 / B-kolu 131 ref-px
         )
     )
 
@@ -118,8 +125,7 @@ object LevelGeometry {
         name = "Karanlik Bogaz / Dark Ravine",
         description = "Kayalik karanlik bogaz; genis toprak zemin, komsu seritler sanatta birlesik.",
         waypoints = listOf(
-            PointF(-0.0500f, 0.5021f),  // spawn (ekran disi)
-            PointF(0.1316f, 0.5021f),
+            PointF(0.1316f, 0.5021f),  // bunker yol agzi
             PointF(0.1727f, 0.4605f),
             PointF(0.2165f, 0.4314f),
             PointF(0.2438f, 0.3635f),
@@ -139,22 +145,21 @@ object LevelGeometry {
             PointF(0.7516f, 0.3247f),
             PointF(0.7933f, 0.3019f),
             PointF(0.8398f, 0.3021f),
-            PointF(0.8876f, 0.3106f),
-            PointF(1.0500f, 0.3106f),  // us (ekran disi)
+            PointF(0.8876f, 0.3106f),  // us rampasi
         ),
         buildSpots = listOf(
-            BuildSpot(id = 1, normX = 0.2868f, normY = 0.4342f),  // Z1  yola 101 ref-px
-            BuildSpot(id = 2, normX = 0.3039f, normY = 0.7635f),  // Z3  yola 86 ref-px
-            BuildSpot(id = 3, normX = 0.3049f, normY = 0.1542f),  // Z2  yola 104 ref-px
-            BuildSpot(id = 4, normX = 0.3574f, normY = 0.6175f),  // Z2  yola 88 ref-px
-            BuildSpot(id = 5, normX = 0.4697f, normY = 0.5378f),  // Z3  yola 88 ref-px
-            BuildSpot(id = 6, normX = 0.4862f, normY = 0.1721f),  // Z3  yola 111 ref-px
-            BuildSpot(id = 7, normX = 0.4944f, normY = 0.3592f),  // Z4  yola 59 ref-px
-            BuildSpot(id = 8, normX = 0.5509f, normY = 0.6648f),  // Z3  yola 111 ref-px
-            BuildSpot(id = 9, normX = 0.6562f, normY = 0.4229f),  // Z4  yola 112 ref-px
-            BuildSpot(id = 10, normX = 0.6923f, normY = 0.6347f),  // Z5  yola 320 ref-px
-            BuildSpot(id = 11, normX = 0.6925f, normY = 0.2218f),  // Z4  yola 113 ref-px
-            BuildSpot(id = 12, normX = 0.7994f, normY = 0.3265f),  // Z5  yola 28 ref-px
+            BuildSpot(id = 1, normX = 0.2868f, normY = 0.4342f),  // Z1  kanonik rotaya 107 ref-px
+            BuildSpot(id = 2, normX = 0.3039f, normY = 0.7635f),  // Z3  kanonik rotaya  88 ref-px
+            BuildSpot(id = 3, normX = 0.3049f, normY = 0.1542f),  // Z2  kanonik rotaya 122 ref-px
+            BuildSpot(id = 4, normX = 0.3574f, normY = 0.6175f),  // Z2  kanonik rotaya  71 ref-px
+            BuildSpot(id = 5, normX = 0.4697f, normY = 0.5378f),  // Z3  kanonik rotaya  68 ref-px
+            BuildSpot(id = 6, normX = 0.4862f, normY = 0.1721f),  // Z3  kanonik rotaya 177 ref-px
+            BuildSpot(id = 7, normX = 0.4944f, normY = 0.3592f),  // Z4  kanonik rotaya  60 ref-px
+            BuildSpot(id = 8, normX = 0.5509f, normY = 0.6648f),  // Z3  kanonik rotaya 112 ref-px
+            BuildSpot(id = 9, normX = 0.6562f, normY = 0.4229f),  // Z4  kanonik rotaya 122 ref-px
+            BuildSpot(id = 10, normX = 0.6923f, normY = 0.6347f),  // Z5  kanonik rotaya 327 ref-px
+            BuildSpot(id = 11, normX = 0.6925f, normY = 0.2218f),  // Z4  kanonik rotaya 100 ref-px
+            BuildSpot(id = 12, normX = 0.7994f, normY = 0.3265f),  // Z5  kanonik rotaya  31 ref-px
         )
     )
 
@@ -165,8 +170,7 @@ object LevelGeometry {
         name = "Gol Kusagi / Lakeside Ring",
         description = "Golun etrafini saran halka yol; iki ahsap kopru golu ortadan keser.",
         waypoints = listOf(
-            PointF(-0.0500f, 0.4298f),  // spawn (ekran disi)
-            PointF(0.1411f, 0.4298f),
+            PointF(0.1411f, 0.4298f),  // bunker yol agzi
             PointF(0.1910f, 0.4360f),
             PointF(0.2166f, 0.3637f),
             PointF(0.2392f, 0.2854f),
@@ -186,26 +190,25 @@ object LevelGeometry {
             PointF(0.7613f, 0.4620f),
             PointF(0.8075f, 0.4955f),
             PointF(0.8541f, 0.5191f),
-            PointF(0.9043f, 0.5277f),
-            PointF(1.0500f, 0.5277f),  // us (ekran disi)
+            PointF(0.9043f, 0.5277f),  // us rampasi
         ),
         buildSpots = listOf(
-            BuildSpot(id = 1, normX = 0.1712f, normY = 0.6093f),  // Z1  yola 122 ref-px
-            BuildSpot(id = 2, normX = 0.1812f, normY = 0.2352f),  // Z1  yola 118 ref-px
-            BuildSpot(id = 3, normX = 0.2579f, normY = 0.1385f),  // Z2  yola 119 ref-px
-            BuildSpot(id = 4, normX = 0.2613f, normY = 0.7908f),  // Z2  yola 107 ref-px
-            BuildSpot(id = 5, normX = 0.2781f, normY = 0.3497f),  // Z1  yola 98 ref-px
-            BuildSpot(id = 6, normX = 0.2882f, normY = 0.5840f),  // Z1  yola 101 ref-px
-            BuildSpot(id = 7, normX = 0.3741f, normY = 0.7475f),  // Z2  yola 103 ref-px
-            BuildSpot(id = 8, normX = 0.4689f, normY = 0.1121f),  // Z2  yola 131 ref-px
-            BuildSpot(id = 9, normX = 0.4941f, normY = 0.8435f),  // Z3  yola 120 ref-px
-            BuildSpot(id = 10, normX = 0.5969f, normY = 0.2343f),  // Z3  yola 103 ref-px
-            BuildSpot(id = 11, normX = 0.6864f, normY = 0.5992f),  // Z4  yola 112 ref-px
-            BuildSpot(id = 12, normX = 0.6901f, normY = 0.7930f),  // Z4  yola 95 ref-px
-            BuildSpot(id = 13, normX = 0.6964f, normY = 0.4256f),  // Z5  yola 104 ref-px
-            BuildSpot(id = 14, normX = 0.7091f, normY = 0.2271f),  // Z4  yola 104 ref-px
-            BuildSpot(id = 15, normX = 0.7958f, normY = 0.3124f),  // Z4  yola 115 ref-px
-            BuildSpot(id = 16, normX = 0.8099f, normY = 0.6102f),  // Z5  yola 81 ref-px
+            BuildSpot(id = 1, normX = 0.1712f, normY = 0.6093f),  // Z1  A-kolu 190 / B-kolu 120 ref-px
+            BuildSpot(id = 2, normX = 0.1812f, normY = 0.2352f),  // Z1  A-kolu 124 / B-kolu 260 ref-px
+            BuildSpot(id = 3, normX = 0.2579f, normY = 0.1385f),  // Z2  A-kolu 126 / B-kolu 401 ref-px
+            BuildSpot(id = 4, normX = 0.2613f, normY = 0.7908f),  // Z2  A-kolu 407 / B-kolu  99 ref-px
+            BuildSpot(id = 5, normX = 0.2781f, normY = 0.3497f),  // Z1  A-kolu  95 / B-kolu 222 ref-px
+            BuildSpot(id = 6, normX = 0.2882f, normY = 0.5840f),  // Z1  A-kolu 246 / B-kolu 104 ref-px
+            BuildSpot(id = 7, normX = 0.3741f, normY = 0.7475f),  // Z2  A-kolu 487 / B-kolu  97 ref-px
+            BuildSpot(id = 8, normX = 0.4689f, normY = 0.1121f),  // Z2  A-kolu 131 / B-kolu 615 ref-px
+            BuildSpot(id = 9, normX = 0.4941f, normY = 0.8435f),  // Z3  A-kolu 621 / B-kolu 124 ref-px
+            BuildSpot(id = 10, normX = 0.5969f, normY = 0.2343f),  // Z3  A-kolu 100 / B-kolu 457 ref-px
+            BuildSpot(id = 11, normX = 0.6864f, normY = 0.5992f),  // Z4  A-kolu 207 / B-kolu 109 ref-px
+            BuildSpot(id = 12, normX = 0.6901f, normY = 0.7930f),  // Z4  A-kolu 383 / B-kolu  89 ref-px
+            BuildSpot(id = 13, normX = 0.6964f, normY = 0.4256f),  // Z5  A-kolu  98 / B-kolu 175 ref-px
+            BuildSpot(id = 14, normX = 0.7091f, normY = 0.2271f),  // Z4  A-kolu 100 / B-kolu 359 ref-px
+            BuildSpot(id = 15, normX = 0.7958f, normY = 0.3124f),  // Z4  A-kolu 119 / B-kolu 236 ref-px
+            BuildSpot(id = 16, normX = 0.8099f, normY = 0.6102f),  // Z5  A-kolu 118 / B-kolu  86 ref-px
         )
     )
 
@@ -216,8 +219,7 @@ object LevelGeometry {
         name = "Batakli Ova / Marshland",
         description = "Sisli bataklik; tek serpantin yol, sol altta kor sapak.",
         waypoints = listOf(
-            PointF(-0.0500f, 0.4553f),  // spawn (ekran disi)
-            PointF(0.1483f, 0.4553f),
+            PointF(0.1483f, 0.4553f),  // bunker yol agzi
             PointF(0.2036f, 0.4387f),
             PointF(0.2521f, 0.4000f),
             PointF(0.3033f, 0.3556f),
@@ -237,8 +239,7 @@ object LevelGeometry {
             PointF(0.6713f, 0.3102f),
             PointF(0.7257f, 0.3399f),
             PointF(0.7603f, 0.4235f),
-            PointF(0.8134f, 0.4468f),
-            PointF(1.0500f, 0.4468f),  // us (ekran disi)
+            PointF(0.8134f, 0.4468f),  // us rampasi
         ),
         buildSpots = listOf(
             BuildSpot(id = 1, normX = 0.2351f, normY = 0.3033f),  // Z1  yola 108 ref-px
@@ -263,8 +264,7 @@ object LevelGeometry {
         name = "Ucurum Gecidi / Ravine Crossing",
         description = "Derin nehir yarigi; yol tas kopruden gecer, sag altta kor sapak.",
         waypoints = listOf(
-            PointF(-0.0500f, 0.5234f),  // spawn (ekran disi)
-            PointF(0.1292f, 0.5234f),
+            PointF(0.1292f, 0.5234f),  // bunker yol agzi
             PointF(0.1766f, 0.4681f),
             PointF(0.1960f, 0.3752f),
             PointF(0.2366f, 0.3092f),
@@ -284,8 +284,7 @@ object LevelGeometry {
             PointF(0.7454f, 0.2827f),
             PointF(0.7773f, 0.3648f),
             PointF(0.7894f, 0.4667f),
-            PointF(0.8445f, 0.4809f),
-            PointF(1.0500f, 0.4809f),  // us (ekran disi)
+            PointF(0.8445f, 0.4809f),  // us rampasi
         ),
         buildSpots = listOf(
             BuildSpot(id = 1, normX = 0.1283f, normY = 0.6658f),  // Z1  yola 154 ref-px
@@ -308,8 +307,7 @@ object LevelGeometry {
         name = "Acik Ova / Open Plain",
         description = "Parlak acik cayir; uzun ve temiz tek serpantin.",
         waypoints = listOf(
-            PointF(-0.0500f, 0.5021f),  // spawn (ekran disi)
-            PointF(0.1388f, 0.5021f),
+            PointF(0.1388f, 0.5021f),  // bunker yol agzi
             PointF(0.1910f, 0.4854f),
             PointF(0.2088f, 0.3998f),
             PointF(0.2418f, 0.3243f),
@@ -329,8 +327,7 @@ object LevelGeometry {
             PointF(0.7088f, 0.3858f),
             PointF(0.7461f, 0.3194f),
             PointF(0.7961f, 0.3413f),
-            PointF(0.8325f, 0.4000f),
-            PointF(1.0500f, 0.4000f),  // us (ekran disi)
+            PointF(0.8325f, 0.4000f),  // us rampasi
         ),
         buildSpots = listOf(
             BuildSpot(id = 1, normX = 0.1746f, normY = 0.2501f),  // Z1  yola 150 ref-px
@@ -354,8 +351,7 @@ object LevelGeometry {
         name = "Derin Orman / Deep Forest",
         description = "Yogun cam ormani; yol usse KUZEYDEN girer.",
         waypoints = listOf(
-            PointF(-0.0500f, 0.4596f),  // spawn (ekran disi)
-            PointF(0.1435f, 0.4596f),
+            PointF(0.1435f, 0.4596f),  // bunker yol agzi
             PointF(0.1985f, 0.4364f),
             PointF(0.2288f, 0.3516f),
             PointF(0.2833f, 0.3430f),
@@ -375,8 +371,7 @@ object LevelGeometry {
             PointF(0.7956f, 0.2274f),
             PointF(0.8484f, 0.2023f),
             PointF(0.8709f, 0.2922f),
-            PointF(0.8852f, 0.3872f),
-            PointF(1.0500f, 0.3872f),  // us (ekran disi)
+            PointF(0.8852f, 0.3872f),  // us rampasi
         ),
         buildSpots = listOf(
             BuildSpot(id = 1, normX = 0.2665f, normY = 0.4793f),  // Z2  yola 97 ref-px
@@ -400,8 +395,7 @@ object LevelGeometry {
         name = "Sur Yamaci / Rampart Slope",
         description = "Tas duvarlar ve gozetleme kuleleri; ortada buyuk kor sapak ilmegi.",
         waypoints = listOf(
-            PointF(-0.0500f, 0.4128f),  // spawn (ekran disi)
-            PointF(0.1364f, 0.4128f),
+            PointF(0.1364f, 0.4128f),  // bunker yol agzi
             PointF(0.1842f, 0.4340f),
             PointF(0.2350f, 0.4227f),
             PointF(0.2842f, 0.4105f),
@@ -421,8 +415,7 @@ object LevelGeometry {
             PointF(0.7085f, 0.5841f),
             PointF(0.7387f, 0.5121f),
             PointF(0.7857f, 0.4853f),
-            PointF(0.8349f, 0.4681f),
-            PointF(1.0500f, 0.4681f),  // us (ekran disi)
+            PointF(0.8349f, 0.4681f),  // us rampasi
         ),
         buildSpots = listOf(
             BuildSpot(id = 1, normX = 0.2300f, normY = 0.5604f),  // Z1  yola 146 ref-px
@@ -447,8 +440,7 @@ object LevelGeometry {
         name = "Nehir Kollari / River Fork",
         description = "Cok kollu nehir ve ahsap kopruler; maske nehirlerde parcali.",
         waypoints = listOf(
-            PointF(-0.0500f, 0.4213f),  // spawn (ekran disi)
-            PointF(0.1292f, 0.4213f),
+            PointF(0.1292f, 0.4213f),  // bunker yol agzi
             PointF(0.1831f, 0.4345f),
             PointF(0.2371f, 0.4657f),
             PointF(0.2676f, 0.5539f),
@@ -468,8 +460,7 @@ object LevelGeometry {
             PointF(0.7193f, 0.2570f),
             PointF(0.7719f, 0.2699f),
             PointF(0.7950f, 0.3645f),
-            PointF(0.8421f, 0.4085f),
-            PointF(1.0500f, 0.4085f),  // us (ekran disi)
+            PointF(0.8421f, 0.4085f),  // us rampasi
         ),
         buildSpots = listOf(
             BuildSpot(id = 1, normX = 0.1797f, normY = 0.3294f),  // Z1  yola 114 ref-px
@@ -499,8 +490,7 @@ object LevelGeometry {
         name = "Koy Siniri / Village Outskirts",
         description = "Ciftlik binalari ve citler; yol spawn'da catallanip usse birlesir.",
         waypoints = listOf(
-            PointF(-0.0500f, 0.4596f),  // spawn (ekran disi)
-            PointF(0.1340f, 0.4596f),
+            PointF(0.1340f, 0.4596f),  // bunker yol agzi
             PointF(0.1789f, 0.4782f),
             PointF(0.1985f, 0.5483f),
             PointF(0.2030f, 0.6281f),
@@ -520,27 +510,25 @@ object LevelGeometry {
             PointF(0.6961f, 0.6750f),
             PointF(0.7282f, 0.6159f),
             PointF(0.7710f, 0.5869f),
-            PointF(0.8158f, 0.5957f),
-            PointF(1.0500f, 0.5957f),  // us (ekran disi)
+            PointF(0.8158f, 0.5957f),  // us rampasi
         ),
         buildSpots = listOf(
-            BuildSpot(id = 1, normX = 0.2437f, normY = 0.1383f),  // Z1  yola 100 ref-px
-            BuildSpot(id = 2, normX = 0.2645f, normY = 0.3422f),  // Z1  yola 116 ref-px
-            BuildSpot(id = 3, normX = 0.2752f, normY = 0.7044f),  // Z2  yola 120 ref-px
-            BuildSpot(id = 4, normX = 0.3815f, normY = 0.5029f),  // Z2  yola 128 ref-px
-            BuildSpot(id = 5, normX = 0.3896f, normY = 0.2101f),  // Z2  yola 149 ref-px
-            BuildSpot(id = 6, normX = 0.5423f, normY = 0.6082f),  // Z4  yola 114 ref-px
-            BuildSpot(id = 7, normX = 0.6433f, normY = 0.6146f),  // Z4  yola 109 ref-px
-            BuildSpot(id = 8, normX = 0.6453f, normY = 0.3175f),  // Z4  yola 96 ref-px
-            BuildSpot(id = 9, normX = 0.7574f, normY = 0.7648f),  // Z5  yola 149 ref-px
-            BuildSpot(id = 10, normX = 0.8128f, normY = 0.1908f),  // Z5  yola 210 ref-px
+            BuildSpot(id = 1, normX = 0.2437f, normY = 0.1383f),  // Z1  A-kolu 388 / B-kolu 105 ref-px
+            BuildSpot(id = 2, normX = 0.2645f, normY = 0.3422f),  // Z1  A-kolu 221 / B-kolu 108 ref-px
+            BuildSpot(id = 3, normX = 0.2752f, normY = 0.7044f),  // Z2  A-kolu 119 / B-kolu 159 ref-px
+            BuildSpot(id = 4, normX = 0.3815f, normY = 0.5029f),  // Z2  A-kolu 355 / B-kolu 117 ref-px
+            BuildSpot(id = 5, normX = 0.3896f, normY = 0.2101f),  // Z2  A-kolu 498 / B-kolu 157 ref-px
+            BuildSpot(id = 6, normX = 0.5423f, normY = 0.6082f),  // Z4  A-kolu 115 / B-kolu 211 ref-px
+            BuildSpot(id = 7, normX = 0.6433f, normY = 0.6146f),  // Z4  A-kolu 107 / B-kolu 200 ref-px
+            BuildSpot(id = 8, normX = 0.6453f, normY = 0.3175f),  // Z4  A-kolu 360 / B-kolu  99 ref-px
+            BuildSpot(id = 9, normX = 0.7574f, normY = 0.7648f),  // Z5  A-kolu 152 / B-kolu 213 ref-px
+            BuildSpot(id = 10, normX = 0.8128f, normY = 0.1908f),  // Z5  A-kolu 434 / B-kolu 212 ref-px
         )
     )
 
     /** Catallanan haritalarin IKINCI kolu. levelId -> waypoint listesi. */
     val ALT_ROUTES: Map<Int, List<PointF>> = mapOf(
         1 to listOf(
-            PointF(-0.0500f, 0.4340f),
             PointF(0.1388f, 0.4340f),
             PointF(0.1908f, 0.4095f),
             PointF(0.2121f, 0.3188f),
@@ -562,10 +550,8 @@ object LevelGeometry {
             PointF(0.7823f, 0.6823f),
             PointF(0.8352f, 0.7129f),
             PointF(0.8804f, 0.6638f),
-            PointF(1.0500f, 0.6638f),
         ),
         2 to listOf(
-            PointF(-0.0500f, 0.4553f),
             PointF(0.1435f, 0.4553f),
             PointF(0.1948f, 0.4320f),
             PointF(0.2314f, 0.3645f),
@@ -587,10 +573,8 @@ object LevelGeometry {
             PointF(0.7991f, 0.7184f),
             PointF(0.8408f, 0.6572f),
             PointF(0.8828f, 0.5957f),
-            PointF(1.0500f, 0.5957f),
         ),
         3 to listOf(
-            PointF(-0.0500f, 0.5021f),
             PointF(0.1316f, 0.5021f),
             PointF(0.1938f, 0.4593f),
             PointF(0.2417f, 0.3757f),
@@ -612,10 +596,8 @@ object LevelGeometry {
             PointF(0.7539f, 0.3127f),
             PointF(0.8200f, 0.2900f),
             PointF(0.8876f, 0.3106f),
-            PointF(1.0500f, 0.3106f),
         ),
         4 to listOf(
-            PointF(-0.0500f, 0.4638f),
             PointF(0.1388f, 0.4638f),
             PointF(0.1883f, 0.4881f),
             PointF(0.2292f, 0.5405f),
@@ -637,10 +619,8 @@ object LevelGeometry {
             PointF(0.8024f, 0.5315f),
             PointF(0.8511f, 0.5191f),
             PointF(0.9043f, 0.5277f),
-            PointF(1.0500f, 0.5277f),
         ),
         11 to listOf(
-            PointF(-0.0500f, 0.4340f),
             PointF(0.1292f, 0.4340f),
             PointF(0.1827f, 0.3870f),
             PointF(0.2063f, 0.2896f),
@@ -662,7 +642,6 @@ object LevelGeometry {
             PointF(0.7240f, 0.4978f),
             PointF(0.7613f, 0.5508f),
             PointF(0.8158f, 0.5957f),
-            PointF(1.0500f, 0.5957f),
         ),
     )
 

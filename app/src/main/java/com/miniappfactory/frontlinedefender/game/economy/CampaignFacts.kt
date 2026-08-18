@@ -72,6 +72,17 @@ interface CampaignFacts {
     /** Kule tipi adi -> kademe 2 yukseltme bedeli (`TowerStats.level2UpgradeCost`). */
     val towerUpgradeCost: Map<String, Int>
 
+    /**
+     * Kule tipi adi -> kademe 3 yukseltme bedeli (`upgradeCostFrom(2)`).
+     *
+     * Kademe 3 `GameConfig.TIER_THREE_UNLOCK_LEVEL`de (L12) bedava acilir ve
+     * CAMPAIGN_55.md 9. tablosunun `kd3` kolonu Act II'den itibaren tasarlanan
+     * kadronun bir kismini kademe 3'e cikarir. Bu olmadan gec bolumlerin
+     * bolen tarafi (I(L)) gercekte odenen paranin ~%40 altinda kalirdi ve SPI
+     * oldugundan yuksek olculurdu.
+     */
+    val towerTierThreeUpgradeCost: Map<String, Int>
+
     /** Kule tipi adi -> acildigi bolum (`TowerStats.unlockedAtLevel`). */
     val towerUnlockLevel: Map<String, Int>
 
@@ -84,6 +95,16 @@ interface CampaignFacts {
 
     /** Bu bolumun turunun can carpani. Guclendirici denetimi kullanir. */
     fun actHpMultiplier(level: Int): Double
+
+    /**
+     * Bu bolumde KAPSAMA KIT mi — iki kollu harita ya da dar tahta?
+     *
+     * Ekonomi bunu bilmek ZORUNDA: her iki durumda da bir pad'in gordugu yol
+     * payi yetmez ve oyuncu ayni tehdide karsi daha fazla cephe kurar.
+     * Baslangic sermayesi bunu karsilamazsa bolum acilis dalgasinda kaybedilir
+     * (olculdu — bkz. `SupplyBudgetModel.COVERAGE_SCARCITY_SUPPLY_FACTOR`).
+     */
+    fun hasScarceCoverage(level: Int): Boolean
 
 }
 
@@ -129,6 +150,10 @@ fun CampaignFacts.unlockedTowersInOrder(level: Int): List<String> {
 fun CampaignFacts.tierTwoCost(tower: String): Int =
     towerBuildCost.getValue(tower) + towerUpgradeCost.getValue(tower)
 
+/** Kademe 2'den kademe 3'e cikmanin bedeli. */
+fun CampaignFacts.tierThreeStep(tower: String): Int =
+    towerTierThreeUpgradeCost.getValue(tower)
+
 /**
  * Gercek oyunun sayilari. Uretimdeki tek [CampaignFacts] uygulamasi.
  *
@@ -162,6 +187,11 @@ object GameConfigCampaignFacts : CampaignFacts {
     override val towerUpgradeCost: Map<String, Int> =
         GameConfig.TOWER_SPECS.entries.associate { (type, stats) -> type.name to stats.level2UpgradeCost }
 
+    override val towerTierThreeUpgradeCost: Map<String, Int> =
+        GameConfig.TOWER_SPECS.entries.associate { (type, stats) ->
+            type.name to (stats.upgradeCostFrom(2) ?: 0)
+        }
+
     override val towerUnlockLevel: Map<String, Int> =
         GameConfig.TOWER_SPECS.entries.associate { (type, stats) -> type.name to stats.unlockedAtLevel }
 
@@ -170,4 +200,6 @@ object GameConfigCampaignFacts : CampaignFacts {
 
     override fun actHpMultiplier(level: Int): Double =
         GameConfig.actHpMultiplier(GameConfig.levelSpec(level).act).toDouble()
+
+    override fun hasScarceCoverage(level: Int): Boolean = GameConfig.hasScarceCoverage(level)
 }

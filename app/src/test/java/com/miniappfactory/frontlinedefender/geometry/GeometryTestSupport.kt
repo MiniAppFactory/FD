@@ -1,6 +1,7 @@
 package com.miniappfactory.frontlinedefender.geometry
 
 import com.miniappfactory.frontlinedefender.game.model.GameConfig
+import com.miniappfactory.frontlinedefender.game.model.LevelData
 import com.miniappfactory.frontlinedefender.game.model.PointF
 import kotlin.math.hypot
 import kotlin.math.max
@@ -9,9 +10,11 @@ import kotlin.math.min
 /**
  * Saf geometri yardimcilari — testler icin.
  *
- * TASARIM NOTU: bu dosya `src/main` icindeki HICBIR imzaya bagli degil;
- * yalnizca `PointF` veri sinifini ve `GameConfig.REFERENCE_*` sabitlerini okur.
- * Boylece motor/UI refactor edildiginde bu testler kirilmaz.
+ * TASARIM NOTU: bu dosya motor/UI'a bagli DEGILDIR; yalnizca veri katmanini
+ * okur (`PointF`, `LevelData.routesForMapId`, `GameConfig` sabit/tablolari).
+ * Boylece motor/UI refactor edildiginde bu testler kirilmaz. Rota secim
+ * KURALI ise bilincli olarak `GameEngine.loadLevel` ile aynidir (bkz.
+ * [activeRoutesFor]) — testin oynanistan farkli bir dunya olcmesini onler.
  *
  * Tum mesafeler **1920x1080 referans tuvalinde** (DECISIONS §B3) hesaplanir:
  * normalize koordinat * REFERENCE_WIDTH / REFERENCE_HEIGHT.
@@ -46,11 +49,43 @@ internal object GeometryTestSupport {
         return best
     }
 
-    /** Bir pad'in, o haritadaki TUM rotalar arasinda en yakin olanina uzakligi. */
-    fun padToNearestRoute(padNormX: Float, padNormY: Float, routes: List<List<PointF>>): Float {
+    /**
+     * Bir pad'in, VERILEN rota kumesindeki en yakin rotaya uzakligi.
+     *
+     * DIKKAT — bu fonksiyon "harita geometrisi" sorusunu cevaplar, "oyuncu bu
+     * pad'i kullanabilir mi" sorusunu DEGIL. Cagiran, rota kumesini kendisi
+     * secmek zorundadir. Oynanis sorusu icin [padToActiveRoute] kullan.
+     */
+    fun padToNearestOfRoutes(padNormX: Float, padNormY: Float, routes: List<List<PointF>>): Float {
         val p = PointF(padNormX * refW, padNormY * refH)
         return routes.minOf { pointToPolyline(p, it) }
     }
+
+    /**
+     * O BOLUMDE motorun gercekten kullandigi rotalar.
+     *
+     * `GameEngine.loadLevel` ile birebir ayni kural:
+     *   `routes = if (usesAlternateRoutes(levelId)) allRoutes else listOf(allRoutes.first())`
+     * `LevelData.routesForMapId` zaten harita 3'te kanonik kolu (`ALT_ROUTES[3]`)
+     * ilk sirada dondurur, harita 1/2/4/11'de ise [birincil, ikinci] dondurur.
+     */
+    fun activeRoutesFor(mapId: Int, levelId: Int): List<List<PointF>> {
+        val all = LevelData.routesForMapId(mapId)
+        return if (GameConfig.usesAlternateRoutes(levelId)) all else listOf(all.first())
+    }
+
+    /**
+     * Bir pad'in, o BOLUMDE AKTIF olan rotalardan en yakinina uzakligi.
+     *
+     * NEDEN AYRI BIR FONKSIYON: bolum < `ALT_ROUTE_FIRST_LEVEL` iken ikinci kol
+     * motorda HIC kullanilmaz. Tum rotalarin minimumuna bakmak pad'i olmadigi
+     * kadar iyi gosterir — harita 1 pad 3 icin ikinci kolun 116'sini alir,
+     * bolum 1'de gecerli olan 444'u hic gormez. "Olu build pad" hatasinin 22
+     * bolum boyunca testten kacmasinin sebebi tam olarak buydu
+     * (docs/PAD_COVERAGE_REPORT.md 5. bolum).
+     */
+    fun padToActiveRoute(padNormX: Float, padNormY: Float, mapId: Int, levelId: Int): Float =
+        padToNearestOfRoutes(padNormX, padNormY, activeRoutesFor(mapId, levelId))
 
     /** Polylinenin referans px cinsinden toplam uzunlugu. */
     fun polylineLength(routeNorm: List<PointF>): Float {
@@ -66,4 +101,27 @@ internal object GeometryTestSupport {
 
     /** En kisa L1 menzili — "en erisilebilir olmasi gereken" kule. */
     fun minLevel1Range(): Float = GameConfig.TOWER_SPECS.values.minOf { it.level1Range }
+
+    /**
+     * Bu BOLUMDE oyuncunun erisebildigi EN UZUN menzil, ref-px.
+     *
+     * Kademe 1, cunku oyuncu kuleyi once KURAR sonra yukseltir: kademe-2
+     * menziliyle olcmek, henuz odenmemis bir yukseltmeyi bugunun gecerliligi
+     * saymaktir. `GameConfig`ten TURETILIR — sabit yazilmaz.
+     */
+    fun maxUnlockedLevel1Range(levelId: Int): Float =
+        GameConfig.unlockedTowers(levelId)
+            .mapNotNull { GameConfig.TOWER_SPECS[it]?.level1Range }
+            .max()
+
+    /**
+     * Bu bolumde HASAR VEREN (destek disi) kulelerin en uzun kademe-1 menzili.
+     * SLOW/Frost Field haric: o kule yalnizca 3 hasar verir, yani yalniz ona
+     * erisen bir pad "calisiyor" sayilmaz, "yalniz-destek" sayilir.
+     */
+    fun maxUnlockedDamagingLevel1Range(levelId: Int): Float =
+        GameConfig.unlockedTowers(levelId)
+            .filter { it != GameConfig.TowerType.SLOW }
+            .mapNotNull { GameConfig.TOWER_SPECS[it]?.level1Range }
+            .max()
 }

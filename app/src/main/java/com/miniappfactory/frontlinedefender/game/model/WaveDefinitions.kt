@@ -571,20 +571,592 @@ object WaveDefinitions {
     )
 
     // ======================================================================
+    // PERDE III / IV / V — bölüm 23..55  (docs/CAMPAIGN_55.md §9)
+    //
+    // NEDEN BU BLOK ÜRETİCİ, ELLE YAZILMIŞ 224 SATIR DEĞİL
+    // ----------------------------------------------------
+    // Act I/II'nin 259 dalgası elle kalibre edildi ve ÖYLE KALIYOR. Yeni 33
+    // bölümün 224 dalgası ise tek bir sayıya kilitli: **öldürme geliri**.
+    // CAMPAIGN_55.md §8.1 SPI bandını bir KONTROL değil bir ÜRETİM KURALI
+    // yapıyor:
+    //
+    //     R (kadro) -> I(L) = round-robin kadro maliyeti (CANLI TOWER_SPECS)
+    //     -> bütçe = 2,00 x I(L)   (bandın tam ortası)
+    //     -> hedef öldürme geliri = bütçe - başlangıç Tedariki - 18 x (N-1)
+    //     -> dalga kompozisyonu bu geliri sağlayacak şekilde yazılır
+    //
+    // Bu zincir elle yazıldığında **kaçınılmaz olarak bayatlar**: `rewardGold`
+    // ya da kule fiyatı bir kez değiştiğinde 224 satırın tamamı sessizce yanlış
+    // bütçeyi üretir. Bu hatayı projede zaten iki kez yaşadık
+    // (`WaveMetrics.AEHP` ve `TIGHTENED_WAVE_KILL_SUPPLY`; bkz. CampaignFacts.kt
+    // dosya başı). Bu yüzden burada NİYET donduruldu ([LATE_PLAN]: dalga sayısı,
+    // kadro, arketip, boss planı) ve KOMPOZİSYON deterministik olarak türetiliyor.
+    //
+    // SIFIR RNG: `latePlanWaves` saf bir fonksiyondur; aynı girdi her zaman aynı
+    // dalga listesini verir (`waveGeneratorIsDeterministic` kilitler).
+    //
+    // KISITLAR (CAMPAIGN_55.md §7.4) üretici tarafından ZORLANIR:
+    //   K-2  bölüm başına 5-7 dalga (perde finali 8)      -> [LATE_PLAN]
+    //   K-3  W1 <= en ağır dalganın %45'i, tank=0, boss=0 -> `waveWeights`
+    //   K-4  dalga başına <= 56 gövde                     -> `densifyToBodyCap`
+    // ======================================================================
+
+    /** K-4 — bir dalgada doğabilecek en fazla GÖVDE sayısı. */
+    const val MAX_BODIES_PER_WAVE: Int = 56
+
+    /**
+     * Bir geç-perde bölümünün DONDURULMUŞ niyeti (CAMPAIGN_55.md §9 tablosu).
+     *
+     * @param waves K-2 dalga sayısı.
+     * @param roster `R` — tasarlanan kadro büyüklüğü (kaç kule).
+     * @param tierThree `kd3` — kadronun kademe 3'e çıkan kule sayısı.
+     * @param archetype istenen KARAR: K kalabalık · S hız · Z zırh ·
+     *   C karşı-koyma (kalkanlı) · M karma · B boss.
+     * @param breath `+N` — nefes bölümü: daha düz rampa, daha hafif karışım.
+     * @param bosses dalga no (1 tabanlı) -> o dalgadaki COMMAND_TANK sayısı.
+     */
+    private class LatePlan(
+        val level: Int,
+        val waves: Int,
+        val roster: Int,
+        val tierThree: Int,
+        val archetype: Char,
+        val breath: Boolean = false,
+        val bosses: Map<Int, Int> = emptyMap()
+    )
+
+    /**
+     * 33 bölümün tamamı. Sütunlar CAMPAIGN_55.md §9 tablosundan BİREBİR.
+     *
+     * Boss dağılımı (CAMPAIGN_55.md §4.4 — hiçbiri diğerinin tekrarı değil):
+     *   L33 son dalgada 1 boss (harita 11 çatallı: eşzamanlı ikinci kol)
+     *   L44 son dalgada 2 boss AYNI ANDA (tek hedef modu çöker)
+     *   L48 son dalgada 1 boss (Kuşatma Emri ile eşleşecek — Dilim B)
+     *   L55 W4'te 1 + son dalgada 3 (kampanyanın toplam sınavı)
+     */
+    private val LATE_PLAN: List<LatePlan> = listOf(
+        //        L   N  R kd3 ark
+        LatePlan(23, 6, 5, 2, 'K', breath = true),
+        LatePlan(24, 6, 5, 3, 'S'),
+        LatePlan(25, 7, 5, 3, 'Z'),
+        LatePlan(26, 7, 6, 3, 'M'),
+        LatePlan(27, 6, 5, 3, 'C', breath = true),
+        LatePlan(28, 7, 6, 3, 'K'),
+        LatePlan(29, 7, 6, 4, 'C'),
+        LatePlan(30, 7, 6, 4, 'M'),
+        LatePlan(31, 6, 5, 3, 'Z', breath = true),
+        LatePlan(32, 7, 6, 4, 'S'),
+        // kd3 4 -> 3: L33 harita 11'de (10 pad, IKI KOLLU, biri kraterli) perde
+        // finali + boss ile birlikte kapsama-farkindali simulasyonda HIC
+        // gecilemiyordu. Kadro SAYISI korundu — sermaye kadronun kademe-1
+        // maliyetinden turedigi icin dusurmek sermayeyi de keserdi; yalnizca
+        // kademe-3 derinligi azaltildi, bu hedef oldurme gelirini (-%18) ve
+        // dolayisiyla dalga agirligini dusurur.
+        LatePlan(33, 7, 6, 3, 'B', bosses = mapOf(7 to 1)),
+        LatePlan(34, 6, 6, 3, 'M', breath = true),
+        LatePlan(35, 7, 6, 4, 'C'),
+        LatePlan(36, 7, 6, 4, 'S'),
+        LatePlan(37, 7, 6, 4, 'Z'),
+        LatePlan(38, 6, 6, 4, 'M'),
+        LatePlan(39, 7, 6, 4, 'K', breath = true),
+        LatePlan(40, 7, 6, 5, 'Z'),
+        LatePlan(41, 7, 6, 5, 'C'),
+        LatePlan(42, 6, 6, 4, 'M', breath = true),
+        LatePlan(43, 7, 6, 5, 'Z'),
+        LatePlan(44, 8, 7, 5, 'B', bosses = mapOf(8 to 2)),
+        LatePlan(45, 7, 6, 4, 'S', breath = true),
+        LatePlan(46, 7, 6, 4, 'C'),
+        LatePlan(47, 7, 6, 5, 'S'),
+        LatePlan(48, 7, 7, 5, 'B', bosses = mapOf(7 to 1)),
+        LatePlan(49, 6, 6, 4, 'M', breath = true),
+        LatePlan(50, 7, 7, 5, 'S'),
+        LatePlan(51, 7, 7, 5, 'K'),
+        LatePlan(52, 7, 7, 6, 'Z'),
+        // L53 IKI DEGISIKLIK ALDI (kd3 5 -> 3, arketip 'C' -> 'M').
+        //
+        // Harita 11 oyunun EN DAR tahtasi: yalnizca 10 pad ve IKI KOLLU, yani
+        // kapsama hem az hem bolunmus. Uzerine Act V agirligi ve 'C' (kalkanli
+        // yogun) arketipi binince bolum ALTI oyuncu davranisindan yalnizca
+        // BIRIYLE geciliyordu — cozulebilir degil ezberlenebilir. Kalkanli zirhi
+        // 0,62 oldugu icin dar tahtada kursun neredeyse bir sey yapmiyor ve
+        // bolum tek bir dogru kadroya kilitleniyordu.
+        //
+        // 'M' (karma) ayni tehdidi daha genis bir cevap kumesine acar; kalkanli
+        // payi %38 -> %21. Harita 11'de 'M' ikinci kez kullaniliyor (L12 ile) ama
+        // aralarinda 41 bolum var — CAMPAIGN_55.md YR-1' zaten bu haritada bir
+        // arketip tekrarini kabul ediyor (orada 'B' iki kez).
+        LatePlan(53, 7, 6, 3, 'M', breath = true),
+        LatePlan(54, 7, 7, 5, 'S'),
+        LatePlan(55, 7, 7, 6, 'B', bosses = mapOf(4 to 1, 7 to 3))
+    )
+
+    private val LATE_PLAN_BY_LEVEL: Map<Int, LatePlan> = LATE_PLAN.associateBy { it.level }
+
+    /** Geç-perde bölümü mü (üretilmiş dalga tablosu). */
+    fun isGeneratedLevel(levelId: Int): Boolean = LATE_PLAN_BY_LEVEL.containsKey(levelId)
+
+    /** Bu bölümün tasarlanan kadro büyüklüğü `R`. 22'nin altında tanımsız (0). */
+    fun designedRosterSize(levelId: Int): Int = LATE_PLAN_BY_LEVEL[levelId]?.roster ?: 0
+
+    /** Bu bölümün kadrosunda kademe 3'e çıkan kule sayısı `kd3`. */
+    fun designedTierThreeCount(levelId: Int): Int = LATE_PLAN_BY_LEVEL[levelId]?.tierThree ?: 0
+
+    // ---------------------------------------------------------------- bütçe
+
+    /** Kule açılış sırası — `CampaignFacts.unlockedTowersInOrder` ile AYNI kural. */
+    private fun unlockOrderAt(level: Int): List<GameConfig.TowerType> =
+        GameConfig.TowerType.values()
+            .filter { GameConfig.TOWER_SPECS.getValue(it).unlockedAtLevel <= level }
+            .sortedWith(
+                compareBy(
+                    { GameConfig.TOWER_SPECS.getValue(it).unlockedAtLevel },
+                    { GameConfig.TOWER_SPECS.getValue(it).buildCost },
+                    { it.name }
+                )
+            )
+
+    /**
+     * **I(L) — TASARLANAN KADRO MALİYETİ.** Round-robin: açık kule tipleri
+     * açılış sırasında tekrar tekrar seçilir (Gatling omurga kalır, her yeni
+     * kilit kadroda bir yer alır). Kadronun tamamı kademe 2, ilk `kd3` üyesi
+     * kademe 3. Fiyatlar CANLI `TOWER_SPECS`ten okunur — bu sayı bayatlayamaz.
+     */
+    internal fun designedLoadoutCost(level: Int): Int {
+        val plan = LATE_PLAN_BY_LEVEL[level] ?: return 0
+        val order = unlockOrderAt(level)
+        var total = 0
+        for (i in 0 until plan.roster) {
+            val spec = GameConfig.TOWER_SPECS.getValue(order[i % order.size])
+            total += spec.buildCost + spec.level2UpgradeCost
+            if (i < plan.tierThree) total += spec.upgradeCostFrom(2) ?: 0
+        }
+        return total
+    }
+
+    /**
+     * Bu bölümün dalgalarından gelmesi GEREKEN öldürme geliri:
+     * `2,00 x I(L) - başlangıç Tedariki - 18 x (N-1)` (CAMPAIGN_55.md §8.1).
+     */
+    internal fun targetKillSupply(level: Int): Int {
+        val plan = LATE_PLAN_BY_LEVEL[level] ?: return 0
+        val budget = 2 * designedLoadoutCost(level)
+        val starting = GameConfig.levelSpec(level).startingSupply
+        return budget - starting - GameConfig.WAVE_CLEAR_SUPPLY_BONUS * (plan.waves - 1)
+    }
+
+    // ------------------------------------------------------------ karışım
+
+    private val BODY_ORDER = listOf(
+        EnemyType.INFANTRY, EnemyType.FAST_SOLDIER, EnemyType.SHIELDED_TROOPER,
+        EnemyType.ARMORED_VEHICLE, EnemyType.TANK
+    )
+
+    /** Motorun ödediği Tedarik: ödül x tur çarpanı, `toInt()` ile kırpılır, >= 1. */
+    private fun killSupplyOf(type: EnemyType, level: Int): Int {
+        val nominal = GameConfig.ENEMY_SPECS.getValue(type).rewardGold
+        val mul = GameConfig.actRewardMultiplier(GameConfig.levelSpec(level).act)
+        return (nominal * mul).toInt().coerceAtLeast(1)
+    }
+
+    /**
+     * ARKETİP KARIŞIMLARI — gövde yüzdeleri (piyade, koşucu, kalkanlı, zırhlı, tank).
+     *
+     * Bir haritanın beş geçişi beş farklı arketip taşır (CAMPAIGN_55.md §6.2);
+     * karışım, o geçişin "istenen KARAR"ını görünür kılan şeydir. Perde
+     * ilerledikçe ağırlık hafiften ağıra kayar (`actShift`): mutlak tehdit
+     * Act III -> Act V arasında belirgin artar ve artışın TAMAMI karışımdan
+     * gelir — `actHpMultiplier` 1,55'te DONDURULDU (GameConfig K5).
+     */
+    private fun archetypeProfile(archetype: Char, act: Int, breath: Boolean): DoubleArray {
+        val base = when (archetype) {
+            'K' -> doubleArrayOf(0.41, 0.27, 0.215, 0.075, 0.030)  // kalabalık
+            'S' -> doubleArrayOf(0.23, 0.48, 0.160, 0.090, 0.040)  // hız
+            'Z' -> doubleArrayOf(0.28, 0.36, 0.180, 0.130, 0.050)  // zırh
+            'C' -> doubleArrayOf(0.24, 0.28, 0.380, 0.070, 0.030)  // karşı-koyma
+            'M' -> doubleArrayOf(0.30, 0.36, 0.210, 0.090, 0.040)  // karma
+            else -> doubleArrayOf(0.28, 0.32, 0.240, 0.110, 0.050) // boss bölümü
+        }
+        val actShift = when (act) {
+            3 -> 0.00
+            4 -> 0.03
+            else -> 0.06
+        }
+        val shift = actShift + (if (breath) -0.02 else 0.0)
+        base[1] -= shift
+        base[3] += shift * 0.6
+        base[4] += shift * 0.4
+        return normalised(base)
+    }
+
+    private fun normalised(p: DoubleArray): DoubleArray {
+        for (i in p.indices) if (p[i] < 0.0) p[i] = 0.0
+        val sum = p.sum()
+        for (i in p.indices) p[i] /= sum
+        return p
+    }
+
+    /** Bu karışımın GÖVDE BAŞINA ürettiği Tedarik. */
+    private fun supplyPerBody(p: DoubleArray, level: Int): Double {
+        var s = 0.0
+        BODY_ORDER.forEachIndexed { i, type -> s += p[i] * killSupplyOf(type, level) }
+        return s
+    }
+
+    /**
+     * K-4'Ü SAĞLAYAN TEK MEKANİZMA: bir dalga 56 gövdeyi aşacaksa karışım
+     * AĞIRLAŞIR (piyade/koşucu payı kalkanlı-zırhlı-tank'a kayar); dalga
+     * KALABALIKLAŞMAZ.
+     *
+     * Bu bilinçli bir oynanış kararıdır. Bugün L20/21/22 tek dalgada 88/89/91
+     * gövde yolluyor; endless spec'in kendi eşzamanlılık tavanı 60. Ekranda 90
+     * hedef hem kare süresi hem OKUNABİLİRLİK sorunudur — oyuncu neyin geldiğini
+     * göremez, dolayısıyla hedef seçimi diye bir karar kalmaz. Aynı tehdidi daha
+     * AZ ama daha AĞIR gövdeyle vermek kararı geri getirir (önce hangi tank?)
+     * ve dalgayı okunur tutar.
+     */
+    private fun densifyToBodyCap(profile: DoubleArray, targetSupply: Int, cap: Int, level: Int): DoubleArray {
+        val p = profile.copyOf()
+        var guard = 0
+        while (targetSupply / supplyPerBody(p, level) > cap && guard < 200) {
+            val takeInf = minOf(p[0], 0.012)
+            val takeFast = minOf(p[1], 0.012)
+            val moved = takeInf + takeFast
+            if (moved <= 1e-9) break
+            p[0] -= takeInf
+            p[1] -= takeFast
+            // AGIRLIGIN COGU KALKANLIYA GIDER — bu bir denge karari:
+            // Tedarik basina AEHP (yani "ayni para kac can satin aliyor")
+            // kalkanlida 22, zirhlida 38, tankta 46. Yogunlastirmayi zirh/tank
+            // uzerinden yapmak ayni butceyle %70 daha agir bir dalga uretirdi ve
+            // bolum SPI 2,00 iken sayisal olarak gecilemez hale gelirdi.
+            // Kalkanli ayrica DOGRU cevabi da ogretiyor: patlama zirhi bypass
+            // eder ve kalkanliya 1,6x vurur (DECISIONS B2), yani kalabalik
+            // kalkanli dalgasi "Heavy Cannon getir" der, "sansin varsa gec" demez.
+            // Zırhlı da BIRAKILIR: Tedarik başına AEHP zırhlıda 38, kalkanlıda
+            // 22, tankta 46 — yani zırhlı yoğunlaştırma için hiçbir zaman
+            // verimli seçim değil (aynı parayla %70 daha fazla can satar).
+            // Zırhlının kimliği TABAN karışımda korunur, tavan zorlarken değil.
+            val fromArm = minOf(p[3], 0.004)
+            p[3] -= fromArm
+            p[2] += (moved + fromArm) * 0.90
+            p[4] += (moved + fromArm) * 0.10
+            normalised(p)
+            guard++
+        }
+        return p
+    }
+
+    /** En büyük kalan yöntemi: yüzdeleri TAM `bodies` adede çevirir. */
+    private fun countsFor(profile: DoubleArray, bodies: Int): IntArray {
+        val exact = DoubleArray(5) { profile[it] * bodies }
+        val counts = IntArray(5) { exact[it].toInt() }
+        var remaining = bodies - counts.sum()
+        val order = (0..4).sortedByDescending { exact[it] - counts[it] }
+        var i = 0
+        while (remaining > 0) {
+            counts[order[i % 5]]++
+            remaining--
+            i++
+        }
+        return counts
+    }
+
+    private fun totalSupplyOf(counts: Array<IntArray>, level: Int): Int {
+        var s = 0
+        counts.forEach { w -> BODY_ORDER.forEachIndexed { i, t -> s += w[i] * killSupplyOf(t, level) } }
+        return s
+    }
+
+    /**
+     * Toplam geliri hedefe TAM oturtur.
+     *
+     * Act II+ çarpanıyla gelir değerleri 5/6/9/11/26 olduğundan her tamsayı fark
+     * kapatılabilir: 5'lik adımlar piyadeyle, 1-4'lük artık ise piyade -> koşucu
+     * (+1) veya piyade -> kalkanlı (+4) takasıyla. Düzeltme her zaman o anki EN
+     * KALABALIK dalgaya uygulanır, böylece açılış dalgası (K-3) bozulmaz.
+     */
+    private fun correctSupply(counts: Array<IntArray>, level: Int, target: Int, caps: IntArray) {
+        val value = IntArray(5) { killSupplyOf(BODY_ORDER[it], level) }
+        // Gövde SAYISINI değiştirmeden geliri kaydıran dönüşümler (kaynak, hedef).
+        // Sıra önemli: en büyük adım önce denenir, en küçük (+1) her artığı kapatır.
+        val swaps = listOf(0 to 4, 0 to 3, 0 to 2, 2 to 3, 3 to 4, 0 to 1)
+            .sortedByDescending { (from, to) -> value[to] - value[from] }
+
+        // Açılış dalgası (K-3) düzeltmeden MUAF: oraya tank/kalabalık eklemek
+        // "kadromu kurduğum dalga" sözleşmesini bozar.
+        val editable = counts.indices.filter { it > 0 }.ifEmpty { counts.indices.toList() }
+
+        var guard = 0
+        while (guard++ < 20_000) {
+            val diff = target - totalSupplyOf(counts, level)
+            if (diff == 0) break
+            var moved = false
+            if (diff >= value[0]) {
+                val w = editable.filter { counts[it].sum() < caps[it] }
+                    .maxByOrNull { caps[it] - counts[it].sum() }
+                if (w != null) { counts[w][0]++; moved = true }
+            } else if (diff <= -value[0]) {
+                val w = editable.filter { counts[it][0] > 1 }.maxByOrNull { counts[it].sum() }
+                if (w != null) { counts[w][0]--; moved = true }
+            }
+            if (!moved) {
+                // Kapasite yok (K-4 tavanı) -> gövde SAYISI sabit, gövde AĞIRLIĞI değişir.
+                for ((from, to) in swaps) {
+                    val step = value[to] - value[from]
+                    if (diff > 0 && step <= diff) {
+                        val w = editable.lastOrNull { counts[it][from] > 1 }
+                        if (w != null) { counts[w][from]--; counts[w][to]++; moved = true; break }
+                    }
+                    if (diff < 0 && -step >= diff) {
+                        val w = editable.lastOrNull { counts[it][to] > 0 }
+                        if (w != null) { counts[w][to]--; counts[w][from]++; moved = true; break }
+                    }
+                }
+            }
+            if (!moved) break
+        }
+    }
+
+    /**
+     * Dalga ağırlık rampası. Açılış payı bilinçli olarak düşük: K-3 "W1, en ağır
+     * dalganın en fazla %45'i" kuralı AS-1'in mutlak 2.900 AEHP tavanının
+     * ölçekle çalışan hâlidir (CAMPAIGN_55.md §2.3) — oyuncunun ilk dalgası hâlâ
+     * "kadromu kurduğum" dalgadır.
+     */
+    private fun waveWeights(plan: LatePlan): DoubleArray {
+        val n = plan.waves
+        val lo = if (plan.breath) 0.66 else 0.62
+        val hi = if (plan.breath) 1.26 else 1.36
+        // DIŞBÜKEY rampa (üs 1,25), doğrusal değil. Sebep ölçülmüş: K-4 tavanına
+        // dayanan dalgalar yoğunlaştığı için AEHP'leri gelirlerinden HIZLI büyür.
+        // Doğrusal gelir rampası bu yüzden W1 -> W2 arasında 2,6x'lik bir AEHP
+        // sıçraması üretiyordu ("oyuncu hazırlıksız bir duvara çarpıyor" kuralı).
+        // Dışbükey rampa erken adımları küçültür, ağırlığı finale toplar.
+        return DoubleArray(n) { lo + (hi - lo) * Math.pow(it / (n - 1).toDouble(), 1.25) }
+    }
+
+    /**
+     * AÇILIŞ DALGASINI İKİ KURALIN ARASINA OTURTUR.
+     *
+     * İki bağımsız kural aynı dalgayı sıkıştırıyor:
+     *  · **K-3** — W1, bölümün en ağır dalgasının en fazla %45'i olmalı
+     *    (oyuncu W1'de hâlâ kadrosunu kuruyor).
+     *  · **Duvar kuralı** — hiçbir dalga, o ana kadar görülen en ağır dalganın
+     *    2,5 katından fazla olamaz; W2 için "o ana kadar görülen" = W1'dir.
+     *    Yani W1 aynı zamanda **yeterince ağır** olmak zorunda.
+     *
+     * Pencere her zaman boş değildir: W2 <= tepe olduğu için W2/2,4 <= 0,417 x
+     * tepe < 0,44 x tepe. Ayar tek bir eksende yapılır (zırhlı <-> kalkanlı, o
+     * bitince kalkanlı <-> piyade): gövde sayısı sabit kalır, yalnızca ağırlık
+     * kayar. Tedarik farkını [correctSupply] kapatır.
+     */
+    private fun tuneOpeningWave(counts: Array<IntArray>, plan: LatePlan) {
+        if (plan.waves < 2) return
+        fun aehp(c: IntArray): Double =
+            BODY_ORDER.indices.sumOf { c[it] * WaveMetrics.AEHP.getValue(BODY_ORDER[it]).toDouble() }
+
+        val bossAehp = WaveMetrics.AEHP.getValue(EnemyType.COMMAND_TANK).toDouble()
+        val waveAehp = { i: Int -> aehp(counts[i]) + (plan.bosses[i + 1] ?: 0) * bossAehp }
+        val peak = (1 until plan.waves).maxOf { waveAehp(it) }
+        val floor = waveAehp(1) / 2.4
+        val ceiling = peak * 0.44
+
+        var guard = 0
+        while (guard++ < 400) {
+            val current = aehp(counts[0])
+            when {
+                current > ceiling && counts[0][3] > 0 -> { counts[0][3]--; counts[0][2]++ }
+                current > ceiling && counts[0][2] > 0 -> { counts[0][2]--; counts[0][0]++ }
+                current < floor && counts[0][2] > 0 -> { counts[0][2]--; counts[0][3]++ }
+                current < floor && counts[0][0] > 1 -> { counts[0][0]--; counts[0][2]++ }
+                else -> return
+            }
+        }
+    }
+
+    /** Bir geç-perde bölümünün dalgalarını üretir. Saf ve deterministik. */
+    private fun latePlanWaves(plan: LatePlan): List<WaveData> {
+        val level = plan.level
+        val act = GameConfig.levelSpec(level).act
+        val bossSupply = killSupplyOf(EnemyType.COMMAND_TANK, level)
+        val bodySupplyTarget = targetKillSupply(level) - plan.bosses.values.sum() * bossSupply
+
+        val weights = waveWeights(plan)
+        val weightSum = weights.sum()
+        val base = archetypeProfile(plan.archetype, act, plan.breath)
+
+        val perWave = IntArray(plan.waves) { (bodySupplyTarget * weights[it] / weightSum).toInt() }
+        perWave[perWave.size - 1] += bodySupplyTarget - perWave.sum()
+
+        // K-4 tavanı BOSS'LARI DA SAYAR: ekranda kaç gövde olduğu sorusu
+        // "boss hariç kaç gövde" diye sorulmaz.
+        val caps = IntArray(plan.waves) { MAX_BODIES_PER_WAVE - (plan.bosses[it + 1] ?: 0) }
+
+        val counts = Array(plan.waves) { w ->
+            val profile = densifyToBodyCap(base, perWave[w], caps[w], level)
+            val bodies = (perWave[w] / supplyPerBody(profile, level))
+                .toInt().coerceIn(8, caps[w])
+            countsFor(profile, bodies)
+        }
+
+        // K-3: açılış dalgasında tank YOK — her tank İKİ zırhlıya çevrilir.
+        // 1:1 çevirmek açılış dalgasının AEHP'sini çökertiyordu (tank 1.186,
+        // zırhlı 417 AEHP) ve W1 -> W2 arasında yapay bir duvar üretiyordu.
+        counts[0][3] += 2 * counts[0][4]
+        counts[0][4] = 0
+
+        // Once geliri hedefe oturt, sonra acilis dalgasini iki kuralin arasina
+        // tasi, sonra geliri TEKRAR oturt: tasima W1 Tedarikini +-2 kaydirir.
+        correctSupply(counts, level, bodySupplyTarget, caps)
+        tuneOpeningWave(counts, plan)
+        correctSupply(counts, level, bodySupplyTarget, caps)
+
+        // Kadans: spawn aralığı perde ilerledikçe daralır, nefes bölümünde açılır.
+        // K-1 (bölüm <= 6,5 dk) doğrudan buradan gelir: 56 gövdelik bir dalganın
+        // süresi neredeyse tamamen spawn aralığıdır.
+        val lightGap = (
+            when (act) {
+                3 -> 0.44f
+                4 -> 0.40f
+                else -> 0.36f
+            }
+            ) + (if (plan.breath) 0.05f else 0f)
+        val heavyGap = when (act) {
+            3 -> 1.05f
+            4 -> 0.95f
+            else -> 0.85f
+        }
+
+        return (0 until plan.waves).map { w ->
+            val c = counts[w]
+            mix(
+                index = w + 1,
+                label = "L$level-W${w + 1} ${lateWaveLabel(plan, w + 1)}",
+                inf = c[0], fast = c[1], shield = c[2], arm = c[3], tank = c[4],
+                boss = plan.bosses[w + 1] ?: 0,
+                lightGap = lightGap, heavyGap = heavyGap, bossGap = 3.00f
+            )
+        }
+    }
+
+    /** İç debug/telemetri etiketi — KULLANICIYA GÖSTERİLMEZ (dosya notu 1). */
+    private fun lateWaveLabel(plan: LatePlan, wave: Int): String {
+        val bossCount = plan.bosses[wave]
+        if (bossCount != null) return if (bossCount > 1) "BOSS-x$bossCount" else "BOSS"
+        if (wave == 1) return "opening"
+        if (wave == plan.waves) return "finale"
+        return when (plan.archetype) {
+            'K' -> "swarm-$wave"
+            'S' -> "blitz-$wave"
+            'Z' -> "armor-$wave"
+            'C' -> "shields-$wave"
+            'M' -> "combined-$wave"
+            else -> "escalation-$wave"
+        }
+    }
+
+    // ======================================================================
     // Kampanya kaydı
     // ======================================================================
 
-    /** Bölüm no -> dalga listesi. Bölüm sırası GDD §B.2 ile birebir aynıdır. */
-    val CAMPAIGN: Map<Int, List<WaveData>> = mapOf(
-        1 to LEVEL_01, 2 to LEVEL_02, 3 to LEVEL_03, 4 to LEVEL_04,
-        5 to LEVEL_05, 6 to LEVEL_06, 7 to LEVEL_07, 8 to LEVEL_08,
-        9 to LEVEL_09, 10 to LEVEL_10, 11 to LEVEL_11, 12 to LEVEL_12,
-        13 to LEVEL_13, 14 to LEVEL_14, 15 to LEVEL_15, 16 to LEVEL_16,
-        17 to LEVEL_17, 18 to LEVEL_18, 19 to LEVEL_19, 20 to LEVEL_20,
-        21 to LEVEL_21, 22 to LEVEL_22
+    /**
+     * Bölüm no -> dalga listesi. 55 bölüm (CAMPAIGN_55.md K1: 5 perde x 11).
+     *
+     * L1..L22 elle kalibre edilmiş, YAYINLANMIŞ tablodur ve değişmez.
+     * L23..L55 [LATE_PLAN]'dan deterministik olarak üretilir.
+     *
+     * `by lazy` ZORUNLU: üretici `GameConfig.TOWER_SPECS` ve
+     * `GameConfig.levelSpec` okuyor; erken (object başlatma sırasında)
+     * değerlendirilirse iki `object` birbirini yarı kurulmuş halde görebilir.
+     */
+    // ======================================================================
+    // L1..L22 — TEK RITME TASINMA (CAMPAIGN_55.md K-2 / K-4)
+    //
+    // SORUN (olculdu): kampanya IKI FARKLI RITIMDE calisiyordu.
+    //   · L1-22 (elle yazilmis): 6-18 dalga · L22 = 18 dalga / 16,1 dk ·
+    //     L18/20/21/22 tek dalgada 77/88/89/91 govde yolluyor.
+    //   · L23-55 (uretilmis): 5-7 dalga · <= 6,9 dk · <= 56 govde.
+    // Ayni oyunun iki yarisi ayni oturum sozlesmesini paylasmiyordu; yenilgi
+    // L22'de 16 dakikayi cope atarken L23'te 5 dakikayi atiyordu.
+    //
+    // COZUM: elle kalibre edilmis 259 dalganin KOMPOZISYONU korunur, yalnizca
+    // BOLUM SEKLI degisir — CAMPAIGN_55.md 2.3'un "mevcut dalgalar yeniden
+    // bolusturulur, kompozisyonlar korunur" karari. Iki saf donusum:
+    //
+    //   1) [pickWaves]  — dalga listesi 5-7'ye SEYRELTILIR. Ilk ve SON dalga
+    //      her zaman korunur (acilis hâlâ en hafif, final hâlâ finaldir),
+    //      arasi esit araliklarla ornekleir. Rampa sekli bozulmaz.
+    //   2) [capBodies]  — K-4: bir dalga 56 govdeyi asamaz. Fazlasi esit
+    //      araliklarla SEYRELTILIR, yani tip karisimi ve SIRA korunur;
+    //      dalga hafifler ama kimligi degismez.
+    //
+    // Bu, dalgalari yeniden YAZMAKTAN farkli ve kasitli: L1-22'nin kompozisyon
+    // kalibrasyonu (kadans, tip karisimi, tanitim sirasi) tek tek olculmustu
+    // ve o is korunuyor. Degisen tek sey OTURUM SEKLI.
+    // ======================================================================
+
+    /**
+     * CAMPAIGN_55.md 9. tablosunun `N` kolonu, L1..L22. K-2: 5-7 dalga
+     * (perde finali 8'e kadar). Toplam 133 dalga; L23..L55'in 224'u ile
+     * birlikte kampanya **357 dalga** eder — dokumanin hedef rakami.
+     */
+    private val HANDWRITTEN_TARGET_WAVES: IntArray = intArrayOf(
+        // L7/L8 dokumanin 6'si yerine 7: Fuze Bataryasi L7'de aciliyor ve
+        // kadroya giriyor (I(L) 495 -> 725). Alti dalgalik gelir o kadroyu
+        // SPI bandinin ALTINDA birakiyordu (1,41); yedinci dalga bandi geri
+        // getiriyor (1,58) ve K-2'nin 5-7 araligini bozmuyor.
+        /* L1..L11  */ 5, 5, 5, 5, 6, 6, 7, 7, 6, 6, 7,
+        /* L12..L22 */ 6, 6, 6, 6, 6, 6, 7, 7, 6, 7, 7
     )
 
-    const val CAMPAIGN_LEVEL_COUNT: Int = 22
+    /**
+     * Dalga listesini `target` uzunluguna SEYRELTIR.
+     *
+     * Ilk ve son dalga daima secilir; aradakiler esit araliklarla ornekleir.
+     * Ilk dalganin korunmasi K-3 icin zorunlu (o bolumun EN HAFIF dalgasidir,
+     * oyuncu orada kadrosunu kurar); son dalganin korunmasi finali (boss
+     * dalgalari dahil) yerinde tutar.
+     */
+    private fun pickWaves(source: List<WaveData>, target: Int): List<WaveData> {
+        if (source.size <= target || target < 2) return source
+        val n = source.size
+        return (0 until target).map { k ->
+            source[Math.round(k.toDouble() * (n - 1) / (target - 1)).toInt()]
+        }
+    }
+
+    /** K-4: dalga basina en fazla [MAX_BODIES_PER_WAVE] govde. */
+    private fun capBodies(wave: WaveData): WaveData {
+        val n = wave.spawns.size
+        if (n <= MAX_BODIES_PER_WAVE) return wave
+        val kept = (0 until MAX_BODIES_PER_WAVE).map {
+            wave.spawns[(it.toLong() * n / MAX_BODIES_PER_WAVE).toInt()]
+        }
+        return wave.copy(spawns = kept)
+    }
+
+    /** Elle yazilmis bir bolumu yeni oturum sekline tasir. Saf ve deterministik. */
+    private fun reshapeHandwritten(level: Int, source: List<WaveData>): List<WaveData> =
+        pickWaves(source, HANDWRITTEN_TARGET_WAVES[level - 1])
+            .mapIndexed { i, w -> capBodies(w).copy(waveIndex = i + 1) }
+
+    val CAMPAIGN: Map<Int, List<WaveData>> by lazy {
+        buildMap {
+            val handwritten = listOf(
+                LEVEL_01, LEVEL_02, LEVEL_03, LEVEL_04, LEVEL_05, LEVEL_06,
+                LEVEL_07, LEVEL_08, LEVEL_09, LEVEL_10, LEVEL_11, LEVEL_12,
+                LEVEL_13, LEVEL_14, LEVEL_15, LEVEL_16, LEVEL_17, LEVEL_18,
+                LEVEL_19, LEVEL_20, LEVEL_21, LEVEL_22
+            )
+            handwritten.forEachIndexed { i, waves -> put(i + 1, reshapeHandwritten(i + 1, waves)) }
+            LATE_PLAN.forEach { put(it.level, latePlanWaves(it)) }
+        }
+    }
+
+    const val CAMPAIGN_LEVEL_COUNT: Int = 55
+
+    /** L1..L22 — elle kalibre edilmiş, yayınlanmış dalga tablosu. */
+    const val HANDWRITTEN_LEVEL_COUNT: Int = 22
 
     fun wavesFor(levelId: Int): List<WaveData> =
         CAMPAIGN[levelId] ?: error("Frontline Defender: level $levelId icin dalga seti tanimli degil")

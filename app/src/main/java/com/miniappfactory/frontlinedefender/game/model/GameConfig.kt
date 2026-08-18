@@ -42,7 +42,10 @@ object GameConfig {
      * Bu bant bilincli olarak ust HUD seridinin ALTINA kaydirilir.
      *
      * Neden: HUD 56 dp opak bir serit ve cihazda ust iki pad'in yarisini
-     * kapatiyordu (docs/device_evidence/21_faz3_harita.png). Alternatif olan
+     * kapatiyordu. (Eskiden burada bir ekran goruntusune atif vardi;
+     * **o dosya diskte hic yoktu** — `docs/` git disinda oldugu icin kopuk
+     * atif fark edilmeden durabiliyor. Bkz. `docs/COMMIT_PLAN.md`.)
+     * Alternatif olan
      * "oynanis alanini HUD'un altina sigdir" haritayi %14 kucultuyordu; bu
      * yontem yalnizca %4 kucultuyor. game-asset-draw skill'inin onerdigi
      * "harita kenarina oynanista kullanilmayan dolgu bandi" cozumu.
@@ -69,7 +72,28 @@ object GameConfig {
      * doluyor ve halka O KULENIN gercek menzilini gosteriyor
      * (bkz. GameCanvas: birakma onizlemesi her zaman gorunur olmali).
      */
-    const val BUILD_PREVIEW_RANGE_PX = 170f
+    /**
+     * FAZ 13 DUZELTMESI: 170 -> 150.
+     *
+     * Bu halka, hicbir kart basili DEGILKEN bos bir pad secildiginde ciziliyor,
+     * yani oyuncunun "buraya kursam nereye yetisir" sorusuna verilen ILK cevap.
+     * 170, oyundaki EN KISA kademe-1 menzilinden (Gatling 150) buyuktu — ve
+     * bolum 1-2'de acik olan TEK kule Gatling. Yani halka her zaman gercekte
+     * ulasilamayan bir alani gosteriyordu.
+     *
+     * Bu, olu build pad hatasiyla birleserek oyuncuyu aktif olarak yaniltiyordu:
+     * bolum 1'de yoldan 195 ve 213 ref-px uzaktaki pad'ler 170'lik halkada
+     * "neredeyse yola degiyor" gorunuyor, kurulan kule hicbir seye ates
+     * etmiyordu. Olu pad'ler artik gizlendi; bu satir da halkanin bir daha
+     * fazla soz vermemesini garantiler.
+     *
+     * 150 secildi cunku oyundaki en kisa kademe-1 menzilidir: notr halka artik
+     * HICBIR bolumde gercekten kurulabilecek bir kulenin menzilini ASMAZ.
+     * Kart basili tutuldugunda halka zaten o kulenin gercek menzilini gosterir
+     * (`GameEngine.previewRangeRef`), yani uzun menzilli kuleler bundan
+     * etkilenmez.
+     */
+    const val BUILD_PREVIEW_RANGE_PX = 150f
 
     /** Letterbox / tuval zemini. */
     const val LETTERBOX_COLOR = 0xFF0B0E08
@@ -234,6 +258,65 @@ object GameConfig {
     }
 
     /**
+     * ------------------------------------------------------------------------
+     * Faz 13 — KULE KADEMESI ARTIK **VERI** (DECISIONS B5)
+     * ------------------------------------------------------------------------
+     * Onceki sekil `level1Range/level1Damage/... level2Range/...` seklinde DUZ
+     * ALANLARDI. Bu, kademe sayisini KODA gomuyordu: motor `tower.level = 2`
+     * yaziyor, panel `if (level == 1)` diye soruyor, ve "son kademe mi" sorusu
+     * hicbir yerde VERIDEN turemiyordu. Kademe 3 eklemek bu yuzden bir denge
+     * isi degil bir refactor isi haline gelmisti (B5'in "ilk APK'yi bloklamaz"
+     * gerekcesi tam olarak buydu).
+     *
+     * Simdi kademe listesi verinin kendisi. **Kademe 4 bir gun gerekirse bu
+     * listeye bir satir eklemek yeterlidir**; motor ve UI "son kademe mi"
+     * sorusunu [TowerStats.maxTier] uzerinden sorar, sabit bir 2 veya 3'e degil.
+     *
+     * @param tier 1-tabanli kademe numarasi. Liste sirasiyla tutarli olmak
+     *   ZORUNDA (`TowerTierDataTest` kilitler) — mesajlarda ve testlerde
+     *   kademeyi indeksten yeniden turetmemek icin duruyor.
+     * @param range Menzil **1920 REFERANS TUVALINDE** (DECISIONS B3), ham canvas
+     *   px DEGIL. Motor `TowerEntity.rangePx(renderScale)` ile cevirir; aksi
+     *   halde tablet ile telefon ayni oyunu oynamaz.
+     * @param fireRate Atislar arasi sure, SANIYE. Kucuk = hizli.
+     * @param upgradeCost Bu kademeye YUKSELMENIN Tedarik bedeli. Kademe 1 icin
+     *   daima 0'dir: o kademeye yukselerek degil [TowerStats.buildCost] odeyerek
+     *   gelinir.
+     * @param unlockedAtLevel Bu kademenin acildigi KAMPANYA bolumu. Kademe 1-2
+     *   kulenin kendi kilidini takip eder; kademe 3 [TIER_THREE_UNLOCK_LEVEL].
+     */
+    data class TowerTier(
+        val tier: Int,
+        val range: Float,
+        val damage: Float,
+        val fireRate: Float,
+        val upgradeCost: Int,
+        val unlockedAtLevel: Int
+    ) {
+        /** Sürekli hasar (hasar/sn) — rol karsilastirmalarinin olcum birimi. */
+        val dps: Float get() = damage / fireRate
+    }
+
+    /**
+     * **KADEME 3'UN ACILDIGI BOLUM = ACT II'NIN ILK BOLUMU.**
+     *
+     * Neden 12, neden daha erken degil:
+     * - Act I'in doruk noktasi L11'dir (ilk boss; LEVEL_DESIGN H.1 o bolumde
+     *   %40-55 yenilgi orani BEKLIYOR). Kademe 3 Act I icinde acilsaydi o
+     *   doruk sayisal olarak dagilirdi — "erken acilirsa erken bolumler
+     *   trivial olur" itirazi tam olarak burada gecerli.
+     * - Act II'yi Act I'den ayiran sey pad KISITIDIR: L12-22'de pad'lerin
+     *   %25-36'si kapali (`FROZEN_DISABLED_PADS`) ve dusman cani x1.55
+     *   (`actHpMultiplier`). Yani oyuncunun elinden YATAY buyume (daha cok
+     *   kule) alinmistir. Kademe 3 bunun dogal cevabidir: **az pad, derin
+     *   pad.** Kilidi Act sinirina koymak mekanigi tek bir anlatiya baglar.
+     * - Olcum tarafi: atil Tedarik orani L11'den itibaren pozitife doner ve
+     *   L12'de %42'ye ciker (bkz. `LateGameSupplySinkTest`), yani sinkin
+     *   gerektigi ilk bolum de L12'dir.
+     */
+    const val TIER_THREE_UNLOCK_LEVEL: Int = 12
+
+    /**
      * @param role Kulenin oynanistaki kimligi (bkz. TowerRole).
      * @param unlockedAtLevel Bu kule kacinci KAMPANYA bolumunden itibaren insa
      *   edilebilir. Testci: "ilk bolumden itibaren her seyi acmak dogru degil."
@@ -242,9 +325,8 @@ object GameConfig {
      *   ilk gorundugu bolumde ZATEN acik olmali. Kilit tablosunun dalga
      *   tanimlariyla tutarliligi `WaveDefinitionsDataTest` tarafindan
      *   dogrulanir, yorumla degil.
-     * @param level1Range Menzil **1920 REFERANS TUVALINDE** (DECISIONS B3), ham
-     *   canvas px DEGIL. Motor `TowerEntity.rangePx(renderScale)` ile cevirir;
-     *   aksi halde tablet ile telefon ayni oyunu oynamaz.
+     * @param tiers Kademe merdiveni, kademe 1'den baslayarak. En az bir eleman.
+     *   Kademe SAYISI buradan okunur; hicbir yerde sabit kodlanmaz.
      * @param splashRadius > 0 YALNIZCA Cannon'da (referans tuvalde). Splash
      *   bileseni zirhi bypass eder (DECISIONS B2).
      * @param armorPierce 0..1, YALNIZCA Anti-Armor.
@@ -260,6 +342,12 @@ object GameConfig {
      *   zirhi bypass ETMEZ (delici muhimmat olarak hesaplanir) — boylece
      *   Cannon'in "kalabalik/kalkanli" kimligini golgelemez.
      * @param missileImpactDamageFraction Ikincil hedeflere giden hasar orani.
+     *
+     * NOT: Rol alanlari (splash / pierce / slow / missile) KADEMEDEN BAGIMSIZ
+     * kalir. Bu bilincli: kademe 3 bir kulenin ne YAPTIGINI degistirmez,
+     * yalnizca ne kadar iyi yaptigini degistirir. Aksi halde ucuncu kademe
+     * dort kuleyi ayni sise donusturur ve Faz 10'da kazanilan uzmanlasma
+     * gec oyunda sessizce kaybolurdu.
      */
     data class TowerStats(
         val type: TowerType,
@@ -268,13 +356,7 @@ object GameConfig {
         val name: String,
         val description: String,
         val buildCost: Int,
-        val level1Range: Float,       // 1920 referans tuvalde ref-px
-        val level1Damage: Float,
-        val level1FireRate: Float,    // Seconds between shots
-        val level2UpgradeCost: Int,
-        val level2Range: Float,
-        val level2Damage: Float,
-        val level2FireRate: Float,
+        val tiers: List<TowerTier>,
         val splashRadius: Float = 0f,  // > 0 for Cannon
         val armorPierce: Float = 0f,   // 0.0 to 1.0 for Anti-Armor
         val slowFactor: Float = 0f,    // 0.0 to 1.0 (e.g. 0.5 = 50% speed) for Slow Tower
@@ -283,14 +365,66 @@ object GameConfig {
         val missileImpactRadius: Float = 0f,      // > 0 for Anti-Armor
         val missileImpactDamageFraction: Float = 0f
     ) {
-        /** Sürekli hasar (hasar/sn) — rol karsilastirmalarinin olcum birimi. */
-        val level1Dps: Float get() = level1Damage / level1FireRate
-        val level2Dps: Float get() = level2Damage / level2FireRate
+        init {
+            require(tiers.isNotEmpty()) { "$type: kademe listesi bos olamaz" }
+        }
+
+        /** Bu kulenin sahip oldugu kademe sayisi. "Son kademe mi" sorusunun kaynagi. */
+        val maxTier: Int get() = tiers.size
+
+        /** 1-tabanli kademe erisimi; aralik disi degerler siniri asmaz (motor asla cokmez). */
+        fun tier(tier: Int): TowerTier = tiers[(tier - 1).coerceIn(0, tiers.lastIndex)]
+
+        /**
+         * [tier] kademesindeki bir kuleyi BIR SONRAKI kademeye yukseltmenin
+         * bedeli; son kademede `null`.
+         */
+        fun upgradeCostFrom(tier: Int): Int? = tiers.getOrNull(tier)?.upgradeCost
+
+        /**
+         * Bu bolumde bu kulenin ulasabilecegi EN YUKSEK kademe.
+         *
+         * Kademe kilitleri artan sirada oldugu icin (test kilitler) sayarak
+         * bulunur. Kule henuz hic acilmamissa bile 1 doner — insa kilidi ayri
+         * bir karar ([isTowerUnlocked]) ve iki kilidi birbirine karistirmak
+         * paneli "0. kademe" gostermeye iterdi.
+         */
+        fun maxTierAt(levelId: Int): Int =
+            tiers.count { levelId >= it.unlockedAtLevel }.coerceAtLeast(1)
+
+        // --------------------------------------------------------------------
+        // ISIMLE kademe 1/2 kisayollari.
+        //
+        // Bunlar bir "kademe sayisi 2'dir" iddiasi DEGILDIR: adlarinda hangi
+        // kademeye baktiklari yazili ve denge dokumanlarinin tamami (TOWER_
+        // REBALANCE §1-§5, ECONOMY_SPEC) bu iki kademeye ISIMLE atif yapiyor.
+        // Kademe-genel karar veren hicbir yer (motor, panel, ekonomi) bunlari
+        // kullanmaz; kullanan tek yerler kademe 1/2'ye kasten bakan denge
+        // testleri ve `referenceTowerDps` kilididir.
+        // --------------------------------------------------------------------
+        val level1Range: Float get() = tier(1).range
+        val level1Damage: Float get() = tier(1).damage
+        val level1FireRate: Float get() = tier(1).fireRate
+        val level1Dps: Float get() = tier(1).dps
+        val level2UpgradeCost: Int get() = tier(2).upgradeCost
+        val level2Range: Float get() = tier(2).range
+        val level2Damage: Float get() = tier(2).damage
+        val level2FireRate: Float get() = tier(2).fireRate
+        val level2Dps: Float get() = tier(2).dps
     }
 
     /** Bu kule bu bolumde insa edilebilir mi? Tek karar noktasi. */
     fun isTowerUnlocked(type: TowerType, levelId: Int): Boolean =
         levelId >= (TOWER_SPECS[type]?.unlockedAtLevel ?: 1)
+
+    /**
+     * Bu kulenin bu BOLUMDE ulasabilecegi en yuksek kademe. Motor kuleyi insa
+     * ederken bunu bir kez okur ve [TowerEntity.tierCap] olarak tasir; boylece
+     * panel ile motor AYNI cevabi verir ve oyuncuya odeyemeyecegi bir yukseltme
+     * butonu gosterilmez.
+     */
+    fun maxTowerTier(type: TowerType, levelId: Int): Int =
+        TOWER_SPECS[type]?.maxTierAt(levelId) ?: 1
 
     /** Bolum secme/insa cubugu icin: bu bolumde acik olan kuleler. */
     fun unlockedTowers(levelId: Int): List<TowerType> =
@@ -384,6 +518,35 @@ object GameConfig {
     // araliginda ses neredeyse surekli bir gurultuydu; 0.32 sn'de her atis
     // ayri duyulur, namlu alevi (0.13 sn) ile de artik ortusmuyor.
     // ------------------------------------------------------------------------
+    // ------------------------------------------------------------------------
+    // Faz 13 — KADEME 3 (DECISIONS B5). Kademe 1 ve 2 degerleri BIREBIR AYNI.
+    //
+    // Bu bir yeniden dengeleme DEGIL, bir EKLEME. `referenceTowerDps = 43.75`
+    // kilidi, Faz 12.1'in cozulebilirlik testleri ve SPI tablosu kademe 1-2
+    // uzerine kurulu ve hepsi degismeden gecerli kaliyor.
+    //
+    // NEDEN GEREKLI (olculmus): L15-22'de Tedarik gelirinin ortalama **%67'si**
+    // harcanacak yer bulamiyordu — butun pad'ler dolu, hepsi kademe 2, para
+    // yiginla duruyor. Karar bosluguna dusen bolum sikici bolumdur
+    // (LEVEL_DESIGN G.5). Olcum ve once/sonra: `LateGameSupplySinkTest`.
+    //
+    // FIYAT KURALI: **kademe 3 bedeli = kademe 2 bedelinin 2 kati.**
+    //   Gatling 65 -> 130 · Top 90 -> 180 · Fuze 115 -> 230 · Buz 85 -> 170
+    //
+    // Neden 2x, neden uydurma degil:
+    //  1. SINK OLCUSU. Bir kulenin tam maliyeti (insa + tum yukseltmeler) tam
+    //     olarak ~2 katina cikiyor (Gatling 125 -> 255, Top 185 -> 365, Fuze
+    //     230 -> 460, Buz 185 -> 355). Butun pad'ler doldurulup maks kademeye
+    //     cikarildiginda atil Tedarik orani L15-22'de **%67.0 -> %34.7**'e
+    //     duser; yani gec oyun gelirinin yarisindan fazlasi harcanabilir hale
+    //     gelir. Daha ucuz bir kademe 3 sorunu cozmez, daha pahalisi bolumleri
+    //     ulasilamaz bir tavana baglar.
+    //  2. AZALAN GETIRI. Tedarik-basina-DPS kademe 3'te kademe 2'den DAHA KOTU:
+    //     Gatling 1.01 -> 1.07 · Top 4.17 -> 4.39 · Fuze 3.23 -> 3.42 Tedarik
+    //     / DPS. Yani kademe 3 otomatik alinan bir sey degil, kit olan kaynak
+    //     (Act II'de PAD) icin odenen bilincli bir prim. Yatay buyume mumkun
+    //     oldugu surece hâlâ daha ucuz — bu yuzden Act I'de acilmiyor.
+    // ------------------------------------------------------------------------
     val TOWER_SPECS: Map<TowerType, TowerStats> = mapOf(
         // KALABALIK. Menzil 160 -> 150: en kisa menzilli kule olmasi kimliginin
         // parcasi (bogaza yerlestir, uzaktan tarama yok) ve destek kulesinin
@@ -398,13 +561,17 @@ object GameConfig {
             name = "Gatling Gun",
             description = "Shreds infantry and runners. Bullets barely scratch armour.",
             buildCost = 60,
-            level1Range = 150f,
-            level1Damage = 14f,      // DEGISMEDI
-            level1FireRate = 0.32f,  // 0.16 x2 -> DPS 87.5 -> 43.8 (yarilandi, KASITLI)
-            level2UpgradeCost = 65,
-            level2Range = 180f,
-            level2Damage = 26f,      // DEGISMEDI
-            level2FireRate = 0.24f   // 0.12 x2 -> DPS 216.7 -> 108.3
+            tiers = listOf(
+                TowerTier(1, range = 150f, damage = 14f, fireRate = 0.32f, upgradeCost = 0, unlockedAtLevel = 1),
+                TowerTier(2, range = 180f, damage = 26f, fireRate = 0.24f, upgradeCost = 65, unlockedAtLevel = 1),
+                // Kd.3 (Faz 13): DPS 108.3 -> 220.0 (x2.03; Kd.1->Kd.2 x2.48'in
+                // ALTINDA = azalan getiri). Menzil +30, Kd.1->Kd.2 ile ayni adim.
+                // Zirha karsi ise yaramazlik KORUNUR: tanka atis basina
+                // 44 x 0.14 = 6.2, yani 30.8 DPS — fuzenin ayni kademedeki
+                // 116.1 DPS'inin dortte biri. Kalabalik kulesi kalabalik
+                // kulesi kaliyor (oran Kd.2'deki 1.27 ile ayni bantta).
+                TowerTier(3, range = 210f, damage = 44f, fireRate = 0.20f, upgradeCost = 130, unlockedAtLevel = TIER_THREE_UNLOCK_LEVEL)
+            )
         ),
         // KUSATMA. Tek hedef DPS'i 45.5 -> 36.8 dusuruldu ama splash yaricapi
         // 65 -> 78 buyudu: kimlik "tek hedefe vuran top" degil "kumeyi silen
@@ -420,13 +587,16 @@ object GameConfig {
             name = "Heavy Cannon",
             description = "Slow shell, wide blast. Ignores armour, misses fast movers.",
             buildCost = 95,
-            level1Range = 175f,
-            level1Damage = 46f,      // DEGISMEDI
-            level1FireRate = 2.50f,  // 1.25 x2 -> DPS 36.8 -> 18.4
-            level2UpgradeCost = 90,
-            level2Range = 205f,
-            level2Damage = 88f,      // DEGISMEDI
-            level2FireRate = 2.20f,  // 1.10 x2 -> DPS 80.0 -> 40.0
+            tiers = listOf(
+                TowerTier(1, range = 175f, damage = 46f, fireRate = 2.50f, upgradeCost = 0, unlockedAtLevel = 3),
+                TowerTier(2, range = 205f, damage = 88f, fireRate = 2.20f, upgradeCost = 90, unlockedAtLevel = 3),
+                // Kd.3 (Faz 13): DPS 40.0 -> 81.0 (x2.03; Kd.1->Kd.2 x2.17'nin
+                // altinda). `splashRadius` ve mermi hizi KADEMEDEN BAGIMSIZ:
+                // top hâlâ yavas mermi atar ve hizli hedefi iskalar (Faz 10 §1
+                // komboları aynen gecerli). Kademe 3 topu "her seye vuran" bir
+                // kule yapmaz, kumeye vurdugunda daha sert vurdurur.
+                TowerTier(3, range = 235f, damage = 158f, fireRate = 1.95f, upgradeCost = 180, unlockedAtLevel = TIER_THREE_UNLOCK_LEVEL)
+            ),
             splashRadius = 78f
         ),
         // ZIRH KIRICI. Atis araligi 1.4 -> 1.8 sn (kalabaliga karsi kasitli
@@ -441,13 +611,17 @@ object GameConfig {
             name = "Missile Battery",
             description = "Armour-piercing missile. Devastating on heavies, wasted on swarms.",
             buildCost = 115,
-            level1Range = 250f,
-            level1Damage = 110f,     // DEGISMEDI
-            level1FireRate = 3.60f,  // 1.80 x2 -> DPS 61.1 -> 30.6
-            level2UpgradeCost = 115,
-            level2Range = 290f,
-            level2Damage = 205f,     // DEGISMEDI
-            level2FireRate = 3.10f,  // 1.55 x2 -> DPS 132.3 -> 66.1
+            tiers = listOf(
+                TowerTier(1, range = 250f, damage = 110f, fireRate = 3.60f, upgradeCost = 0, unlockedAtLevel = 7),
+                TowerTier(2, range = 290f, damage = 205f, fireRate = 3.10f, upgradeCost = 115, unlockedAtLevel = 7),
+                // Kd.3 (Faz 13): DPS 66.1 -> 133.3 (x2.02). Atis basina hasar
+                // (360) butun kademelerin en yukseği olmaya devam eder ve atis
+                // araligi (2.70 sn) hâlâ en yavasi: kalabaliga karsi bilincli
+                // verimsizlik kademe 3'te de duruyor. `armorPierce` ve carpma
+                // alani degismedi — fuze hâlâ havada yol alir ve hedefi olurse
+                // ISRAF olur (ANTI_TANK rolunun bedeli).
+                TowerTier(3, range = 335f, damage = 360f, fireRate = 2.70f, upgradeCost = 230, unlockedAtLevel = TIER_THREE_UNLOCK_LEVEL)
+            ),
             armorPierce = 0.85f,
             missileImpactRadius = 40f,
             missileImpactDamageFraction = 0.35f
@@ -467,13 +641,18 @@ object GameConfig {
             name = "Frost Field",
             description = "Wide cryo pulses chill every enemy in the blast. Deals almost no damage.",
             buildCost = 100,
-            level1Range = 270f,
-            level1Damage = 3f,       // DEGISMEDI
-            level1FireRate = 1.30f,  // 0.65 x2 -> DPS 4.6 -> 2.3
-            level2UpgradeCost = 85,
-            level2Range = 320f,
-            level2Damage = 7f,       // DEGISMEDI
-            level2FireRate = 1.10f,  // 0.55 x2 -> DPS 12.7 -> 6.4
+            tiers = listOf(
+                TowerTier(1, range = 270f, damage = 3f, fireRate = 1.30f, upgradeCost = 0, unlockedAtLevel = 5),
+                TowerTier(2, range = 320f, damage = 7f, fireRate = 1.10f, upgradeCost = 85, unlockedAtLevel = 5),
+                // Kd.3 (Faz 13): DESTEK kulesinin yukseltmesi hasar DEGIL, ALAN
+                // ve TEMPO. Menzil 320 -> 370 (hâlâ en genis kapsama) ve darbe
+                // araligi 1.10 -> 0.95 sn, yani sogutma penceresi daralmadan
+                // daha sik yenilenir. DPS 6.4 -> 13.7 kaliyor ama bu Gatling
+                // Kd.3'un 230 DPS'inin %6'si: "hasar vermez" kimligi
+                // (BalanceConsistencyTest'in %20 tavani) kademe 3'te de gecerli.
+                // `slowFactor`/`slowPulseRadius` kademeden bagimsiz.
+                TowerTier(3, range = 370f, damage = 13f, fireRate = 0.95f, upgradeCost = 170, unlockedAtLevel = TIER_THREE_UNLOCK_LEVEL)
+            ),
             slowFactor = 0.42f,
             slowDuration = 2.2f,
             slowPulseRadius = 105f
@@ -531,37 +710,71 @@ object GameConfig {
     // Kule kimlikleri ve hedef secimi DEGISMEZ; yalnizca akis hizi duser.
     //
     // ------------------------------------------------------------------------
-    // Faz 10 — DUSMAN CANI x3.5 (TABAN KALIBRASYONU)
+    // Faz 12.1 — TABAN KALIBRASYONU YENIDEN OLCULDU: x3.5 -> **x1.1**
     //
-    // INFANTRY 75->260 · FAST 45->160 · SHIELDED 150->525
-    // ARMORED 220->770 · TANK 580->2030 · COMMAND_TANK 2600->9100
+    // INFANTRY 260->82 · FAST 160->50 · SHIELDED 525->165
+    // ARMORED 770->242 · TANK 2030->638 · COMMAND_TANK 9100->2860
+    // (hepsi Faz 10 oncesi taban tablonun 1.1 kati: 75/45/150/220/580/2600)
     //
-    // "ZORLUGU HP SISIREREK YUKSELTME" YASAGIYLA CELISMIYOR — ve bu ayrim
-    // onemli oldugu icin burada duruyor:
+    // NEDEN GERI ALINDI — CIHAZDA OLCULEN SEY
+    // ---------------------------------------
+    // Kullanici: *"level 1'de bile gelen adamlari olduremedim."* Dogru soylemis;
+    // bolum 1 SAYIYLA gecilemez durumdaydi ve L2..L8 de oyle:
     //
-    // LEVEL_DESIGN E'nin yasakladigi sey **bolumler arasi** artisi HP ile
-    // yapmaktir: 8. bolumu 7'den zor yapmak icin ayni dusmani sismanlatmak
-    // tembelliktir, cunku oyuncuya yeni bir problem vermez. O kural aynen
-    // gecerli ve kampanya egrisi hâlâ KOMPOZISYONLA yurutuluyor (bkz.
-    // WaveDefinitions: tanitim sirasi, kadans, zirh karisimi).
+    //   L1 baslangic Tedariki 80 = TAM BIR Gatling (60).
+    //   Harita 1'de bir Gatling'in menzili (150 ref-px) yolun 1784 ref-px'inin
+    //   yalnizca **442'sini** gorur. Piyade 65 ref-px/sn ile o pencereyi
+    //   6.8 sn'de gecer; kule 43.75 DPS ile toplam 298 hasar teslim eder.
+    //   Piyadenin cani ise **260**'ti. Yani tek kule tek piyadeyi ancak
+    //   pencerenin SONUNDA olduruyordu ve W1 alti piyadeyi 1.15 sn arayla
+    //   gonderiyordu: kapsama-farkindali simulasyonda W1'de **6 dusmanin 5'i
+    //   sizdi**, bolum W3'te 20 canin tamami bitmis oluyordu. Butun kadro
+    //   butcesi harcansa bile (4 kule Kd.1) bolum kaybediliyordu.
     //
-    // Buradaki sorun bambaska: **taban olcek yanlis kalibre edilmisti.** Kule
-    // DPS'i ile dusman cani arasinda ~7 katlik uyumsuzluk olculdu
-    // (docs/tools/difficulty_audit.py: bolum 7 arz/talep = 8.23). Bu bir zorluk
-    // egrisi karari degil, olcu birimi hatasi; TEK SEFERLIK ve TUM dusmanlara
-    // AYNI carpanla uygulanan bir duzeltme. Uniform oldugu icin:
+    // KOK SEBEP: x3.5'i onaylayan olcum aracinin kendisi yanlisti.
+    // `docs/tools/difficulty_audit.py` her kuleye **%100 doluluk** ve "ates
+    // suresi = spawn penceresi + TUM rotanin yurume suresi" veriyor, yani
+    // MENZIL KAPISI YOK. Motorda ise kule yalnizca yaricapinin ICINDEKI hedefe
+    // ates eder (GameEngine.findTargetEnemyForTower). Bolum 1'de denetim bir
+    // kuleye 33.7 sn atis suresi yaziyordu, gercek 6.8 sn: **5.0 kat** fazla
+    // kredi. "Bolum 7 arz/talep 8.23" teshisi bu sisirilmis kredinin uzerine
+    // kuruldu ve uzerine bir de atis araligi x2 (DPS yarilandi) bindi;
+    // 2 x 3.5 = 7 katlik toplam sikilastirmanin ~5 kati olcum hatasiydi.
+    //
+    // YENI OLCUM: kapsama-farkindali simulasyon (menzil kapisi + tek hedef +
+    // olculmus pad/rota geometrisi + bolum ici Tedarik dongusu). Meta yukseltme
+    // SIFIR, guclendirici YOK. Sonuc, taban carpani x1.1'de:
+    //   L1 dikkatli oyuncu 20/20 can (3 yildiz) · rastgele yerlestiren oyuncu
+    //   medyan 15/20 (2 yildiz), 200 tohumun %100'u gecti · hic kule kurmayan
+    //   KAYBEDER. L2..L8'in tamami dikkatli oyuncuyla gecilebilir.
+    // Ayni olcum x1.2'de L1'i 11/20'ye dusuruyor, x1.75'te bolum yine
+    // gecilemez oluyor; 1.1 bandin GUVENLI ucunda secildi.
+    //
+    // ATIS TEMPOSUNA DOKUNULMADI. Kullanici daha once "cok hizli ates
+    // ediyorlar" demisti; `fireRate` ve atis basina hasar AYNEN duruyor
+    // (bkz. TOWER_SPECS). Duzeltme tamamen bu tablodan yapildi.
+    //
+    // "ZORLUGU HP SISIREREK YUKSELTME" YASAGI (LEVEL_DESIGN E) IHLAL EDILMIYOR:
+    // yasak **bolumler arasi** artisi HP ile yapmaya dairdir. Bu carpan TUM
+    // dusmanlara AYNI oranla uygulanan bir OLCU BIRIMI duzeltmesidir, yani
     //   · dusmanlarin birbirine goreli tehdidi DEGISMEZ (AEHP siralamasi ayni),
     //   · kule uzmanlasmasi DEGISMEZ (oranlar korunur),
     //   · bolumler arasi egri DEGISMEZ (hepsi ayni carpanla olcekleniyor).
+    // Kampanya egrisi hâlâ KOMPOZISYONLA yurutuluyor (WaveDefinitions).
+    //
+    // EKONOMIYE ETKISI YOK: `rewardGold`, `startingSupply`, dalga ikramiyesi ve
+    // kule fiyatlari DEGISMEDI, dolayisiyla SPI tablosu (L1..L8 =
+    // 2.28/1.85/1.88/2.03/1.70/2.22/1.62/1.76) BIREBIR AYNI kalir.
     //
     // Zirh, hiz, odul ve boyut DEGISMEDI.
+    // Kilit: CampaignSolvabilityTest (kapsama-farkindali cozulebilirlik).
     // ------------------------------------------------------------------------
     // ========================================================================
     val ENEMY_SPECS: Map<EnemyType, EnemyStats> = mapOf(
         EnemyType.INFANTRY to EnemyStats(
             type = EnemyType.INFANTRY,
             name = "Infantry Squad",
-            maxHp = 260f,   // 75 x3.5 (kalibrasyon)
+            maxHp = 82f,    // 75 x1.1 (Faz 12.1 yeniden kalibrasyon; onceki 260 = x3.5)
             baseSpeed = 65f,
             armor = 0.0f,
             rewardGold = 4,   // 12 -> 4 (x1/3, ECONOMY_SPEC 9.2)
@@ -570,7 +783,7 @@ object GameConfig {
         EnemyType.FAST_SOLDIER to EnemyStats(
             type = EnemyType.FAST_SOLDIER,
             name = "Scout Runner",
-            maxHp = 160f,   // 45 x3.5 (asagi yuvarlandi)
+            maxHp = 50f,    // 45 x1.1 (yukari yuvarlandi; onceki 160)
             baseSpeed = 115f,
             armor = 0.0f,
             rewardGold = 5,   // 15 -> 5 (hiz primi korunuyor: piyadenin 1.25 kati)
@@ -596,7 +809,7 @@ object GameConfig {
         EnemyType.ARMORED_VEHICLE to EnemyStats(
             type = EnemyType.ARMORED_VEHICLE,
             name = "Armored Car",
-            maxHp = 770f,   // 220 x3.5
+            maxHp = 242f,   // 220 x1.1 (onceki 770)
             baseSpeed = 50f,
             armor = 0.78f, // kursun %22'sini gecirir -> Gatling'e karsi duvar
             rewardGold = 9,   // 28 -> 9 (piyadenin ~2.25 kati)
@@ -605,7 +818,7 @@ object GameConfig {
         EnemyType.TANK to EnemyStats(
             type = EnemyType.TANK,
             name = "Heavy Tank",
-            maxHp = 2030f,  // 580 x3.5
+            maxHp = 638f,   // 580 x1.1 (onceki 2030)
             baseSpeed = 32f,
             armor = 0.86f, // kursun %14 -> yalnizca patlama/delici ise yarar
             rewardGold = 20,  // 60 -> 20 (piyadenin 5 kati, oran birebir korundu)
@@ -619,7 +832,7 @@ object GameConfig {
         EnemyType.SHIELDED_TROOPER to EnemyStats(
             type = EnemyType.SHIELDED_TROOPER,
             name = "Shielded Trooper",
-            maxHp = 525f,   // 150 x3.5
+            maxHp = 165f,   // 150 x1.1 (onceki 525)
             baseSpeed = 58f,
             armor = 0.62f,             // kursun neredeyse ise yaramaz
             rewardGold = 7,            // 22 -> 7 (x1/3, asagi yuvarlandi)
@@ -629,7 +842,7 @@ object GameConfig {
         EnemyType.COMMAND_TANK to EnemyStats(
             type = EnemyType.COMMAND_TANK,
             name = "Command Tank",
-            maxHp = 9100f,  // 2600 x3.5
+            maxHp = 2860f,  // 2600 x1.1 (onceki 9100)
             baseSpeed = 30f,
             // Boss zirhi TANK'in USTUNDE kalmak zorunda (BalanceConsistencyTest),
             // tank 0.86'ya cikinca bu da 0.88'e cikti.
@@ -647,15 +860,25 @@ object GameConfig {
     // secme ekrani ve testler bunu okur.
     // ========================================================================
 
-    /** Harita uzerine binen tamamen KOZMETIK katman (DECISIONS: oynanisa sifir etki). */
-    enum class MapOverlay { NONE, NIGHT }
+    /**
+     * Harita uzerine binen tamamen KOZMETIK katman (DECISIONS: oynanisa sifir etki).
+     *
+     * `DUSK` — CAMPAIGN_55.md 3.4: olculen en zayif biyom gecisi `desert -> autumn`
+     * (ikisi de sicak/doygun). Act V'e autumn recolor'in USTUNE dusuk alfali sicak
+     * bir perde eklenir; mekanizma `NIGHT` ile birebir ayni, tek yeni enum degeri.
+     */
+    enum class MapOverlay { NONE, NIGHT, DUSK }
 
     /**
-     * Biyom varyanti (docs/BIOME_VARIANTS.md). Alan simdi TANIMLI ama recolor
-     * uygulamasi sonraki faza kaldi; `TEMPERATE` disindaki degerler su an yalnizca
-     * `overlay` ile birlikte niyet beyanidir.
+     * Biyom varyanti (docs/BIOME_VARIANTS.md). Perde (act) basina bir biyom:
+     * I temperate · II night · III winter · IV desert · V autumn.
+     *
+     * DIKKAT: bu enum yalnizca kampanya tablosunun NIYET beyanidir. Recolor
+     * uygulamasinin kendi enum'u `game.model.Biome`'dur (BiomeVariants.kt) ve
+     * `GameCanvas` cizim yolunda ONU okur; ikisi `BiomeCampaignTableTest` ile
+     * eslesir.
      */
-    enum class Biome { TEMPERATE, NIGHT, WINTER, DESERT }
+    enum class Biome { TEMPERATE, NIGHT, WINTER, DESERT, AUTUMN }
 
     /**
      * Bir kampanya bolumunun dalga DISI konfigurasyonu (LEVEL_DESIGN.md C.4).
@@ -663,10 +886,17 @@ object GameConfig {
      * @param mapId 1..11 — `LevelGeometry.ALL_MAPS` icindeki OLCULMUS geometri.
      * @param deploymentCost Bolumu acmak icin gereken Coin (meta para birimi).
      *   0 = bastan acik. GDD B.2 tablosu.
-     * @param disabledPadIds Act II krater kisiti. **DONDURULMUS** liste
-     *   (LEVEL_DESIGN.md F.4): calisma aninda algoritma KOSMAZ, cunku geometri
-     *   degisirse sessizce farkli bir bulmaca uretir ve oyuncunun ogrendigi bolum
-     *   bozulur. Uretim: docs/CAMPAIGN_INTEGRATION.md.
+     * @param disabledPadIds Bu bolumde GIZLENEN build pad'ler. Iki ayri sebep
+     *   ayni alani besler:
+     *   · **Act I** — [OUT_OF_RANGE_PADS]: pad, o bolumde kilidi acik kulelerin
+     *     en buyuk kademe-1 menzili icinde AKTIF rotaya erisemiyor. Kule kurulsa
+     *     hicbir seye ates edemezdi, yani secenek degil TUZAK.
+     *   · **Act II** — [FROZEN_DISABLED_PADS]: krater kisiti (LEVEL_DESIGN.md
+     *     F.3), menzil disi pad'ler dahil.
+     *   Her ikisi de **DONDURULMUS** listedir (LEVEL_DESIGN.md F.4): calisma
+     *   aninda algoritma KOSMAZ, cunku geometri degisirse sessizce farkli bir
+     *   bulmaca uretir ve oyuncunun ogrendigi bolum bozulur. Uretim:
+     *   docs/CAMPAIGN_INTEGRATION.md, olcum: docs/PAD_COVERAGE_REPORT.md.
      */
     data class LevelSpec(
         val levelId: Int,
@@ -744,17 +974,32 @@ object GameConfig {
     // AEHP olcumleri TABAN degerlerden hesaplanir; buradaki carpan olcume
     // girmez, yalnizca calisma aninda uygulanir.
     // ========================================================================
-    fun actHpMultiplier(act: Int): Float = when {
-        act <= 1 -> 1.0f
-        act == 2 -> 1.55f
-        else -> 1.55f + 0.45f * (act - 2)   // Act III+ (v1.1) icin hazir
-    }
+    // ------------------------------------------------------------------------
+    // CAMPAIGN_55.md K5 — CARPAN 1,55'TE DONDURULDU (5 perde icin)
+    //
+    // ESKI FORMUL: `act >= 3 -> 1.55 + 0.45 * (act - 2)`. 22 bolumluk kampanyada
+    // hic calismiyordu (act hep 1 veya 2 idi), ama kampanya 55 bolume cikinca
+    // Act III 2,00 · Act IV 2,45 · **Act V 2,90** uretecekti. Bu su demek:
+    // L55'te bir piyade 238 can tasir, L1'dekiyle GORSEL OLARAK BIREBIR AYNIDIR
+    // ve oyuncuya hicbir yerde soylenmez. LEVEL_DESIGN E.5'in kendi yasak knob
+    // listesi ("dusman HP'sine dokunmak") ve D'nin degismez kurali ("oyuncunun
+    // ogrenmedigi mekanik zorunlu basari kosulu olamaz") ayni anda ihlal olurdu.
+    //
+    // Ikinci, olculmus zarar: carpan L11 -> L12 arasindaki TASARLANAN nefesi
+    // (taban -%34) sahada +%1,8'e ceviriyordu. Ayni hata 55 bolumde DORT perde
+    // gecisinde tekrar edecekti; dondurmak nefesleri geri getirir.
+    //
+    // Perde III-V agirligi nereden geliyor? KOMPOZISYONDAN: taban AEHP Act II ->
+    // Act V arasinda ~1,9 kat artiyor ve artisin tamami dusman KARISIMINDAN
+    // geliyor (govde basina ortalama AEHP yukseliyor). Carpan gerekmiyor.
+    //
+    // Gorunurluk borcu (bu gorevin kapsaminda DEGIL, sanat/UI ajanina devredildi):
+    // 1,55 carpani "Veteran birlik" kimligiyle gorunur kilinacak — Act II+
+    // dusmanlarina celik tonu tint + "Veteran ..." adi + L12 brifing satiri.
+    // ------------------------------------------------------------------------
+    fun actHpMultiplier(act: Int): Float = if (act <= 1) 1.0f else 1.55f
 
-    fun actRewardMultiplier(act: Int): Float = when {
-        act <= 1 -> 1.0f
-        act == 2 -> 1.30f
-        else -> 1.30f + 0.20f * (act - 2)
-    }
+    fun actRewardMultiplier(act: Int): Float = if (act <= 1) 1.0f else 1.30f
 
 
     /**
@@ -798,29 +1043,79 @@ object GameConfig {
     fun usesAlternateRoutes(levelId: Int): Boolean = levelId >= ALT_ROUTE_FIRST_LEVEL
 
     /**
+     * MENZIL DISI PAD KISITI (Act I). Bir pad, o bolumde KILIDI ACIK kulelerin
+     * en buyuk kademe-1 menzili icinde AKTIF rotaya erisemiyorsa oyuncuya
+     * gosterilmez: aksi halde kurulan kule hicbir seye ates edemez ve tedarik
+     * bosa gider. Esik bolume gore degisir (MACHINE_GUN 150 -> CANNON 175 ->
+     * SLOW 270). Olcum: docs/PAD_COVERAGE_REPORT.md tablo 2.
+     *
+     * NEDEN GEREKLI (cihaz geri bildirimi "level 1'de bile olduremedim"):
+     * bolum 1'de 10 pad'in 5'i (1, 3, 5, 7, 9) aktif rotaya 194-444 ref-px
+     * uzakta, Gatling menzili ise 150. Baslangic tedariki 80 = TEK kule, yani
+     * bilgisiz oyuncu %50 ihtimalle 60 tedarigi hicbir seye ates etmeyen bir
+     * kuleye yatiriyordu. Bu, ogretilmemis bir bilginin zorunlu basari kosulu
+     * yapilmasidir.
+     *
+     * NEDEN "AKTIF ROTA": bolum < [ALT_ROUTE_FIRST_LEVEL] iken ikinci kol
+     * motorda HIC kullanilmaz (GameEngine: `routes = listOf(allRoutes.first())`).
+     * Iki kolun minimumuna bakmak pad'i olmadigi kadar iyi gosterir — hatanin
+     * 22 bolum boyunca testten kacmasinin sebebi tam olarak buydu.
+     *
+     * NEDEN "kademe 1": oyuncu kuleyi once KURAR, sonra yukseltir. Kademe-2
+     * menziliyle olcmek erisilemeyen bir gelecegi bugunun gecerliligi sayar.
+     *
+     * DIKKAT: `CAMPAIGN` bunu initializer'inda okuyor — CAMPAIGN'DEN ONCE
+     * durmak ZORUNDA.
+     */
+    private val OUT_OF_RANGE_PADS: Map<Int, List<Int>> = mapOf(
+        1 to listOf(1, 3, 5, 7, 9),         // harita 01 · esik 150 · 10 -> 5 pad
+        2 to listOf(3, 4, 7, 8, 10, 12),    // harita 02 · esik 150 · 13 -> 7 pad
+        3 to listOf(6, 10),                 // harita 03 · esik 175 · 12 -> 10 pad
+        4 to listOf(1, 4, 6, 7, 9, 11, 12), // harita 04 · esik 175 · 16 -> 9 pad
+        5 to listOf(3),                     // harita 05 · esik 270 · 12 -> 11 pad
+        6 to listOf(4, 10),                 // harita 06 · esik 270 · 10 -> 8 pad
+        7 to listOf(3, 6),                  // harita 07 · esik 270 · 11 -> 9 pad
+        8 to listOf(6, 8, 11),              // harita 08 · esik 270 · 11 -> 8 pad
+        9 to listOf(5),                     // harita 09 · esik 270 · 12 -> 11 pad
+        10 to listOf(8, 17)                 // harita 10 · esik 270 · 17 -> 15 pad
+        // 11: olu pad yok (ikinci kol acik, esik 270)
+    )
+
+    /**
      * Act II krater kisiti — LEVEL_DESIGN.md F.3 algoritmasi geometri uzerinde
      * BIR KEZ kosturuldu ve F.4 uyarinca donduruldu. Uretici betik ve dogrulama
      * tablosu: docs/CAMPAIGN_INTEGRATION.md.
      *
      * Hepsi D1 (%25-40 devre disi), D2 (kalan >= max(6, 0.60x toplam)),
-     * D3 (her dolu bolgede >=1), D4 (900 ref-px'lik kapsamasiz yol parcasi yok),
-     * D6 (Z5'te >=2, Z5 toplami >=2 ise) kisitlarini SAGLIYOR.
+     * D3 (her dolu bolgede >=1 CANLI pad), D4 (900 ref-px'lik kapsamasiz yol
+     * parcasi yok), D6 (Z5'te >=2, Z5 toplami >=2 ise) kisitlarini SAGLIYOR.
+     *
+     * DUZELTME (docs/PAD_COVERAGE_REPORT.md 5.2): ilk donmus liste, uretilirken
+     * `min(birincil, ikinci kol)` mesafesi kullanildigi icin 9 MENZIL DISI pad'i
+     * acik birakmis ve yerine CALISAN pad'leri kapatmisti. Liste AYNI BOYUTTA
+     * yenilendi (D1/D2 otomatik korunur) ve artik her menzil disi pad'i iceriyor.
+     * Degisen bolumler: 13, 14, 15, 17, 18, 20.
+     *
+     * BILINEN ISTISNA: harita 8'in Z5 bolgesi TEK pad'den (id 8, aktif rotaya
+     * 316 ref-px) ibaret ve o pad her bolumde menzil disi. Gizlenmesi Z5'i
+     * tamamen bosaltir; pad'i sanat uzerinde tasimak bir TASARIM isidir
+     * (PAD_COVERAGE_REPORT 8. bolum) ve bu degisiklige dahil DEGILDIR.
      *
      * DIKKAT: `CAMPAIGN` bunu initializer'inda okuyor. Kotlin object govdesi
      * yukaridan asagi kosar, bu yuzden burasi CAMPAIGN'DEN ONCE durmak ZORUNDA.
      */
     private val FROZEN_DISABLED_PADS: Map<Int, List<Int>> = mapOf(
-        12 to listOf(1, 4, 5),            // harita 11 · 10 pad -> 7 kalir (%30)
-        13 to listOf(3, 6, 9, 12, 15),    // harita 10 · 17 pad -> 12 kalir (%29)
-        14 to listOf(1, 3, 4),            // harita 09 · 12 pad ->  9 kalir (%25)
-        15 to listOf(1, 4, 7, 10),        // harita 08 · 11 pad ->  7 kalir (%36)
-        16 to listOf(3, 6, 9),            // harita 07 · 11 pad ->  8 kalir (%27)
-        17 to listOf(2, 5, 8),            // harita 06 · 10 pad ->  7 kalir (%30)
-        18 to listOf(1, 4, 7, 10),        // harita 05 · 12 pad ->  8 kalir (%33)
-        19 to listOf(3, 6, 9, 12, 15),    // harita 04 · 16 pad -> 11 kalir (%31)
-        20 to listOf(2, 5, 8, 11),        // harita 03 · 12 pad ->  8 kalir (%33)
-        21 to listOf(1, 4, 7, 10),        // harita 02 · 13 pad ->  9 kalir (%31)
-        22 to listOf(3, 5, 9)             // harita 01 · 10 pad ->  7 kalir (%30)
+        12 to listOf(1, 4, 5),            // harita 11 · 10 -> 7 (%30) · degismedi
+        13 to listOf(6, 8, 9, 15, 17),    // harita 10 · 17 -> 12 (%29) · +8,+17 olu; -3,-12
+        14 to listOf(1, 4, 5),            // harita 09 · 12 ->  9 (%25) · +5 olu; -3
+        15 to listOf(4, 6, 8, 11),        // harita 08 · 11 ->  7 (%36) · +6,+8,+11 olu; -1,-7,-10
+        16 to listOf(3, 6, 9),            // harita 07 · 11 ->  8 (%27) · degismedi (3,6 zaten olu)
+        17 to listOf(4, 8, 10),           // harita 06 · 10 ->  7 (%30) · +4,+10 olu; -2,-5
+        18 to listOf(1, 3, 4, 7),         // harita 05 · 12 ->  8 (%33) · +3 olu; -10
+        19 to listOf(3, 6, 9, 12, 15),    // harita 04 · 16 -> 11 (%31) · degismedi
+        20 to listOf(2, 8, 10, 11),       // harita 03 · 12 ->  8 (%33) · +10 olu; -5
+        21 to listOf(1, 4, 7, 10),        // harita 02 · 13 ->  9 (%31) · degismedi
+        22 to listOf(3, 5, 9)             // harita 01 · 10 ->  7 (%30) · degismedi
     )
 
     /**
@@ -837,20 +1132,318 @@ object GameConfig {
      * `SupplyBudgetModel.startingSupply(level)` ile ayni olmasi
      * BalanceConsistencyTest ve SupplyBudgetTest'te KILITLI.
      */
-    private val EARLY_STARTING_SUPPLY = listOf(80, 90, 110, 120, 140, 150)
+    /**
+     * OGRETICI SERMAYE — yalnizca L1 ve L2.
+     *
+     * Bu iki bolumde kisitin KENDISI derstir: "tek silahini nereye koyacaksin"
+     * (L1 = 80 = tam bir Gatling) ve "ikinci kuleyi KAZAN" (L2 = 90).
+     * L3'ten itibaren sermaye [startingSupplyFor]in kadro kuralindan gelir;
+     * eski 110/120/140/150 satirlari bolumler 8 dalgadan 5'e inince gelirin
+     * yarisini goturdu ve SPI'yi bandin altina dusurdu (L4 1,33 · L5 1,31).
+     */
+    private val EARLY_STARTING_SUPPLY = listOf(80, 90)
+
+    /**
+     * ------------------------------------------------------------------------
+     * TASARLANAN KADRO BUYUKLUGU `R` — bolumde elde olmasi BEKLENEN kule sayisi
+     * ------------------------------------------------------------------------
+     * CAMPAIGN_55.md 9. tablosunun `R` kolonu. Ekonomi katmanindaki
+     * `SupplyBudgetModel.DESIGNED_ROSTER_SIZE` ile BIREBIR ayni olmasi
+     * `BalanceConsistencyTest` icinde kilitlidir; iki katman ayni sayiyi
+     * bagimsiz olarak turetir, bu yuzden ikisi de duruyor.
+     */
+    private val DESIGNED_ROSTER_SIZE: IntArray = intArrayOf(
+        // L1..L22 YENIDEN OLCULDU (bolum 5-7 dalgaya inince). Kadro artik hem
+        // KULE SAYISI hem KULE PAHALILIGI ile buyuyor: L7'de Fuze acilinca
+        // kadro 4'e cikar (kademe-2 maliyeti 495 -> 725), L17'de 5'e.
+        /* L1..L11  */ 2, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4,
+        /* L12..L22 */ 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5,
+        /* L23..L33 */ 5, 5, 5, 6, 5, 6, 6, 6, 5, 6, 6,
+        /* L34..L44 */ 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 7,
+        /* L45..L55 */ 6, 6, 6, 7, 6, 7, 7, 7, 6, 7, 7
+    )
+
+    /** Kule acilis sirasi — `SupplyBudgetModel.designedRoster` ile AYNI kural. */
+    private fun unlockOrderAt(levelId: Int): List<TowerType> =
+        TowerType.values()
+            .filter { TOWER_SPECS.getValue(it).unlockedAtLevel <= levelId }
+            .sortedWith(
+                compareBy(
+                    { TOWER_SPECS.getValue(it).unlockedAtLevel },
+                    { TOWER_SPECS.getValue(it).buildCost },
+                    { it.name }
+                )
+            )
+
+    /**
+     * **KAPSAMA KITLIGI SERMAYE CARPANI — 1,5.**
+     *
+     * Iki farkli sebep AYNI oynanis sorununu uretir: bir pad'in gordugu yol
+     * payinin yetmemesi.
+     *
+     *  · **Catallanan harita** (1, 2, 4, 11): ikinci kol
+     *    `ALT_ROUTE_FIRST_LEVEL`den itibaren devrededir ve motor her dusmani
+     *    seed'li olarak iki koldan birine atar. Oyuncu ayni tehdide karsi IKI
+     *    cephe kurar. LEVEL_DESIGN §G.4 bunu kampanyanin "en kritik acik
+     *    maddesi" olarak isaretlemisti.
+     *  · **Dar tahta** ([TIGHT_BOARD_SPARE_PADS]): acik pad sayisi, tasarlanan
+     *    kadronun ancak bir fazlasi kadarsa oyuncunun YERLESTIRME secenegi
+     *    yoktur; yanlis pad'i secmenin telafisi de yoktur.
+     *
+     * OLCUM (kapsama-farkindali simulasyon, `CampaignSolvabilityAllLevelsTest`):
+     * sermaye kurali kadro kademe-1 maliyetine yukseltildiginde gecilemeyen
+     * bolum sayisi 38'den 11'e dustu ve **kalan 11'in 11'i de catallanan
+     * haritalardaydi** (L29/31/32/33/39/41/42/43/49/51/53 -> harita 4/2/1/11).
+     * Carpan 1,5 uygulandiginda 11 -> 2. Dar tahta kolu ise "yalnizca TEK bir
+     * oynanis bicimiyle gecilebilen bolum" olcumunden geldi (L33/L46/L53).
+     */
+    private const val COVERAGE_SCARCITY_SUPPLY_FACTOR = 1.5f
+
+    /**
+     * Tahta "dar" sayilir: acik pad <= kadro + bu kadar yedek.
+     *
+     * K-5 zaten `acik >= R + 2` istiyor; 3, o tabanin hemen ustudur, yani
+     * kural yalnizca **bir tek yedek pad'i olan** tahtalara uygulanir.
+     */
+    private const val TIGHT_BOARD_SPARE_PADS = 3
+
+    /**
+     * ------------------------------------------------------------------------
+     * BOLUM BASLANGIC TEDARIKI — **TEK KURAL**
+     * ------------------------------------------------------------------------
+     *  · L1..L6  : yayinlanmis ogretici rampasi (80/90/110/120/140/150). Burada
+     *    kisitin KENDISI ders: "tek silahini nereye koyacaksin".
+     *  · L7+     : **tasarlanan kadronun KADEME-1 maliyeti** — yani oyuncu
+     *    bolume kadrosunu KURABILECEK sermaye ile girer, yukseltmeleri kazanir.
+     *  · Kapsamanin KIT oldugu bolumde (catallanan harita ya da dar tahta)
+     *    [COVERAGE_SCARCITY_SUPPLY_FACTOR] ile carpilir.
+     *
+     * NEDEN DEGISTI (olculdu, tahmin degil): eski tabloda L7..L22 duz 150,
+     * Act III/IV/V 220/270/320 idi. Ayni anda kadro 5-7 kuleye ve bolum 5-7
+     * dalgaya inmisti — yani oyuncunun kadrosunu kurmak icin ne parasi ne
+     * dalgasi vardi. Simulasyonun dalga izi bunu tek satirda gosteriyordu:
+     *
+     *   L35  W1[govde=40 sizinti=20 can=0 kule=2 tedarik=...]
+     *
+     * 270 Tedarik IKI kule alir; acilis dalgasi 40 govde gonderir; 20 canin
+     * tamami ILK DALGADA biter. Bu bir zorluk degil, bir aritmetik hatasidir ve
+     * cihazda "level 1'de bile olduremedim" sikayetinin gec-oyun karsiligidir.
+     *
+     * SPI'YE ETKISI KONTROLLU: uretilmis bolumlerde hedef oldurme geliri
+     * `2 x I(L) - baslangic - 18 x (N-1)` oldugu icin sermaye artisi dogrudan
+     * dalga agirligindan DUSULUR — SPI 2,00'de kalir, bolum hafifler.
+     */
+    fun startingSupplyFor(levelId: Int): Int {
+        if (levelId <= EARLY_STARTING_SUPPLY.size) {
+            return EARLY_STARTING_SUPPLY.getOrElse(levelId - 1) { INITIAL_GOLD }
+        }
+        val order = unlockOrderAt(levelId)
+        val roster = DESIGNED_ROSTER_SIZE.getOrElse(levelId - 1) { 5 }
+        val base = (0 until roster).sumOf { TOWER_SPECS.getValue(order[it % order.size]).buildCost }
+        return if (hasScarceCoverage(levelId)) {
+            Math.round(base * COVERAGE_SCARCITY_SUPPLY_FACTOR)
+        } else {
+            base
+        }
+    }
+
+    /** Bu bolumde gorunur (uzerine kule kurulabilen) pad sayisi. */
+    fun openPadCount(levelId: Int): Int {
+        val mapId = mapIdForLevel(levelId)
+        val disabled = disabledPadIdsFor(levelId).toSet()
+        return LevelData.forMapId(mapId).buildSpots.count { it.id !in disabled }
+    }
+
+    /**
+     * Kapsama KIT mi? Iki sebep de ayni sonucu verir (bkz.
+     * [COVERAGE_SCARCITY_SUPPLY_FACTOR]): iki kollu harita ya da dar tahta.
+     */
+    fun hasScarceCoverage(levelId: Int): Boolean {
+        val forked = usesAlternateRoutes(levelId) &&
+            LevelData.routesForMapId(mapIdForLevel(levelId)).size > 1
+        if (forked) return true
+        val roster = DESIGNED_ROSTER_SIZE.getOrElse(levelId - 1) { 5 }
+        return openPadCount(levelId) <= roster + TIGHT_BOARD_SPARE_PADS
+    }
+
+    /**
+     * Bu bolumde GIZLENEN pad id'leri. [CAMPAIGN] insa edilirken de kullanilan
+     * tek kaynak; ayri bir fonksiyon olmasinin sebebi [startingSupplyFor] —
+     * sermaye kurali tahtanin darligini bilmek zorunda ama `levelSpec()` ile
+     * soramaz (CAMPAIGN daha kuruluyor).
+     */
+    private fun disabledPadIdsFor(levelId: Int): List<Int> = when {
+        levelId <= 11 -> OUT_OF_RANGE_PADS[levelId] ?: emptyList()
+        levelId <= 22 -> FROZEN_DISABLED_PADS[levelId] ?: emptyList()
+        else -> LATE_ACT_DISABLED_PADS[levelId] ?: emptyList()
+    }
+
+    /**
+     * Bolumun harita id'si — [CAMPAIGN] insa edilirken de KULLANILAN tek kaynak.
+     *
+     * Ayri bir fonksiyon olmasinin sebebi [startingSupplyFor]: sermaye kurali
+     * haritanin CATALLANIP catallanmadigini bilmek zorunda, ama o soruyu
+     * `levelSpec()` ile sormak imkansiz — `CAMPAIGN` daha kurulurken cagriliyor.
+     */
+    private fun mapIdForLevel(levelId: Int): Int = when {
+        levelId <= 11 -> levelId
+        levelId <= 22 -> 11 - (levelId - 12)
+        else -> {
+            val act = (levelId - 1) / 11 + 1
+            LATE_ACT_MAP_ORDER.getValue(act)[(levelId - 1) % 11]
+        }
+    }
+
+    // ========================================================================
+    // CAMPAIGN_55.md — PERDE III/IV/V (bolum 23..55)
+    // ========================================================================
+
+    /**
+     * PERDE ICI HARITA SIRASI (CAMPAIGN_55.md K4 / 3.2).
+     *
+     * Act II'nin ters sirasi (11..1), her perdede **bir slot kaydirilarak**:
+     *   Act III (rot 1): 10 9 8 7 6 5 4 3 2 1 11
+     *   Act IV  (rot 2):  9 8 7 6 5 4 3 2 1 11 10
+     *   Act V   (rot 3):  8 7 6 5 4 3 2 1 11 10 9
+     *
+     * Sonuc: L23'ten sonra olculen MINIMUM harita tekrar araligi tam **10 bolum**
+     * (teorik maksimum 11) ve perde finalleri DORT FARKLI haritaya duser
+     * (L22 harita 01 · L33 harita 11 · L44 harita 10 · L55 harita 09).
+     *
+     * HARITA ATAMASININ **TEK SAHIBI** BU TABLODUR
+     * (`GameEngine.loadLevel` -> `LevelSpec.mapId`, cizimde
+     * `GameCanvas` -> `gameEngine.activeMapId`).
+     *
+     * `BiomeVariants` bir zamanlar `baseMapIdFor` ile PARALEL bir harita
+     * tablosu tutuyordu (Act III+ icin kaydirmasiz 11..1) ve iki tablo ayni
+     * soruya farkli cevap veriyordu. Celiski cizime yansimiyordu ama ileride
+     * birinin yanlisini kullanacak bir tuzakti; `baseMapIdFor` KALDIRILDI ve
+     * `BiomeVariants` artik yalnizca `levelId -> Biome` uretir. Kaydirmali
+     * siranin bedeli (minimum tekrar araligi 11 yerine 10) ve karsiligi
+     * (perde finalleri dort AYRI haritada) `BiomeCampaignTableTest`
+     * icinde olculerek kilitlidir.
+     */
+    private val LATE_ACT_MAP_ORDER: Map<Int, List<Int>> = mapOf(
+        3 to listOf(10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 11),
+        4 to listOf(9, 8, 7, 6, 5, 4, 3, 2, 1, 11, 10),
+        5 to listOf(8, 7, 6, 5, 4, 3, 2, 1, 11, 10, 9)
+    )
+
+    /**
+     * PERDE BASINA BASLANGIC TEDARIKI (CAMPAIGN_55.md 8.2).
+     *
+     * Bu bir zorluk kolu DEGIL, bolum bolme kararinin zorunlu sonucudur: 6-7
+     * dalgalik bir bolumde oldurme geliri kadroyu kurmaya yetismez, ya bolum
+     * uzar (K-2'ye aykiri) ya sermaye artar. Meta yukseltme bunun USTUNE biner
+     * (`levelSpec.startingSupply + (meta - 150)`), maks rank oyuncu Act V'e 470
+     * ile girer ve SPI 2,00 -> 2,29 olur: hâlâ bandin (1,5-2,6) icinde.
+     */
+    // KALDIRILDI: `LATE_ACT_STARTING_SUPPLY = {3: 220, 4: 270, 5: 320}`.
+    // Perde basina duz bir sayi, bolum 5-7 dalgaya inince yetmedi: 270 Tedarik
+    // IKI kule alirken acilis dalgasi 40 govde gonderiyordu ve 20 canin tamami
+    // ILK dalgada bitiyordu (olcum: CampaignSolvabilityAllLevelsTest dalga izi).
+    // Sermaye artik perdeden degil KADRODAN turer — bkz. [startingSupplyFor].
+
+    /**
+     * PERDE III-V KRATER / OLU PAD LISTESI — bolum -> gizlenen pad id'leri.
+     *
+     * Iki kural birden:
+     *  · **K-6 (zorunlu):** listede o haritanin OLU pad'lerinin hepsi bulunmak
+     *    ZORUNDA. Olu pad = tum kuleler acikken (esik 270, ikinci kol devrede)
+     *    aktif rotaya erisemeyen pad; uzerine kurulan kule hicbir seye ates
+     *    edemez, yani secenek degil TUZAK. Olculen olu kume
+     *    (docs/PAD_COVERAGE_REPORT.md 2): harita 03 {10} · 05 {3} · 06 {4,10} ·
+     *    07 {3,6} · 08 {6,8,11} · 09 {5} · 10 {8,17}; harita 01/02/04/11'de olu
+     *    pad YOK. Toplam 134 pad'in 12'si kalici olu.
+     *  · **Krater (tasarim):** kalan gizlemeler CALISAN pad'leri bilerek kapatir
+     *    ve tahtayi her geciste farkli bir bulmacaya cevirir (CAMPAIGN_55.md 6.1
+     *    eksen 3). Kalan acik pad sayisi 9. bolumdeki `acik` kolonuyla BIREBIR.
+     *
+     * Liste DONDURULMUSTUR (LEVEL_DESIGN F.4): calisma aninda algoritma kosmaz,
+     * cunku geometri degisirse sessizce farkli bir bulmaca uretir. Dogrulama
+     * uc testte: `PadReachabilityPerLevelTest` (gorunur her pad rotaya erisiyor
+     * mu), `CampaignTableTest` (acik pad sayisi = 9. bolum tablosu, oran <= %42),
+     * `LateActPadCoverageTest` (900 ref-px'den uzun kapsamasiz yol parcasi yok).
+     *
+     * DIKKAT: `CAMPAIGN` bunu initializer'inda okuyor — CAMPAIGN'DEN ONCE
+     * durmak ZORUNDA.
+     */
+    private val LATE_ACT_DISABLED_PADS: Map<Int, List<Int>> = mapOf(
+        // ---- Act III (kis) ----
+        23 to listOf(4, 8, 11, 14, 17),   // harita 10 · 17 -> 12 (%29) · olu 8,17
+        24 to listOf(2, 5, 9),            // harita 09 · 12 ->  9 (%25) · olu 5
+        25 to listOf(6, 8, 11),           // harita 08 · 11 ->  8 (%27) · olu 6,8,11
+        26 to listOf(3, 6, 10),           // harita 07 · 11 ->  8 (%27) · olu 3,6
+        27 to listOf(2, 4, 10),           // harita 06 · 10 ->  7 (%30) · olu 4,10
+        28 to listOf(3, 6, 9),            // harita 05 · 12 ->  9 (%25) · olu 3
+        29 to listOf(2, 7, 10, 14),       // harita 04 · 16 -> 12 (%25) · olu yok
+        30 to listOf(4, 7, 10),           // harita 03 · 12 ->  9 (%25) · olu 10
+        31 to listOf(2, 6, 9, 12),        // harita 02 · 13 ->  9 (%31) · olu yok
+        32 to listOf(4, 8),               // harita 01 · 10 ->  8 (%20) · olu yok
+        // Harita 11'de OLU pad yok, yani buradaki her gizleme saf KRATER
+        // karari. L33 iki gizlemeyle (8 acik pad) simulasyonda gecilemiyordu:
+        // perde finali + boss + IKI KOLLU harita ucu bir arada, ve 8 pad'in
+        // kapsamasi iki kola bolununce yetmiyor. Ayni haritanin catallanan
+        // diger geciseleri L43 (8 pad) ve L53 (9 pad) boss'suz oldugu icin
+        // geciyor. Kraterlerden biri acildi: 9 acik pad (%10), K-5 (acik >= R+2
+        // = 8) hâlâ saglaniyor.
+        33 to listOf(7),                  // harita 11 · 10 ->  9 (%10) · olu yok
+        // ---- Act IV (col) ----
+        34 to listOf(5, 8),               // harita 09 · 12 -> 10 (%17) · olu 5
+        35 to listOf(6, 8, 11),           // harita 08 · 11 ->  8 (%27) · olu 6,8,11 (zorunlu kume)
+        36 to listOf(3, 6),               // harita 07 · 11 ->  9 (%18) · olu 3,6 (zorunlu kume)
+        37 to listOf(4, 10),              // harita 06 · 10 ->  8 (%20) · olu 4,10 (zorunlu kume)
+        38 to listOf(3, 11),              // harita 05 · 12 -> 10 (%17) · olu 3
+        39 to listOf(5, 8, 13),           // harita 04 · 16 -> 13 (%19) · olu yok
+        40 to listOf(2, 10),              // harita 03 · 12 -> 10 (%17) · olu 10
+        41 to listOf(3, 8, 11),           // harita 02 · 13 -> 10 (%23) · olu yok
+        42 to listOf(2, 6),               // harita 01 · 10 ->  8 (%20) · olu yok
+        43 to listOf(2, 9),               // harita 11 · 10 ->  8 (%20) · olu yok
+        44 to listOf(2, 8, 13, 17),       // harita 10 · 17 -> 13 (%24) · olu 8,17
+        // ---- Act V (sonbahar) ----
+        45 to listOf(6, 8, 11),           // harita 08 · 11 ->  8 (%27) · olu 6,8,11 (zorunlu kume)
+        46 to listOf(3, 6),               // harita 07 · 11 ->  9 (%18) · olu 3,6 (zorunlu kume)
+        47 to listOf(4, 10),              // harita 06 · 10 ->  8 (%20) · olu 4,10 (zorunlu kume)
+        48 to listOf(3),                  // harita 05 · 12 -> 11 ( %8) · olu 3 (zorunlu kume)
+        49 to listOf(4, 11),              // harita 04 · 16 -> 14 (%13) · olu yok
+        50 to listOf(10),                 // harita 03 · 12 -> 11 ( %8) · olu 10 (zorunlu kume)
+        51 to listOf(5, 10),              // harita 02 · 13 -> 11 (%15) · olu yok
+        52 to listOf(7),                  // harita 01 · 10 ->  9 (%10) · olu yok
+        53 to listOf(6),                  // harita 11 · 10 ->  9 (%10) · olu yok
+        54 to listOf(8, 17),              // harita 10 · 17 -> 15 (%12) · olu 8,17 (zorunlu kume)
+        55 to listOf(5)                   // harita 09 · 12 -> 11 ( %8) · olu 5 (zorunlu kume)
+    )
+
+    /**
+     * KONUSLANMA BEDELI D(L), L >= 23 — **`350 + 15 x (L - 22)`**.
+     *
+     * ESKI uzanti `350 + 40(L-22)` idi ve 55 bolumde KIRILIYORDU: GDD C.3 kurali
+     * "bir bolumun odulu, bir sonrakinin kilidinin en az 2,5 kati" iken
+     * L55 kilidi 1.670, L54 odulu 1.730 -> oran **1,04**. Yeni formulde
+     * L33 = 515 · L44 = 680 · L55 = 845, oran L54 -> L55 = 1730/845 = **2,05**.
+     *
+     * En kotu durum (hepsi 1 yildiz · gorev yok · reklam yok · tekrar yok):
+     * toplam kilit 23.105, toplam 1* odul 52.250, kampanya sonu bakiye 29.145,
+     * minimum guvenlik payi 12,9x, negatif bakiye YOK.
+     * `EconomySimulationTest.aOneStarRunNeverGoesBrokeAcrossFiftyFiveLevels` kanit.
+     */
+    private fun lateActDeploymentCost(levelId: Int): Int = 350 + 15 * (levelId - 22)
 
     /** Bolum no -> konfigurasyon. Sira LEVEL_DESIGN.md B tablosu ile birebir. */
     val CAMPAIGN: List<LevelSpec> = buildList {
-        // ---- ACT I: harita 01 -> 11, kisitsiz pad, gunduz -------------------
+        // ---- ACT I: harita 01 -> 11, MENZIL DISI pad gizli, gunduz ----------
+        // Act I'de krater kisiti YOK; kapatilan tek sey uzerine kurulan kulenin
+        // hicbir seye ates edemeyecegi pad'lerdir (bkz. OUT_OF_RANGE_PADS).
         val actIDeploymentCost = listOf(0, 0, 0, 0, 0, 0, 100, 110, 120, 130, 140)
         for (lv in 1..11) {
             add(
                 LevelSpec(
                     levelId = lv,
-                    mapId = lv,
+                    mapId = mapIdForLevel(lv),
                     act = 1,
                     deploymentCost = actIDeploymentCost[lv - 1],
-                    startingSupply = EARLY_STARTING_SUPPLY.getOrElse(lv - 1) { INITIAL_GOLD }
+                    startingSupply = startingSupplyFor(lv),
+                    disabledPadIds = OUT_OF_RANGE_PADS[lv] ?: emptyList()
                 )
             )
         }
@@ -863,18 +1456,56 @@ object GameConfig {
             add(
                 LevelSpec(
                     levelId = lv,
-                    mapId = 11 - i,
+                    mapId = mapIdForLevel(lv),
                     act = 2,
                     deploymentCost = actIIDeploymentCost[i],
+                    startingSupply = startingSupplyFor(lv),
                     disabledPadIds = FROZEN_DISABLED_PADS[lv] ?: emptyList(),
                     overlay = MapOverlay.NIGHT,
                     biome = Biome.NIGHT
                 )
             )
         }
+        // ---- ACT III/IV/V: 5 perde x 11 bolum = 55 (CAMPAIGN_55.md K1) -------
+        // Her perde TEK biyom, her haritayi TAM BIR KEZ. Harita sirasi
+        // [LATE_ACT_MAP_ORDER], sermaye [startingSupplyFor], pad kisiti
+        // [LATE_ACT_DISABLED_PADS], kilit [lateActDeploymentCost].
+        for (act in 3..5) {
+            val order = LATE_ACT_MAP_ORDER.getValue(act)
+            val biome = when (act) {
+                3 -> Biome.WINTER
+                4 -> Biome.DESERT
+                else -> Biome.AUTUMN
+            }
+            // Perde V'e autumn recolor'in USTUNE alacakaranlik perdesi biner:
+            // desert -> autumn olculen en zayif gorsel gecis (CAMPAIGN_55.md 3.4).
+            val overlay = if (act == 5) MapOverlay.DUSK else MapOverlay.NONE
+            for (i in 0..10) {
+                val lv = 11 * (act - 1) + 1 + i
+                add(
+                    LevelSpec(
+                        levelId = lv,
+                        mapId = order[i],
+                        act = act,
+                        deploymentCost = lateActDeploymentCost(lv),
+                        startingSupply = startingSupplyFor(lv),
+                        disabledPadIds = LATE_ACT_DISABLED_PADS[lv] ?: emptyList(),
+                        overlay = overlay,
+                        biome = biome
+                    )
+                )
+            }
+        }
     }
 
-    const val CAMPAIGN_LEVEL_COUNT = 22
+    /**
+     * 5 perde x 11 bolum (CAMPAIGN_55.md K1). 22 -> 55.
+     *
+     * `EconomyConfig.CAMPAIGN_LEVELS` ve `WaveDefinitions.CAMPAIGN_LEVEL_COUNT`
+     * ile ayni olmasi `EconomyGameConfigContractTest` / `WaveDefinitionsDataTest`
+     * icinde kilitli.
+     */
+    const val CAMPAIGN_LEVEL_COUNT = 55
 
     fun levelSpec(levelId: Int): LevelSpec =
         CAMPAIGN.firstOrNull { it.levelId == levelId } ?: CAMPAIGN.first()

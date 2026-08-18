@@ -30,26 +30,62 @@ object EconomyConfig {
     // Kampanya (GDD B.2)
     // =================================================================================
 
-    /** v1.0 kampanyasi 22 bolum. `GameConfig.CAMPAIGN_LEVEL_COUNT` ile ayni olmali. */
-    const val CAMPAIGN_LEVELS: Int = 22
+    /**
+     * Kampanya **55 bolum** (CAMPAIGN_55.md K1: 5 perde x 11 bolum).
+     * `GameConfig.CAMPAIGN_LEVEL_COUNT` ile ayni olmali.
+     */
+    const val CAMPAIGN_LEVELS: Int = 55
+
+    /** Yayinlanmis, elle kalibre edilmis ilk perde ciftinin son bolumu. */
+    const val HANDWRITTEN_CAMPAIGN_LEVELS: Int = 22
 
     /** GDD C.1 kural 1 — bolum 1..6 tamamen bedava. Ilk ucretli bolum 7. */
     const val FIRST_PAID_LEVEL: Int = 7
 
+    /** L23'ten itibaren kilit formulunun tabani ve adimi: `350 + 15 x (L - 22)`. */
+    const val LATE_LOCK_BASE: Int = 350
+    const val LATE_LOCK_STEP: Int = 15
+
     /**
-     * Konuslanma bedelleri D(L), L = 7..22. **TEK SEFERLIK.** Toplam 3.140 coin.
+     * Konuslanma bedelleri D(L), L = 7..55. **TEK SEFERLIK.**
      * `GameConfig.CAMPAIGN[L].deploymentCost` ile birebir ayni olmak ZORUNDA;
      * `EconomyGameConfigContractTest` bunu kilitler.
+     *
+     * ------------------------------------------------------------------
+     * L23+ FORMULU NEDEN `350 + 15(L-22)`, `350 + 40(L-22)` DEGIL
+     * ------------------------------------------------------------------
+     * GDD C.3'un kurali: *bir bolumun odulu, bir sonrakinin kilidinin en az
+     * 2,5 kati olmali.* Odul R(L) = 140 + 30(L-1) ADIMI 30'dur; kilit adimi
+     * 40 olsaydi kilit odulden HIZLI buyur ve oran kacinilmaz olarak kirilirdi:
+     *
+     *   40 adimla:  L55 kilidi 1.670 · L54 odulu 1.730 -> oran **1,04**  ✗
+     *   15 adimla:  L55 kilidi   845 · L54 odulu 1.730 -> oran **2,05**  ✓
+     *
+     * 22 bolumde bu gorunmuyordu cunku formul L22'de duruyordu. 55 bolumde
+     * kilit, minimum gelirin %31'i yerine %44'unu tuketiyor — bu KABUL EDILDI
+     * (coin'in kampanya boyunca degerli kalmasi icin gerekli), ama 2,5x kurali
+     * kirilamaz: kirildigi anda oyuncu bir sonraki bolumu acamayacagi icin
+     * kampanya soft-lock olur.
      */
-    val LOCK_COSTS: IntArray = intArrayOf(
-        /* L7  */ 100, /* L8  */ 110, /* L9  */ 120, /* L10 */ 130,
-        /* L11 */ 140, /* L12 */ 150, /* L13 */ 165, /* L14 */ 180,
-        /* L15 */ 195, /* L16 */ 210, /* L17 */ 225, /* L18 */ 240,
-        /* L19 */ 255, /* L20 */ 270, /* L21 */ 300, /* L22 */ 350,
-    )
+    val LOCK_COSTS: IntArray = IntArray(CAMPAIGN_LEVELS - FIRST_PAID_LEVEL + 1) { i ->
+        val level = FIRST_PAID_LEVEL + i
+        when (level) {
+            7 -> 100; 8 -> 110; 9 -> 120; 10 -> 130
+            11 -> 140; 12 -> 150; 13 -> 165; 14 -> 180
+            15 -> 195; 16 -> 210; 17 -> 225; 18 -> 240
+            19 -> 255; 20 -> 270; 21 -> 300; 22 -> 350
+            else -> LATE_LOCK_BASE + LATE_LOCK_STEP * (level - HANDWRITTEN_CAMPAIGN_LEVELS)
+        }
+    }
 
-    /** GDD C.3 — kampanyanin toplam kilit maliyeti. Regresyon kilidi. */
-    const val TOTAL_LOCK_COST: Int = 3_140
+    /**
+     * GDD C.3 — kampanyanin toplam kilit maliyeti. Regresyon kilidi.
+     * 22 bolumde 3.140 idi; L23..L55 ekiyle **23.105**.
+     */
+    const val TOTAL_LOCK_COST: Int = 23_105
+
+    /** 22 bolumluk kampanyanin toplam kilit maliyeti (karsilastirma tabani). */
+    const val HANDWRITTEN_TOTAL_LOCK_COST: Int = 3_140
 
     // =================================================================================
     // Bolum odulu (GDD C.2)
@@ -303,14 +339,24 @@ object EconomyConfig {
     // ---- Hava Destegi ------------------------------------------------------------
 
     /**
-     * Tedarik fiyati = BASE + STEP x (L - 1). L4 = 120, L22 = 264.
+     * Tedarik fiyati = BASE + STEP x (L - 1). L4 = **125**, L22 = 269, L55 = 533.
      *
-     * Kalibrasyon: fiyat, o bolumun baslangic Tedarikinin (`EARLY_STARTING_SUPPLY` /
-     * `BASE_STARTING_SUPPLY`) yaklasik %85-100'u kadardir, yani **bir acilis kulesinden
-     * vazgecmek** demektir. "Hemen alinabilir ama anlamsiz derecede ucuz degil"
-     * bandinin Tedarik tarafindaki karsiligi budur.
+     * ---------------------------------------------------------------------
+     * KALIBRASYON ANKRAJI DEGISTI: "acilis Tedariki" -> "TAM BIR KULE"
+     * ---------------------------------------------------------------------
+     * Eski gerekce fiyati **baslangic Tedarikinin %85-100'u** olarak tarif
+     * ediyordu ("bir acilis kulesinden vazgecmek"). O ifade, acilis Tedariki
+     * bir-iki kule alirken dogruydu. Sermaye kadrodan turetilir olunca
+     * (bkz. `SupplyBudgetModel.startingSupply`) acilis purse'u 3-7 kule aldi ve
+     * ayni yuzde artik "bir kule" demiyor.
+     *
+     * Ankraj bu yuzden purse'a degil KULEYE baglandi: **acilista fiyat, tam
+     * yukseltilmis bir Gatling'e (insa 60 + kademe 2 65 = 125) esittir.** BASE
+     * 96 -> 101 yalnizca bu esitligi TAM saglamak icin (101 + 8x3 = 125).
+     * Guclendirici hicbir bolumde bir kuleden ucuz olamaz; aksi halde en iyi
+     * strateji kule kurmak yerine dugmeye basmak olur.
      */
-    const val AIR_SUPPORT_SUPPLY_BASE: Int = 96
+    const val AIR_SUPPORT_SUPPLY_BASE: Int = 101
     const val AIR_SUPPORT_SUPPLY_STEP: Int = 8
 
     /**
