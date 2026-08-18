@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  AYARLAR EKRANI STRING'LERI (SettingsScreen.kt).
+
+  AYRI DOSYA, BILINCLI: ayni anda birden fazla is kolu strings.xml'e satir
+  ekliyor ve tek dosyada birlestirme catismasi kacinilmaz hale geliyordu.
+  Android kaynak birlestiricisi ayni klasordeki tum <resources> dosyalarini
+  tek havuzda toplar; R sinifi acisindan strings.xml ile bu dosya arasinda
+  hicbir fark yoktur.
+
+  Anahtar semasi (docs/LOCALIZATION.md ile ayni): settings_ = ayarlar ekrani.
+
+  Ses etiketi icin YENI anahtar acilmadi: strings.xml'deki
+  dialog_sound_effects zaten "Sound Effects / Ses Efektleri" karsiligini
+  tasiyor ve ayni kavram icin ikinci bir ceviri kaynagi acmak, iki metnin
+  zamanla birbirinden ayrilmasi demek.
+-->
+<resources>
+
+    <!-- Baslik ve gezinme -->
+    <string name="settings_title">SETTINGS</string>
+    <string name="settings_open_desc">Open settings</string>
+    <string name="settings_button_label">SETTINGS</string>
+    <string name="settings_close">CLOSE</string>
+
+    <!-- Bolum basliklari. Ekran buyuyecegi icin (muzik, haptik) bolumler
+         bastan ayrildi; yeni satir eklemek yeni bir baslik gerektirmez. -->
+    <string name="settings_section_audio">AUDIO</string>
+    <string name="settings_section_privacy">PRIVACY</string>
+    <string name="settings_section_about">ABOUT</string>
+
+    <!-- UMP "Gizlilik Secenekleri" girisi. Bu satir yalnizca
+         AdHost.privacyOptionsRequired true iken cizilir: AB disindaki bir
+         oyuncuya acilmayan bir form vaat etmek, calismayan bir buton koymaktir. -->
+    <string name="settings_ad_settings">Ad Settings</string>
+    <string name="settings_ad_settings_desc">Review or withdraw your advertising consent.</string>
+
+    <!-- %1$s versionName, %2$d versionCode -->
+    <string name="settings_version">Version %1$s (%2$d)</string>
+
+    <!-- ===================================================================
+         SIFIRLAMA.
+
+         `SaveManager` uc sifirlama metodu tasiyordu ama `main/` icinde HIC
+         cagri yeri yoktu (yalnizca birim testleri); yani oyuncu ogreticiyi
+         tekrar goremiyordu, tek yol adb idi.
+
+         "Reset progress" YIKICI ve GERI ALINAMAZ oldugu icin iki adimlidir;
+         digerleri zararsizdir ve onay istemez - zararsiz bir islemi onaya
+         baglamak onay diyalogunu anlamsizlastirir ve asil tehlikeli olanda
+         refleksle "evet" dedirtir.
+         =================================================================== -->
+    <string name="settings_section_reset">RESET</string>
+
+    <string name="settings_reset_hints">Reset hints</string>
+    <string name="settings_reset_hints_desc">Show the one-time gameplay hints again.</string>
+
+    <string name="settings_reset_tutorial">Replay tutorial</string>
+    <string name="settings_reset_tutorial_desc">Start the guided first battle from the beginning.</string>
+
+    <string name="settings_reset_progress">Reset progress</string>
+    <string name="settings_reset_progress_desc">Deletes coins, stars, upgrades and unlocked levels. This cannot be undone.</string>
+    <!-- Ikinci adim. Etiket TEK BASINA ne olacagini soylemeli: onay satiri
+         aciklamanin degil, kendisinin okundugu yerdir. -->
+    <string name="settings_reset_progress_confirm">Tap again to erase all progress</string>
+    <string name="settings_reset_progress_cancel">Cancel</string>
+    <string name="settings_reset_done">Done.</string>
+
+</resources>

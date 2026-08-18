@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Faz 14 - MUZIK VE DOKUNSAL GERI BILDIRIM ETIKETLERI.
+
+  AYRI DOSYA, cunku `strings.xml` baska bir ajanin uzerinde calistigi dosya.
+  Ayni kaynak paketine derlenir; `R.string.*` tarafinda hicbir fark yoktur.
+  Cakisma kontrol edildi: bu anahtarlarin hicbiri strings.xml'de YOK.
+
+  Adlandirma `SettingsScreen.kt` icindeki yer tutucunun bekledigi sekilde
+  (`settings_*`), cunku satirlar SES bolumunun altina giriyor ve o bolumdeki
+  diger anahtarlar da bu onekte.
+-->
+<resources>
+
+    <!-- Ayarlar > Ses bolumu satir etiketleri. -->
+    <string name="settings_music">Music</string>
+    <!-- "Haptics" DEGIL "Vibration": oyuncu terminolojisi, magaza dilinde de
+         bu kullaniliyor. -->
+    <string name="settings_haptics">Vibration</string>
+
+</resources>

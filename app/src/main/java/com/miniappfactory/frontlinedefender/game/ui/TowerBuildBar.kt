@@ -28,6 +28,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.miniappfactory.frontlinedefender.R
+import com.miniappfactory.frontlinedefender.game.audio.rememberHaptics
 import com.miniappfactory.frontlinedefender.game.engine.GameEngine
 import com.miniappfactory.frontlinedefender.game.model.GameConfig
 import com.miniappfactory.frontlinedefender.ui.theme.*
@@ -70,6 +71,7 @@ fun TowerBuildBar(
     val selectedBuildSpot by gameEngine.selectedBuildSpot.collectAsState()
     val gold by gameEngine.gold.collectAsState()
     val levelId by gameEngine.currentLevelId.collectAsState()
+    val haptics = rememberHaptics()
 
     AnimatedVisibility(
         visible = selectedBuildSpot != null,
@@ -98,9 +100,19 @@ fun TowerBuildBar(
                         spec = spec,
                         unlocked = unlocked,
                         canAfford = gold >= spec.buildCost,
-                        onBuild = { gameEngine.buildTower(towerType) },
+                        onBuild = {
+                            // HAPTIK, SES VE GORSEL AYNI KAREDE. Titresim
+                            // `buildTower`dan ONCE tetiklenir: motor cagrisi
+                            // kule listesini ve altini guncelleyip recomposition
+                            // baslatir, dokunsal geri bildirimi onun ARKASINA
+                            // koymak parmagin altinda olculebilir bir gecikme
+                            // yaratirdi.
+                            haptics.onTowerBuilt()
+                            gameEngine.buildTower(towerType)
+                        },
                         onPreview = { pressed ->
                             if (pressed) {
+                                haptics.onRangePreviewShown()
                                 gameEngine.setPreviewTowerType(towerType)
                             } else if (gameEngine.previewTowerType.value == towerType) {
                                 // Yalnizca KENDI onizlemesini kapatir: iki
@@ -114,7 +126,10 @@ fun TowerBuildBar(
 
                 val closeDesc = stringResource(R.string.build_close_desc)
                 IconButton(
-                    onClick = { gameEngine.deselectAll() },
+                    onClick = {
+                        haptics.onUiTap()
+                        gameEngine.deselectAll()
+                    },
                     modifier = Modifier
                         .size(36.dp)
                         .semantics { contentDescription = closeDesc }
@@ -228,8 +243,13 @@ private fun TowerBuildCard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
+                    // TEDARIK glifi, COIN degil. Yukarida `canAfford`
+                    // `gold >= spec.buildCost` ile hesaplaniyor: insa bedeli
+                    // savas ici TEDARIK ile odeniyor. Buraya kadar coin glifi
+                    // cizildigi icin oyuncuya yanlis para birimi gosteriliyordu.
+                    // (Meta para birimi olan coin'in yeri `UpgradeShopScreen`.)
                     SpriteIcon(
-                        id = R.drawable.spr_ic_coins,
+                        id = R.drawable.spr_ic_supply_crate,
                         size = 11.dp,
                         contentDescription = null
                     )

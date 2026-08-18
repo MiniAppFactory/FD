@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  AYARLAR EKRANI - TURKCE.
+  Varsayilan (Ingilizce) karsiliklar: res/values/strings_settings.xml
+-->
+<resources>
+
+    <string name="settings_title">AYARLAR</string>
+    <string name="settings_open_desc">Ayarları aç</string>
+    <string name="settings_button_label">AYARLAR</string>
+    <string name="settings_close">KAPAT</string>
+
+    <string name="settings_section_audio">SES</string>
+    <string name="settings_section_privacy">GİZLİLİK</string>
+    <string name="settings_section_about">HAKKINDA</string>
+
+    <string name="settings_ad_settings">Reklam Ayarları</string>
+    <string name="settings_ad_settings_desc">Reklam rızanı gözden geçir veya geri çek.</string>
+
+    <string name="settings_version">Sürüm %1$s (%2$d)</string>
+
+    <!-- Sifirlama. Ingilizce karsiliklar ve gerekce:
+         res/values/strings_settings.xml -->
+    <string name="settings_section_reset">SIFIRLAMA</string>
+
+    <string name="settings_reset_hints">İpuçlarını sıfırla</string>
+    <string name="settings_reset_hints_desc">Tek seferlik oynanış ipuçlarını yeniden göster.</string>
+
+    <string name="settings_reset_tutorial">Öğreticiyi tekrar göster</string>
+    <string name="settings_reset_tutorial_desc">Rehberli ilk savaşı baştan başlat.</string>
+
+    <string name="settings_reset_progress">İlerlemeyi sıfırla</string>
+    <string name="settings_reset_progress_desc">Coin, yıldız, yükseltme ve açılan bölümleri siler. Bu işlem geri alınamaz.</string>
+    <string name="settings_reset_progress_confirm">Silmek için tekrar dokun</string>
+    <string name="settings_reset_progress_cancel">Vazgeç</string>
+    <string name="settings_reset_done">Tamam.</string>
+
+</resources>

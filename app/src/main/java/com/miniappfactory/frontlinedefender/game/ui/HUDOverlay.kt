@@ -35,7 +35,12 @@ fun HUDOverlay(
     val totalWaves by gameEngine.totalWaves.collectAsState()
     val speed by gameEngine.gameSpeed.collectAsState()
     val gameState by gameEngine.gameState.collectAsState()
-    val prepTimer by gameEngine.preparationTimer.collectAsState()
+    // ⚠ `preparationTimer` BURADA OKUNMAZ. Motor onu HER KARE guncelliyor;
+    // govdede okumak hazirlik fazi boyunca tum HUD'i 60 Hz yeniden
+    // besteliyordu (bolum basina ~600 recomposition) ve bu maliyet tam da
+    // bolum acilisinin en pahali anina biniyordu (biyom recolor + sprite
+    // decode ayni anda). Sayac kendi composable'inda okunur, bkz.
+    // [PreparationTimerText].
 
     Surface(
         color = SleekSurfaceHeader,
@@ -87,20 +92,12 @@ fun HUDOverlay(
                         )
 
                         if (gameState == GameState.PREPARATION) {
-                            Text(
-                                text = stringResource(
-                                    R.string.hud_prep_timer,
-                                    prepTimer.toInt()
-                                ),
-                                color = SleekGold,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
-                            )
+                            PreparationTimerText(gameEngine)
                         }
                     }
                 }
 
-                // Gold Coins Badge
+                // Savas ici TEDARIK rozeti (meta para birimi Coin DEGIL).
                 Surface(
                     shape = RoundedCornerShape(20.dp),
                     color = SleekGoldBg,
@@ -111,9 +108,12 @@ fun HUDOverlay(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        // Faz 3: asset pack ikonu (icon_coins)
+                        // Ikon bilincli olarak Coin glifi DEGIL: Tedarik savas ici
+                        // kaynak, Coin ise meta para birimi ve Us Tamiri savas
+                        // ICINDE Coin harciyor. Ikisi ayni gliften gosterilirse
+                        // oyuncu hangi kesenin eridigini goremez.
                         SpriteIcon(
-                            id = R.drawable.spr_ic_coins,
+                            id = R.drawable.spr_ic_supply_crate,
                             size = 16.dp,
                             contentDescription = stringResource(R.string.hud_supply_icon_desc)
                         )
@@ -127,6 +127,31 @@ fun HUDOverlay(
                     }
                 }
             }
+
+            // ----------------------------------------------------------------
+            // ORTA: SIRADAKI DALGA ONIZLEMESI (yalnizca hazirlik fazinda).
+            //
+            // Neden BURASI: oyun yatay (`sensorLandscape`) ve bu satirin ortasi
+            // bugun tamamen bos. HUD'un ALTINA ayri bir serit koymak olmazdi —
+            // `GameScreen` bu Surface'in OLCULEN yuksekligini `topInsetPx`
+            // olarak `GameCanvas`'a veriyor ve motor oynanis dikdortgenini ona
+            // gore kuruyor; serit yalnizca hazirlik fazinda var oldugu icin
+            // savas alani her dalgada asagi kayip geri ziplardi.
+            //
+            // `weight(1f)`: Row'da agirliksiz cocuklar ONCE olculur, yani sol ve
+            // sag gruplar dogal boyutlarini korur ve serit yalnizca ARTAN yeri
+            // alir. Hazirlik fazi disinda hicbir dugum uretilmez ve satir
+            // bugunku SpaceBetween davranisina birebir doner.
+            //
+            // ⚠ Seridin yuksekligi (34 dp) asagidaki IconButton'larin 36 dp'sinden
+            // KUCUK olmak zorunda; aksi halde HUD uzar ve oynanis alani kayar.
+            // `WavePreviewLogicTest` bu iliskiyi kilitliyor.
+            WavePreviewBar(
+                gameEngine = gameEngine,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 8.dp)
+            )
 
             // Right Side: Base Lives, Game Speed & Controls
             Row(
@@ -151,12 +176,16 @@ fun HUDOverlay(
                             contentDescription = stringResource(R.string.hud_lives_icon_desc)
                         )
                         Text(
-                            // Azami can artik Kotlin'de sabit degil, GameConfig'ten
-                            // okunuyor (ayni deger: 20). Metin kaynakta.
+                            // BUG (Faz 12): payda `GameConfig.INITIAL_BASE_LIVES`
+                            // sabitiydi (20), oysa gercek azami can bolume ve
+                            // Tahkimat meta yukseltmesine gore degisir. Us Tamiri
+                            // guclendiricisi cani geri verdiginde gosterge "22/20"
+                            // gibi imkansiz degerler uretecekti. Tek dogruluk
+                            // kaynagi motorun `maxLives` degeri.
                             text = stringResource(
                                 R.string.hud_lives_value,
                                 lives,
-                                GameConfig.INITIAL_BASE_LIVES
+                                gameEngine.maxLives
                             ),
                             color = SleekRedText,
                             fontWeight = FontWeight.Bold,
@@ -248,3 +277,35 @@ fun HUDOverlay(
     }
 }
 
+
+/**
+ * Hazirlik geri sayimi — KENDI RECOMPOSE KAPSAMI.
+ *
+ * ---------------------------------------------------------------------------
+ * NEDEN AYRI BIR COMPOSABLE
+ * ---------------------------------------------------------------------------
+ * `preparationTimer` motor tarafindan HER KARE guncellenir. Akis [HUDOverlay]
+ * govdesinde okunurken, hazirlik fazi boyunca saniyede 60 kez TUM HUD yeniden
+ * besteleniyordu: tedarik rozeti, can rozeti, dalga sayaci, hiz dugmesi,
+ * hepsi — bolum basina ~600 recomposition, 55 bolumluk oturumda ~33.000.
+ * Ustelik bu firtina bolum acilisinin en pahali anina biniyordu (biyom
+ * recolor + sprite decode). `GameScreen`in kendi yorumu da "HUD her karede
+ * recompose OLMAZ" diyordu; kural ihlal edilmisti.
+ *
+ * Compose recomposition'i, durumu OKUYAN en kucuk kapsamda sinirlar. Okuma bu
+ * fonksiyona tasindigi icin artik yalnizca bu `Text` yeniden kosar. Ayni
+ * desen dalga onizleme seridinde de kullaniliyor.
+ *
+ * ⚠ Akisi yukari tasimayin: `HUDOverlay` govdesinde `collectAsState` cagirmak
+ * duzeltmeyi sessizce geri alir ve hicbir test kirilmaz.
+ */
+@Composable
+private fun PreparationTimerText(gameEngine: GameEngine) {
+    val prepTimer by gameEngine.preparationTimer.collectAsState()
+    Text(
+        text = stringResource(R.string.hud_prep_timer, prepTimer.toInt()),
+        color = SleekGold,
+        fontWeight = FontWeight.Bold,
+        fontSize = 12.sp
+    )
+}

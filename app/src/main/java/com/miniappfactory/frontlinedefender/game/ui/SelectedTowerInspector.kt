@@ -18,6 +18,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.miniappfactory.frontlinedefender.R
+import com.miniappfactory.frontlinedefender.game.audio.rememberHaptics
 import com.miniappfactory.frontlinedefender.game.engine.GameEngine
 import com.miniappfactory.frontlinedefender.ui.theme.*
 
@@ -35,6 +36,7 @@ fun SelectedTowerInspector(
 ) {
     val selectedTower by gameEngine.selectedTower.collectAsState()
     val gold by gameEngine.gold.collectAsState()
+    val haptics = rememberHaptics()
 
     AnimatedVisibility(
         visible = selectedTower != null,
@@ -75,11 +77,17 @@ fun SelectedTowerInspector(
                         // karsiligindan uzun, ustelik kalan genislik butonlarin
                         // dilden dile degisen genisligine bagli. Bu yuzden iki
                         // satir da olceklenir, kirpilmaz.
+                        // Faz 13: kademe gostergesi "Kd.2" degil "Kd.2/3" —
+                        // ucuncu kademe geldigi anda oyuncunun bilmesi gereken
+                        // ilk sey merdivenin KAC basamak oldugudur. Payda
+                        // veriden gelir (`tower.maxTier`), sabit degil; ayrica
+                        // kampanya kilidi yuzunden 2 de olabilir (Act I).
                         AutoShrinkText(
                             text = stringResource(
                                 R.string.inspector_tower_title,
                                 towerName,
-                                tower.level
+                                tower.level,
+                                tower.maxTier
                             ),
                             color = SleekTextAccent,
                             fontWeight = FontWeight.Bold,
@@ -109,7 +117,10 @@ fun SelectedTowerInspector(
 
                     // Hedefleme modu — icon_target
                     Button(
-                        onClick = { gameEngine.cycleTargetingMode() },
+                        onClick = {
+                            haptics.onTargetingModeCycled()
+                            gameEngine.cycleTargetingMode()
+                        },
                         colors = ButtonDefaults.buttonColors(
                             containerColor = SleekSurfaceCard,
                             contentColor = SleekTextAccent
@@ -138,11 +149,17 @@ fun SelectedTowerInspector(
                         )
                     }
 
-                    // Yukseltme — icon_upgrade
-                    if (tower.level == 1) {
-                        val upgradeCost = tower.upgradeCost ?: 0
+                    // Yukseltme — icon_upgrade.
+                    // Faz 13: "son kademe mi" sorusu artik `level == 1`den degil
+                    // VERIDEN turer. `upgradeCost` null = yukseltme yok (ya
+                    // merdivenin sonu, ya kampanya kilidi) -> MAKS rozeti.
+                    val upgradeCost = tower.upgradeCost
+                    if (upgradeCost != null) {
                         Button(
-                            onClick = { gameEngine.upgradeSelectedTower() },
+                            onClick = {
+                                haptics.onTowerUpgraded()
+                                gameEngine.upgradeSelectedTower()
+                            },
                             enabled = gold >= upgradeCost,
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = SleekPrimaryGreen,
@@ -197,7 +214,10 @@ fun SelectedTowerInspector(
 
                     // Satis — icon_sell
                     Button(
-                        onClick = { gameEngine.sellSelectedTower() },
+                        onClick = {
+                            haptics.onTowerSold()
+                            gameEngine.sellSelectedTower()
+                        },
                         colors = ButtonDefaults.buttonColors(
                             containerColor = SleekRed,
                             contentColor = Color.White
@@ -229,7 +249,10 @@ fun SelectedTowerInspector(
 
                     val closeDesc = stringResource(R.string.inspector_close_desc)
                     IconButton(
-                        onClick = { gameEngine.deselectAll() },
+                        onClick = {
+                            haptics.onUiTap()
+                            gameEngine.deselectAll()
+                        },
                         modifier = Modifier
                             .size(36.dp)
                             .semantics { contentDescription = closeDesc }

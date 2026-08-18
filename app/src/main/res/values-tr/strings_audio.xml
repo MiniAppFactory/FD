@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Faz 14 - values/strings_audio.xml dosyasinin Turkce karsiliklari.
+
+  TASMA: iki etiket de `SettingsToggleRow` icinde, anahtarin solunda esnek
+  genislikte duruyor; "Titresim" (8 karakter) "Vibration" (9) ile ayni sinifta,
+  tasma riski yok.
+-->
+<resources>
+
+    <string name="settings_music">Müzik</string>
+    <string name="settings_haptics">Titreşim</string>
+
+</resources>
