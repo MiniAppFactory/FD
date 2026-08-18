@@ -103,7 +103,7 @@ class SaveManagerEconomyTest {
     @Test
     fun metaUpgradesRoundTrip() {
         val store = InMemoryKeyValueStore()
-        val upgrades = MetaUpgrades(firepower = 3, optics = 2, startingSupplyRank = 6, fortification = 2, salvage = 4)
+        val upgrades = MetaUpgrades(firepower = 3, optics = 2, startingSupplyRank = 2, fortification = 2, salvage = 4)
         manager(store).saveMetaUpgrades(upgrades)
         assertEquals(upgrades, manager(store).loadMetaUpgrades())
     }

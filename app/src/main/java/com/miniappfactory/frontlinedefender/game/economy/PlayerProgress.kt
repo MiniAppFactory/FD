@@ -21,8 +21,16 @@ enum class UpgradeLine(val maxRank: Int) {
     /** Menzil (Optics) — tum kule menzili +%5/rank, maks +%15. */
     OPTICS(3),
 
-    /** Baslangic Tedariki — savas basi Tedarik +25/rank, 150 -> 300. */
-    STARTING_SUPPLY(6),
+    /**
+     * Baslangic Tedariki — savas basi Tedarik **+75/rank**, 150 -> 300.
+     *
+     * Adim en ucuz kulenin insa bedelinden (60) BUYUK secildi
+     * ([EconomyConfig.MIN_SUPPLY_STEP_IS_ONE_TOWER]): bu hattin parasi Tedarik'tir
+     * ve Tedarik'le yapilabilecek en kucuk sey bir kule dikmektir, dolayisiyla
+     * 60'in altindaki bir adim tahtada hicbir sey GARANTI EDEMEZ. Hat eskiden
+     * 6 x +25 idi ve olcumde rank 3-4 tam anlamiyla OLUYDU (sizinti 8 -> 8 -> 8).
+     */
+    STARTING_SUPPLY(2),
 
     /** Us Tahkimi — maks us cani +2/rank, 20 -> 30. */
     FORTIFICATION(5),
@@ -105,7 +113,7 @@ data class MetaUpgrades(
     val rangeMultiplier: Double
         get() = 1.0 + EconomyConfig.OPTICS_RANGE_PER_RANK * optics
 
-    /** Savas baslangic Tedariki. Rank 6 -> 300 (GDD H.6). */
+    /** Savas baslangic Tedariki. Rank 2 -> 300 (GDD H.6). */
     val startingSupply: Int
         get() = EconomyConfig.BASE_STARTING_SUPPLY +
             EconomyConfig.STARTING_SUPPLY_PER_RANK * startingSupplyRank

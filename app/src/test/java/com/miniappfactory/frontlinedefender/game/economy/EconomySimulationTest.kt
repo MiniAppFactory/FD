@@ -53,13 +53,14 @@ class EconomySimulationTest {
     }
 
     @Test
-    fun metaTreeTotalIs13900WithTwentyTwoRanks() {
+    fun metaTreeTotalIs13900WithEighteenRanks() {
         val total = UpgradeLine.entries.sumOf { it.totalCost() }
         assertEquals("GDD F: agac toplami 13.900", EconomyConfig.TREE_TOTAL_COST, total)
         assertEquals(EconomyConfig.TREE_TOTAL_RANKS, UpgradeLine.entries.sumOf { it.maxRank })
-        // Granularite duzeltmesi: 28 -> 22 rank. Agac toplami ve hat toplamlari
+        // Granularite duzeltmeleri: 28 -> 22 -> 18 rank (son adim Baslangic
+        // Tedariki 6 x +25 -> 2 x +75). Agac toplami ve hat toplamlari
         // DEGISMEDI; ayni para daha az ve daha buyuk adima bolundu.
-        assertEquals(22, UpgradeLine.entries.sumOf { it.maxRank })
+        assertEquals(18, UpgradeLine.entries.sumOf { it.maxRank })
     }
 
     @Test
@@ -74,7 +75,7 @@ class EconomySimulationTest {
     @Test
     fun maxedTreeEffectsMatchGddH6() {
         val maxed = MetaUpgrades(
-            firepower = 4, optics = 3, startingSupplyRank = 6, fortification = 5, salvage = 4
+            firepower = 4, optics = 3, startingSupplyRank = 2, fortification = 5, salvage = 4
         )
         assertEquals("hasar +%24", 1.24, maxed.damageMultiplier, 1e-9)
         assertEquals("menzil +%15", 1.15, maxed.rangeMultiplier, 1e-9)
@@ -86,7 +87,7 @@ class EconomySimulationTest {
         assertEquals("satis iadesi %90", 0.90, maxed.salvageRatio, 1e-9)
         assertEquals("rank 0 iadesi %70", 0.70, MetaUpgrades().salvageRatio, 1e-9)
         assertEquals(EconomyConfig.TREE_TOTAL_COST, maxed.spentCoins())
-        assertEquals(22, maxed.totalRanks())
+        assertEquals(18, maxed.totalRanks())
         assertTrue(maxed.isMaxed())
     }
 
@@ -243,19 +244,22 @@ class EconomySimulationTest {
     @Test
     fun purchaseThatBreaksReserveIsRejected() {
         // GDD H.3: bakiye 200, siradaki kilit 150 (L12), 200 coin'lik yukseltme -> RED.
-        // Dukkan tabani (en ucuz rank-1) Baslangic Tedariki = 200.
+        // Dukkan tabani (en ucuz rank-1) **Hurda Degeri = 200**. Baslangic Tedariki
+        // 6 x +25 -> 2 x +75 olunca rank-1 fiyati 900'e cikti (ayni guc, ayni
+        // kumulatif fiyat, daha az rank) ve dukkan tabani bu hatta gecti.
         val wallet = walletAt(200, (1..11).toSet(), (1..11).toSet())
         assertEquals(150, reserveFor(wallet))
+        assertEquals(200, UpgradeLine.SALVAGE.costOfRank(1))
 
-        val denied = purchaseAllowed(wallet, MetaUpgrades(), UpgradeLine.STARTING_SUPPLY)
+        val denied = purchaseAllowed(wallet, MetaUpgrades(), UpgradeLine.SALVAGE)
         assertTrue("rezerv engellemeli", denied is PurchaseDecision.ReserveLocked)
         assertEquals(150, (denied as PurchaseDecision.ReserveLocked).reserve)
         assertEquals(150, denied.shortfall)
 
         // Bakiye ve rank DEGISMEMELI.
-        val (w2, u2) = applyPurchase(wallet, MetaUpgrades(), UpgradeLine.STARTING_SUPPLY)
+        val (w2, u2) = applyPurchase(wallet, MetaUpgrades(), UpgradeLine.SALVAGE)
         assertEquals(200, w2.coins)
-        assertEquals(0, u2.startingSupplyRank)
+        assertEquals(0, u2.salvage)
     }
 
     @Test
@@ -264,20 +268,20 @@ class EconomySimulationTest {
         // Bakiye 300, rezerv 100 (L7) -> 200'luk alim -> 100 = rezerv -> KABUL.
         val wallet = walletAt(300, (1..6).toSet(), (1..6).toSet())
         assertEquals(100, reserveFor(wallet))
-        val decision = purchaseAllowed(wallet, MetaUpgrades(), UpgradeLine.STARTING_SUPPLY)
+        val decision = purchaseAllowed(wallet, MetaUpgrades(), UpgradeLine.SALVAGE)
         assertTrue(decision is PurchaseDecision.Allowed)
         assertEquals(100, (decision as PurchaseDecision.Allowed).balanceAfter)
 
-        val (w2, u2) = applyPurchase(wallet, MetaUpgrades(), UpgradeLine.STARTING_SUPPLY)
+        val (w2, u2) = applyPurchase(wallet, MetaUpgrades(), UpgradeLine.SALVAGE)
         assertEquals("bakiye tam rezerv kadar kalir", 100, w2.coins)
-        assertEquals(1, u2.startingSupplyRank)
+        assertEquals(1, u2.salvage)
     }
 
     @Test
     fun insufficientFundsIsDistinctFromReserveLock() {
         // Analytics sozlesmesi: `reserve_lock_blocked` yalnizca para YETERKEN gonderilir.
         val poor = walletAt(50, (1..6).toSet(), (1..6).toSet())
-        val decision = purchaseAllowed(poor, MetaUpgrades(), UpgradeLine.STARTING_SUPPLY)
+        val decision = purchaseAllowed(poor, MetaUpgrades(), UpgradeLine.SALVAGE)
         assertTrue(decision is PurchaseDecision.InsufficientFunds)
         assertEquals(150, (decision as PurchaseDecision.InsufficientFunds).shortfall)
     }

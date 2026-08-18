@@ -946,14 +946,15 @@ class BoosterEconomyTest {
 
     @Test
     fun cheapestNextRankPriceTracksTheRealShopFloor() {
-        // Dukkan tabani SALVAGE/STARTING_SUPPLY rank 1 = 200.
+        // Dukkan tabani SALVAGE rank 1 = 200. (STARTING_SUPPLY 6 x +25 -> 2 x +75
+        // olunca rank-1'i 900'e cikti; taban tek basina Hurda Degeri'nde kaldi.)
         assertEquals(200, cheapestNextRankPrice(MetaUpgrades()))
-        // FIREPOWER rank 1 alindi -> taban degismez (SALVAGE/SUPPLY hâlâ 200).
+        // FIREPOWER rank 1 alindi -> taban degismez (SALVAGE hâlâ 200).
         assertEquals(200, cheapestNextRankPrice(MetaUpgrades(firepower = 1)))
         assertNotEquals(null, cheapestNextRankPrice(MetaUpgrades(firepower = 4)))
 
         val maxed = MetaUpgrades(
-            firepower = 4, optics = 3, startingSupplyRank = 6, fortification = 5, salvage = 4,
+            firepower = 4, optics = 3, startingSupplyRank = 2, fortification = 5, salvage = 4,
         )
         assertTrue(maxed.isMaxed())
         assertEquals(null, cheapestNextRankPrice(maxed))

@@ -1,5 +1,6 @@
 package com.miniappfactory.frontlinedefender.balance
 
+import com.miniappfactory.frontlinedefender.game.economy.EconomyConfig
 import com.miniappfactory.frontlinedefender.game.economy.MetaUpgrades
 import com.miniappfactory.frontlinedefender.game.economy.UpgradeLine
 import com.miniappfactory.frontlinedefender.game.model.GameConfig
@@ -190,11 +191,36 @@ class MetaImpactReportTool {
         }
 
         sb.appendLine()
-        sb.appendLine("=== RANK RANK OLCUM — hissedilirlik (toplam sizinti, tum olcum bolumleri) ===")
+        sb.appendLine("=== RANK RANK OLCUM — 8 OLCUM BOLUMU (toplam sizinti) ===")
+        sb.appendLine(
+            "!! DIKKAT: bu tablo KUCUK ORNEKLEM. Doygunluga ulasir (Ates Gucu " +
+                "r3=r4) ve gurultuludur. 'Olu rank' karari BUNUNLA verilmez — " +
+                "asagidaki kampanya capindaki tablo kullanilir."
+        )
         for (line in UpgradeLine.entries) {
             val row = (0..line.maxRank).joinToString(" ") { rank ->
                 val total = probeLevels.sumOf { MetaImpact.bestLeaks(it, lineOnly(line, rank)).leaked }
                 "r$rank=$total"
+            }
+            sb.appendLine("%-16s %s".format(line.name, row))
+        }
+
+        sb.appendLine()
+        sb.appendLine("=== RANK RANK OLCUM — 55 BOLUMUN TAMAMI (olu rank kapisinin olcutu) ===")
+        sb.appendLine(
+            "`MetaUpgradeImpactTest.everyRankIsMeasurablyAliveAcrossTheCampaign` " +
+                "bu merdivenin saldiri hatlarinda KESIN AZALAN olmasini sart kosar. " +
+                "Tahkimat ve Hurda Degeri sizinti eksenine girmez (biri toleransi " +
+                "buyutur, digeri kule satisiyla calisir) ve kendi eksenlerinde olculur."
+        )
+        val allLevels = (1..EconomyConfig.CAMPAIGN_LEVELS).toList()
+        for (line in listOf(UpgradeLine.FIREPOWER, UpgradeLine.OPTICS, UpgradeLine.STARTING_SUPPLY)) {
+            var prev = -1
+            val row = (0..line.maxRank).joinToString(" ") { rank ->
+                val total = allLevels.sumOf { MetaImpact.bestLeaks(it, lineOnly(line, rank)).leaked }
+                val delta = if (prev < 0) "" else "(%+d)".format(total - prev)
+                prev = total
+                "r$rank=$total$delta"
             }
             sb.appendLine("%-16s %s".format(line.name, row))
         }
@@ -270,7 +296,19 @@ object MetaImpact {
 
     data class Best(val leaked: Int, val stars: Int, val cleared: Boolean, val roster: String)
 
-    fun bestLeaks(levelId: Int, meta: MetaUpgrades = MetaUpgrades()): Best {
+    /**
+     * Simulator DETERMINISTIK oldugu icin (ayni bolum + ayni meta -> ayni sonuc)
+     * olcumler bellege alinir. Kampanya capinda olcum yapan
+     * `everyRankIsMeasurablyAliveAcrossTheCampaign` ile rapor araci ayni
+     * (bolum, meta) ciftlerini defalarca ister; onbellek olmadan ayni simulasyon
+     * onlarca kez kosardi.
+     */
+    private val cache = HashMap<Pair<Int, MetaUpgrades>, Best>()
+
+    fun bestLeaks(levelId: Int, meta: MetaUpgrades = MetaUpgrades()): Best =
+        cache.getOrPut(levelId to meta) { compute(levelId, meta) }
+
+    private fun compute(levelId: Int, meta: MetaUpgrades): Best {
         val outcomes = CampaignSimulator.allOutcomes(levelId, meta)
         val clearing = outcomes.filter { it.cleared }
         if (clearing.isEmpty()) {

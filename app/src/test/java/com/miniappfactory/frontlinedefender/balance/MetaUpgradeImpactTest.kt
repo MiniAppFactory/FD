@@ -220,6 +220,142 @@ class MetaUpgradeImpactTest {
         }
     }
 
+    /**
+     * **AYNI KURALIN TEDARIK HATTINDAKI KARSILIGI.**
+     *
+     * Baslangic Tedariki 6 x +25 -> 2 x +75 olurken rank BASINA fiyat 200 -> 900'e
+     * cikti; bu bir zam gibi GORUNUR ama degildir, cunku odenen sey ayni GUCTUR:
+     *
+     *     +75 Tedarik   eski r1+r2+r3 = 200+300+400 = 900   yeni r1 =   900
+     *     +150 Tedarik  eski alti rank            = 2.700   yeni r1+r2 = 2.700
+     *
+     * Yani Tedarik puani basina fiyat hicbir noktada yukselmedi; yalnizca ayni
+     * para daha az ve tahtada karsiligi olan adima bolundu.
+     */
+    @Test
+    fun supplyStepsDidNotRaiseThePricePerSupplyPoint() {
+        val expectedCumulative = mapOf(75 to 900, 150 to 2_700)
+        var cumulative = 0
+        for (rank in 1..UpgradeLine.STARTING_SUPPLY.maxRank) {
+            cumulative += UpgradeLine.STARTING_SUPPLY.costOfRank(rank)
+            val bonus = only(UpgradeLine.STARTING_SUPPLY, rank).startingSupply -
+                EconomyConfig.BASE_STARTING_SUPPLY
+            assertEquals(
+                "+$bonus Tedarik icin odenen toplam degismemeli",
+                expectedCumulative.getValue(bonus), cumulative,
+            )
+        }
+        assertEquals(2_700, UpgradeLine.STARTING_SUPPLY.totalCost())
+        assertEquals(300, only(UpgradeLine.STARTING_SUPPLY, UpgradeLine.STARTING_SUPPLY.maxRank).startingSupply)
+    }
+
+    /**
+     * **TEDARIK ADIMININ BIRIMI KULEDIR.**
+     *
+     * Yuzde esigi ([EconomyConfig.MIN_PERCEPTIBLE_STEP]) bu hatti +25/rank iken
+     * de geciyordu (%16,7) — ve hat yine de olu rank uretiyordu. Cunku Tedarik'le
+     * yapilabilecek EN KUCUK sey en ucuz kuleyi dikmektir: 60'in altindaki bir
+     * adim tahtayi degistirmeyi garanti edemez, yalnizca HUD'daki sayiyi buyutur.
+     *
+     * Bu test iki seyi birbirine baglar (elle yazilmis sabite degil, kule
+     * spec'inin KENDISINE): adim >= en ucuz insa bedeli, ve bunun sonucu olarak
+     * her rank HER bolumde acilista en az bir kule daha aliyor.
+     */
+    @Test
+    fun supplyStepBuysAtLeastOneMoreTowerAtEveryLevel() {
+        val cheapestTower = GameConfig.TowerType.values()
+            .minOf { GameConfig.TOWER_SPECS.getValue(it).buildCost }
+        assertEquals(
+            "esik sabiti, en ucuz kulenin gercek insa bedeliyle ayrisamaz",
+            cheapestTower, EconomyConfig.MIN_SUPPLY_STEP_IS_ONE_TOWER,
+        )
+        assertTrue(
+            "Tedarik adimi (${EconomyConfig.STARTING_SUPPLY_PER_RANK}) en ucuz kuleden " +
+                "($cheapestTower) kucuk — rank tahtada bir sey GARANTI edemez",
+            EconomyConfig.STARTING_SUPPLY_PER_RANK >= cheapestTower,
+        )
+
+        for (level in 1..EconomyConfig.CAMPAIGN_LEVELS) {
+            val base = GameConfig.levelSpec(level).startingSupply
+            for (rank in 1..UpgradeLine.STARTING_SUPPLY.maxRank) {
+                val before = base + (only(UpgradeLine.STARTING_SUPPLY, rank - 1).startingSupply -
+                    EconomyConfig.BASE_STARTING_SUPPLY)
+                val after = base + (only(UpgradeLine.STARTING_SUPPLY, rank).startingSupply -
+                    EconomyConfig.BASE_STARTING_SUPPLY)
+                assertTrue(
+                    "L$level Tedarik r$rank acilista fazladan kule ALMIYOR " +
+                        "($before -> $after Tedarik, ikisi de ${before / cheapestTower} kule)",
+                    after / cheapestTower > before / cheapestTower,
+                )
+            }
+        }
+    }
+
+    /**
+     * =========================================================================
+     * **OLU RANK YASAGI — NIHAI KAPI.**
+     * =========================================================================
+     *
+     * Analitik esik ([EconomyConfig.MIN_PERCEPTIBLE_STEP]) GEREK sarttir, yeter
+     * sart degildir: Baslangic Tedariki +25/rank ile onu geciyordu ama sahada
+     * rank 3 ve 4 tam anlamiyla OLUYDU (8 olcum bolumunde sizinti 8 -> 8 -> 8;
+     * oyuncu 900 coin odeyip hicbir sey almiyordu). Bu test, her hattin her
+     * rank'ini **kendi ekseninde OLCEREK** kapatir.
+     *
+     * ## Neden butun kampanya, 8 olcum bolumu degil
+     * Sizinti sayisi ayrik ve gurultulu bir simulator ciktisidir; kucuk
+     * orneklemlerde meta artarken sizinti ARTIYOR gibi gorunebilir (olculdu:
+     * 14 bolumluk sette Menzil r2=22 -> r3=27, 19 bolumluk sette Ates Gucu
+     * r3=7 -> r4=10 — ikisi de orneklem gurultusu). 55 bolumun tamami tek
+     * monoton olcuttur; gurultu ortalamada sonumlenir.
+     *
+     * ## Neden hat basina FARKLI eksen
+     * Simulator kule satmaz ve Tahkimat sizintiyi azaltmaz, BUYUTULEN TOLERANSI
+     * satar. Ikisini sizintiyla olcmek "etkisiz" derdi ve YANLIS olurdu. Her
+     * hat, oyuncunun o hatti almasinin gercek sebebiyle olculur.
+     */
+    @Test
+    fun everyRankIsMeasurablyAliveAcrossTheCampaign() {
+        val allLevels = 1..EconomyConfig.CAMPAIGN_LEVELS
+
+        // Saldiri hatlari: olcut = butun kampanyada dikkatli oyuncunun sizintisi.
+        for (line in listOf(UpgradeLine.FIREPOWER, UpgradeLine.OPTICS, UpgradeLine.STARTING_SUPPLY)) {
+            val ladder = (0..line.maxRank).map { rank ->
+                allLevels.sumOf { MetaImpact.bestLeaks(it, only(line, rank)).leaked }
+            }
+            for (rank in 1..line.maxRank) {
+                assertTrue(
+                    "$line r$rank OLU RANK: ${line.costOfRank(rank)} coin odeniyor, " +
+                        "kampanya sizintisi ${ladder[rank - 1]} -> ${ladder[rank]} " +
+                        "(merdiven $ladder)",
+                    ladder[rank] < ladder[rank - 1],
+                )
+            }
+        }
+
+        // Tahkimat: olcut = tolere edilebilen sizinti (can - 1).
+        for (rank in 1..UpgradeLine.FORTIFICATION.maxRank) {
+            val before = only(UpgradeLine.FORTIFICATION, rank - 1).maxBaseHealth - 1
+            val after = only(UpgradeLine.FORTIFICATION, rank).maxBaseHealth - 1
+            assertTrue("FORTIFICATION r$rank OLU RANK ($before -> $after tolerans)", after > before)
+        }
+
+        // Hurda Degeri: olcut = kd.3 Gatling satisindan geri gelen Tedarik.
+        val spec = GameConfig.TOWER_SPECS.getValue(GameConfig.TowerType.MACHINE_GUN)
+        val invested = spec.buildCost + spec.tier(2).upgradeCost + spec.tier(3).upgradeCost
+        fun refund(rank: Int) = TowerEntity(
+            type = GameConfig.TowerType.MACHINE_GUN, buildSpotId = 1, posX = 0f, posY = 0f,
+            level = 3, totalInvestedGold = invested,
+            salvageRate = only(UpgradeLine.SALVAGE, rank).salvageRatio.toFloat()
+        ).sellValue
+        for (rank in 1..UpgradeLine.SALVAGE.maxRank) {
+            assertTrue(
+                "SALVAGE r$rank OLU RANK (${refund(rank - 1)} -> ${refund(rank)} Tedarik iade)",
+                refund(rank) > refund(rank - 1),
+            )
+        }
+    }
+
     // =================================================================================
     // 3. OLCULMUS OYNANIS ETKISI
     // =================================================================================
@@ -407,6 +543,31 @@ class MetaUpgradeImpactTest {
                 solo.stars < 3,
             )
         }
+    }
+
+    /**
+     * **ILK SATIN ALMANIN OYNANIS KARSILIGI: "IKINCI KULEYLE BASLA".**
+     *
+     * L1 sermayesi 80 Tedarik = **bir** Gatling (60). Cihaz testinde (2026-08-18)
+     * L1 tek Gatling ile KAYBEDILDI ve olcum de tek kulenin L5'ten itibaren
+     * kaybettigini soyluyor — yani "ikinci kuleyi ne zaman kurayim" oyunun ilk
+     * gercek karari. Baslangic Tedariki rank 1 (+75 -> 155 Tedarik) tam olarak
+     * bunu aciyor: oyuncunun agactaki ilk alimi soyut bir yuzde degil, acilis
+     * tahtasinda GORULEN ikinci kuledir.
+     */
+    @Test
+    fun theFirstSupplyRankOpensTheSecondTowerOnLevelOne() {
+        val gatling = GameConfig.TOWER_SPECS.getValue(GameConfig.TowerType.MACHINE_GUN)
+        val base = GameConfig.levelSpec(1).startingSupply
+        val bonus = only(UpgradeLine.STARTING_SUPPLY, 1).startingSupply -
+            EconomyConfig.BASE_STARTING_SUPPLY
+
+        assertEquals("L1 meta 0: tam olarak TEK Gatling", 1, base / gatling.buildCost)
+        assertEquals(
+            "Tedarik rank 1, L1 acilisini IKI Gatling'e cikarmali " +
+                "($base -> ${base + bonus} Tedarik)",
+            2, (base + bonus) / gatling.buildCost,
+        )
     }
 
     /**

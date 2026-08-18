@@ -142,7 +142,7 @@ object EconomyConfig {
     const val STAR2_HEALTH_RATIO: Double = 0.50
 
     // =================================================================================
-    // Meta yukseltme agaci (GDD F — 5 hat, 28 rank, toplam 13.900)
+    // Meta yukseltme agaci (GDD F — 5 hat, 18 rank, toplam 13.900)
     // =================================================================================
 
     /**
@@ -171,20 +171,65 @@ object EconomyConfig {
      * (etkin verim 1,426) ve GDD H.6 tablosu aynen gecerli kalir; 55 bolumun
      * cozulebilirligi zaten meta 0 ile olculdugu icin hic etkilenmez.
      *
-     * Baslangic Tedariki ve Us Tahkimi DEGISMEDI: olcum ikisinin de rank basina
-     * zaten hissedilir oldugunu gosterdi (+25 Tedarik = L1 sermayesinin %31'i;
-     * +2 can = tolere edilen sizintinin %10'u).
+     * -----------------------------------------------------------------------------
+     * IKINCI GECIS — BASLANGIC TEDARIKI (ayni madde, ayni hastalik, baska hat)
+     * -----------------------------------------------------------------------------
+     * Ilk gecis Baslangic Tedarikini "+25 = L1 sermayesinin %31'i, demek ki
+     * hissediliyor" diye ELLEMEDI. Bu yanlisti, cunku **yuzde yanlis birim**.
+     *
+     * ## Olculen
+     * `MetaImpactReportTool` sizinti olcumu (8 olcum bolumu, dikkatli oyuncu):
+     *
+     *     r0=21  r1=12  r2=8  r3=8  r4=8  r5=6  r6=3
+     *
+     * Rank 3 ve rank 4 **OLU**: oyuncu 400 + 500 = 900 coin odeyip olculebilir
+     * hicbir sey almiyor. Butun 55 bolume yayilan genis olcumde de en zayif iki
+     * adim bunlar (80 -> 68 -> 65; +100'un getirisi 3 sizinti / 500 coin).
+     *
+     * ## Neden: TEDARIK'IN BIRIMI KULEDIR
+     * Bu hattin parasi Tedarik'tir ve Tedarik ile yapilabilecek EN KUCUK sey en
+     * ucuz kuleyi (Gatling, 60 Tedarik) dikmektir. 60'in ALTINDAKI bir adim
+     * tahtada yeni bir kule GARANTI EDEMEZ; yalnizca HUD'daki sayiyi buyutur.
+     * Yani "+25 Tedarik", Ates Gucu'ndeki "+%3 = 0,03 kule" hatasinin Tedarik
+     * birimindeki tipatip aynisidir. Olculen tablo bunu dogruluyor — acilista
+     * alinabilen Gatling sayisi L1'de 1,1,2,2,3,3,3 diye gidiyor: alti rankin
+     * ucu tahtada hicbir sey degistirmiyor.
+     *
+     * ## Cozum: 6 x +25 -> **2 x +75**
+     * 75 > 60 oldugu icin `floor((taban+75)/60) >= floor(taban/60) + 1` HER
+     * TABAN icin gecerlidir: her rank, her bolumde en az bir kule daha. Olculen
+     * karsilik r0=21 -> r1=8 -> r2=3 (genis olcumde 131 -> 68 -> 37), yani olu
+     * rank kalmadi.
+     *
+     * Onerilen 3 x +50 **reddedildi ve gerekcesi olculdu**: 50 < 60 oldugu icin
+     * garanti vermiyor ve olu rank fiilen KALIYOR (+50 -> 8, +100 -> 8; ayni
+     * sifir fark, sadece bir rank saga kaymis hali).
+     *
+     * ## Ne DEGISMEDI
+     * Hat toplami 2.700, adim toplami +150, maks sermaye 300, agac toplami
+     * 13.900 — hepsi birebir ayni. Fiyat/etki egrisi de yukselmedi: eski
+     * r1+r2+r3 = 200+300+400 = 900 = yeni r1, eski alti rank = 2.700 = yeni iki
+     * rank (`supplyStepsDidNotRaiseThePricePerSupplyPoint`).
+     *
+     * ## Oynanis karsiligi (asil kazanc)
+     * L1 sermayesi 80 -> **155**: ilk meta satin alma artik "tek kule yerine IKI
+     * kuleyle basla" demek. Cihaz kaniti (2026-08-18) L1'i tek Gatling ile
+     * kaybettirdi; olcum de tek kulenin L5'ten itibaren kaybettigini soyluyor.
+     * Ikinci kule oyunun ilk gercek karari, ilk satin alma tam onu aciyor.
+     *
+     * Us Tahkimi DEGISMEDI: +2 can, tolere edilen sizintinin %10'u ve tolerans
+     * ekseninde rank rank olculebilir (`fortificationBuysSurvivalMarginNotFewerLeaks`).
      */
     val FIREPOWER_COSTS: IntArray = intArrayOf(400, 800, 1200, 1600)                    // 4.000
     val OPTICS_COSTS: IntArray = intArrayOf(550, 900, 1300)                             // 2.750
-    val STARTING_SUPPLY_COSTS: IntArray = intArrayOf(200, 300, 400, 500, 600, 700)      // 2.700
+    val STARTING_SUPPLY_COSTS: IntArray = intArrayOf(900, 1800)                         // 2.700
     val FORTIFICATION_COSTS: IntArray = intArrayOf(250, 400, 550, 700, 850)             // 2.750
     val SALVAGE_COSTS: IntArray = intArrayOf(200, 350, 500, 650)                        // 1.700
 
     const val TREE_TOTAL_COST: Int = 13_900
 
-    /** 4 + 3 + 6 + 5 + 4. Granularite duzeltmesinden once 28 idi (bkz. yukarisi). */
-    const val TREE_TOTAL_RANKS: Int = 22
+    /** 4 + 3 + 2 + 5 + 4. Granularite duzeltmelerinden once 28, sonra 22 idi. */
+    const val TREE_TOTAL_RANKS: Int = 18
 
     /**
      * **HISSEDILIRLIK ESIGI — rank basina en kucuk anlamli adim.**
@@ -197,13 +242,33 @@ object EconomyConfig {
      *
      * `MetaUpgradeImpactTest` bu esigi butun hatlar icin kilitler; sayi tabanli
      * hatlarda karsiligi "tabanin en az %10'u" olarak olculur.
+     *
+     * **Yuzde esigi GEREK sarttir, YETER sart degildir.** Baslangic Tedariki
+     * +25/rank ile bu esigi rahatca geciyordu (%16,7) ama sahada olu rank
+     * uretiyordu, cunku Tedarik'in gercek birimi yuzde degil KULEDIR
+     * ([MIN_SUPPLY_STEP_IS_ONE_TOWER]). Sayi tabanli her hat, kendi ekseninde
+     * ayrica olculur; nihai kapi `everyRankIsMeasurablyAliveAcrossTheCampaign`.
      */
     const val MIN_PERCEPTIBLE_STEP: Double = 0.05
+
+    /**
+     * **TEDARIK ADIMININ TABAN BIRIMI — en ucuz kulenin insa bedeli.**
+     *
+     * Baslangic Tedariki rank'i, oyuncunun acilista dikebilecegi kule sayisini
+     * GARANTILI olarak buyutmelidir. Bu ancak adim en ucuz kule kadar buyukse
+     * saglanir: `floor((taban + adim)/60) >= floor(taban/60) + 1` yalnizca
+     * `adim >= 60` icin her tabanda dogrudur.
+     *
+     * `GameConfig.TOWER_SPECS` icindeki en dusuk `buildCost` ile ayni olmali;
+     * `MetaUpgradeImpactTest.supplyStepBuysAtLeastOneMoreTowerAtEveryLevel`
+     * ikisini birbirine baglar (elle yazilmis sabite degil, spec'in kendisine).
+     */
+    const val MIN_SUPPLY_STEP_IS_ONE_TOWER: Int = 60
 
     // Rank basina oynanis etkisi (GDD F tablosu; toplamlar korunmus, adim buyutulmus).
     const val FIREPOWER_DAMAGE_PER_RANK: Double = 0.06      // tum kule hasari +%6, maks +%24
     const val OPTICS_RANGE_PER_RANK: Double = 0.05          // tum kule menzili +%5, maks +%15
-    const val STARTING_SUPPLY_PER_RANK: Int = 25            // baslangic Tedariki +25
+    const val STARTING_SUPPLY_PER_RANK: Int = 75            // baslangic Tedariki +75 (>= 1 kule)
     const val FORTIFICATION_HEALTH_PER_RANK: Int = 2        // maks us cani +2
     const val SALVAGE_PER_RANK: Double = 0.05               // satis iadesi +%5, %70 -> %90
 

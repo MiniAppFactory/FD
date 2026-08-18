@@ -695,7 +695,7 @@ class SupplyBudgetTest {
     fun metaSupplyUpgradeRewardsInvestmentWithoutRestoringTheOldAbundance() {
         // Maksli STARTING_SUPPLY (+150) L1'de 80 -> 230 yapar. Bu kasitli bir oduldur;
         // ama L1 butcesi hala eski 1.177'nin cok altinda kalmali.
-        val metaBonus = MetaUpgrades(startingSupplyRank = 6).startingSupply -
+        val metaBonus = MetaUpgrades(startingSupplyRank = 2).startingSupply -
             EconomyConfig.BASE_STARTING_SUPPLY
         assertEquals(150, metaBonus)
 
