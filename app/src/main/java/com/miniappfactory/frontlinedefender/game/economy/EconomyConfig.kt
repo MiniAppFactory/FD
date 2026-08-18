@@ -145,26 +145,97 @@ object EconomyConfig {
     // Meta yukseltme agaci (GDD F — 5 hat, 28 rank, toplam 13.900)
     // =================================================================================
 
-    val FIREPOWER_COSTS: IntArray = intArrayOf(150, 250, 350, 450, 550, 650, 750, 850) // 4.000
-    val OPTICS_COSTS: IntArray = intArrayOf(250, 400, 550, 700, 850)                    // 2.750
+    /**
+     * -----------------------------------------------------------------------------
+     * GRANULARITE DUZELTMESI (FUN_AUDIT TOP-10 madde 6) — TOPLAM GUC AYNI, ADIM BUYUK
+     * -----------------------------------------------------------------------------
+     * Sikayet olculdu ve DOGRULANDI: Ates Gucu rank 1, Gatling kd.1'in DPS'ini
+     * 43,8 -> 45,1 yapiyordu, yani **0,03 kule kadar** ek guc. 150 coin odeyip
+     * fark edilemeyecek bir sey almak "odul" degil muhasebedir.
+     *
+     * Ayni olcum agacin TOPLAMININ dogru kalibre oldugunu da gosterdi
+     * (`MetaImpactReportTool`, dikkatli oyuncu, gercek motor aynasi):
+     *
+     *     tam agac -> L22 sizinti 13 -> 4 · L34 10 -> 0 · L55 7 -> 0
+     *
+     * Yani sorun agacin GUCU degil GRANULARITESI. Cozum bu yuzden enflasyon
+     * DEGIL yeniden bolumleme: **hat toplamlari (4.000 / 2.750 / 2.700 / 2.750 /
+     * 1.700), agac toplami (13.900) ve maks etkiler (hasar +%24, menzil +%15,
+     * sermaye 300, can 30) BIREBIR korundu**; yalnizca ayni toplam daha az ve
+     * daha buyuk adima bolundu:
+     *
+     *     Ates Gucu  8 x +%3  ->  4 x +%6   (rank 1 = 0,03 kule -> 0,06 kule)
+     *     Menzil     5 x +%3  ->  3 x +%5   (rank 1 = +5 ref-px -> +8 ref-px)
+     *
+     * Toplam degismedigi icin `maxedMetaDoesNotMakePeakLevelsThreeStarTrivial`
+     * (etkin verim 1,426) ve GDD H.6 tablosu aynen gecerli kalir; 55 bolumun
+     * cozulebilirligi zaten meta 0 ile olculdugu icin hic etkilenmez.
+     *
+     * Baslangic Tedariki ve Us Tahkimi DEGISMEDI: olcum ikisinin de rank basina
+     * zaten hissedilir oldugunu gosterdi (+25 Tedarik = L1 sermayesinin %31'i;
+     * +2 can = tolere edilen sizintinin %10'u).
+     */
+    val FIREPOWER_COSTS: IntArray = intArrayOf(400, 800, 1200, 1600)                    // 4.000
+    val OPTICS_COSTS: IntArray = intArrayOf(550, 900, 1300)                             // 2.750
     val STARTING_SUPPLY_COSTS: IntArray = intArrayOf(200, 300, 400, 500, 600, 700)      // 2.700
     val FORTIFICATION_COSTS: IntArray = intArrayOf(250, 400, 550, 700, 850)             // 2.750
     val SALVAGE_COSTS: IntArray = intArrayOf(200, 350, 500, 650)                        // 1.700
 
     const val TREE_TOTAL_COST: Int = 13_900
-    const val TREE_TOTAL_RANKS: Int = 28
 
-    // Rank basina oynanis etkisi (GDD F tablosu).
-    const val FIREPOWER_DAMAGE_PER_RANK: Double = 0.03      // tum kule hasari +%3
-    const val OPTICS_RANGE_PER_RANK: Double = 0.03          // tum kule menzili +%3
+    /** 4 + 3 + 6 + 5 + 4. Granularite duzeltmesinden once 28 idi (bkz. yukarisi). */
+    const val TREE_TOTAL_RANKS: Int = 22
+
+    /**
+     * **HISSEDILIRLIK ESIGI — rank basina en kucuk anlamli adim.**
+     *
+     * Bir yukseltme, oyuncunun sahada FARK EDEBILECEGI kadar degistirmelidir;
+     * aksi halde satin alma bir odul degil bir makbuzdur. Yuzde tabanli hatlarda
+     * esik **%5**: bunun altindaki adim tek bir dalganin dagilim gurultusunun
+     * icinde kaybolur (Gatling kd.1 icin %3 = atis basina 0,4 hasar, yani ayni
+     * sayida atisla ayni sayida olum).
+     *
+     * `MetaUpgradeImpactTest` bu esigi butun hatlar icin kilitler; sayi tabanli
+     * hatlarda karsiligi "tabanin en az %10'u" olarak olculur.
+     */
+    const val MIN_PERCEPTIBLE_STEP: Double = 0.05
+
+    // Rank basina oynanis etkisi (GDD F tablosu; toplamlar korunmus, adim buyutulmus).
+    const val FIREPOWER_DAMAGE_PER_RANK: Double = 0.06      // tum kule hasari +%6, maks +%24
+    const val OPTICS_RANGE_PER_RANK: Double = 0.05          // tum kule menzili +%5, maks +%15
     const val STARTING_SUPPLY_PER_RANK: Int = 25            // baslangic Tedariki +25
     const val FORTIFICATION_HEALTH_PER_RANK: Int = 2        // maks us cani +2
-    const val SALVAGE_PER_RANK: Double = 0.05               // satis iadesi +%5
+    const val SALVAGE_PER_RANK: Double = 0.05               // satis iadesi +%5, %70 -> %90
 
     /** Tabanlar — `GameConfig.INITIAL_BASE_LIVES` / `INITIAL_GOLD` ile ayni olmali. */
     const val BASE_MAX_HEALTH: Int = 20
     const val BASE_STARTING_SUPPLY: Int = 150
-    const val BASE_SALVAGE_RATIO: Double = 0.50
+
+    /**
+     * **HURDA DEGERI TABANI — `TowerEntity.salvageRate` VARSAYILANI ILE AYNI OLMAK
+     * ZORUNDA (0,70).**
+     *
+     * ## Duzeltilen hata: GIZLI VERGI
+     * Oyunun kule satis iadesi her zaman **%70** idi (`GameEntities.salvageRate`
+     * varsayilani, `EntityDerivedStatsTest.sellValueRefundsSeventyPercentOfEverythingInvested`).
+     * Faz 9'da Hurda Degeri meta hatti eklenirken bu taban **0,50'ye indirildi** ve
+     * aradaki 20 puan 1.700 coinlik bir hat olarak SATILDI. Motor kule kurarken
+     * `salvageRate = metaSalvageRate` (GameEngine:574) verdigi icin varsayilan
+     * 0,70 hicbir zaman sahaya cikmiyordu: rank 0 oyuncu **%50** ile oynuyordu.
+     *
+     * Yani hat bir yukseltme degil bir vergiydi — oyuncu 1.700 coin odeyip
+     * ZATEN SAHIP OLDUGU seyi geri satin aliyordu ve rank 4'te ancak baslangic
+     * noktasina donuyordu.
+     *
+     * ## Kural
+     * Bir meta hattinin rank 0 degeri, o yukseltme HIC ALINMAMISKEN oyuncunun
+     * sahip oldugu degerdir; yukseltme bunun **USTUNE** cikar. Taban 0,70'e geri
+     * alindi, rank basina +%5 korundu, yani hat artik %70 -> **%90** goturuyor:
+     * kd.3 Gatling satisi 178 -> 229 Tedarik. Ust sinir 1,0'in ALTINDA kalir,
+     * yani "kur-sat" ve "yukselt-sat" dongusu hâlâ para uretmez
+     * (`EntityDerivedStatsTest` butun kademeleri ve butun rank'lari tarar).
+     */
+    const val BASE_SALVAGE_RATIO: Double = 0.70
 
     /**
      * BAYRAK F-1 (ECONOMY_SPEC 7) — **KAMPANYA ILERLEMESI KAPISI. VARSAYILAN KAPALI.**

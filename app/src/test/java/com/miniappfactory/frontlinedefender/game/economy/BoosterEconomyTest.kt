@@ -139,8 +139,11 @@ class BoosterEconomyTest {
         // tamir farming'i yapar.
         // Ust sinir: R(L) 1 yildiz odulu. Ustune cikarsa yenilgiyi zafere cevirmek
         // NET ZARAR olur ve guclendirici olu yatirim haline gelir.
+        // Dukkan tabani: granularite duzeltmesinden sonra en ucuz rank-1
+        // Baslangic Tedariki / Hurda Degeri (200). Ates Gucu rank 1 150 -> 400
+        // cikti cunku artik +%3 degil +%6 veriyor.
         val cheapestRank = UpgradeLine.entries.minOf { it.costOfRank(1) }
-        assertEquals(150, cheapestRank)
+        assertEquals(200, cheapestRank)
 
         for (level in BoosterType.BASE_REPAIR.unlockLevel..EconomyConfig.CAMPAIGN_LEVELS) {
             val price = boosterPrice(BoosterType.BASE_REPAIR, level)
@@ -943,14 +946,14 @@ class BoosterEconomyTest {
 
     @Test
     fun cheapestNextRankPriceTracksTheRealShopFloor() {
-        assertEquals(150, cheapestNextRankPrice(MetaUpgrades()))
-        // FIREPOWER rank 1 alindi -> en ucuz siradaki artik FIREPOWER rank 2 (250) veya
-        // SALVAGE/STARTING_SUPPLY rank 1 (200).
+        // Dukkan tabani SALVAGE/STARTING_SUPPLY rank 1 = 200.
+        assertEquals(200, cheapestNextRankPrice(MetaUpgrades()))
+        // FIREPOWER rank 1 alindi -> taban degismez (SALVAGE/SUPPLY hâlâ 200).
         assertEquals(200, cheapestNextRankPrice(MetaUpgrades(firepower = 1)))
-        assertNotEquals(null, cheapestNextRankPrice(MetaUpgrades(firepower = 8)))
+        assertNotEquals(null, cheapestNextRankPrice(MetaUpgrades(firepower = 4)))
 
         val maxed = MetaUpgrades(
-            firepower = 8, optics = 5, startingSupplyRank = 6, fortification = 5, salvage = 4,
+            firepower = 4, optics = 3, startingSupplyRank = 6, fortification = 5, salvage = 4,
         )
         assertTrue(maxed.isMaxed())
         assertEquals(null, cheapestNextRankPrice(maxed))

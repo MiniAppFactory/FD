@@ -38,6 +38,13 @@ data class TowerEntity(
     // sessiz tutarsizliklar uretirdi.
     //
     // Varsayilan 1.0 / 0.70: yukseltme yoksa davranis oncekiyle BIREBIR ayni.
+    //
+    // `salvageRate` varsayilani ile `EconomyConfig.BASE_SALVAGE_RATIO` AYNI
+    // OLMAK ZORUNDA (ikisi de 0.70). Bir donem taban 0.50'ye indirilmisti ve
+    // motor kule kurarken her zaman meta oranini verdigi icin (GameEngine:574)
+    // buradaki 0.70 sahaya HIC cikmiyordu: rank 0 oyuncu %50 ile oynuyor,
+    // Hurda Degeri hatti da ona 1.700 coine zaten sahip oldugu %70'i geri
+    // satiyordu. Sozlesme `MetaUpgradeImpactTest` tarafindan kilitlenir.
     // ------------------------------------------------------------------------
     val damageMultiplier: Float = 1f,
     val rangeMultiplier: Float = 1f,
@@ -106,7 +113,7 @@ data class TowerEntity(
      * Satis geri odemesi. **Yatirimin tamamindan** hesaplanir, kademeden degil:
      * her yukseltme `totalInvestedGold`e eklendigi icin kademe 3 muhasebeye
      * kendiliginden dahil olur. `salvageRate` her zaman 1.0'in altinda kaldigi
-     * surece (meta tavani 0.70) "yukselt sonra sat" ASLA kar etmez —
+     * surece (meta tavani 0.90) "yukselt sonra sat" ASLA kar etmez —
      * `EntityDerivedStatsTest` bunu her kademe ve her salvage rank'i icin
      * kilitler.
      */

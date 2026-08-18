@@ -53,10 +53,13 @@ class EconomySimulationTest {
     }
 
     @Test
-    fun metaTreeTotalIs13900WithTwentyEightRanks() {
+    fun metaTreeTotalIs13900WithTwentyTwoRanks() {
         val total = UpgradeLine.entries.sumOf { it.totalCost() }
         assertEquals("GDD F: agac toplami 13.900", EconomyConfig.TREE_TOTAL_COST, total)
         assertEquals(EconomyConfig.TREE_TOTAL_RANKS, UpgradeLine.entries.sumOf { it.maxRank })
+        // Granularite duzeltmesi: 28 -> 22 rank. Agac toplami ve hat toplamlari
+        // DEGISMEDI; ayni para daha az ve daha buyuk adima bolundu.
+        assertEquals(22, UpgradeLine.entries.sumOf { it.maxRank })
     }
 
     @Test
@@ -71,15 +74,19 @@ class EconomySimulationTest {
     @Test
     fun maxedTreeEffectsMatchGddH6() {
         val maxed = MetaUpgrades(
-            firepower = 8, optics = 5, startingSupplyRank = 6, fortification = 5, salvage = 4
+            firepower = 4, optics = 3, startingSupplyRank = 6, fortification = 5, salvage = 4
         )
         assertEquals("hasar +%24", 1.24, maxed.damageMultiplier, 1e-9)
         assertEquals("menzil +%15", 1.15, maxed.rangeMultiplier, 1e-9)
         assertEquals("baslangic Tedariki 300", 300, maxed.startingSupply)
         assertEquals("maks us cani 30", 30, maxed.maxBaseHealth)
-        assertEquals("satis iadesi %70", 0.70, maxed.salvageRatio, 1e-9)
+        // Hurda Degeri: rank 0 = %70 (oyunun her zamanki tabani), maks = %90.
+        // Eskiden taban 0,50 idi ve maks yalnizca %70'e, yani BASLANGIC NOKTASINA
+        // donuyordu — bkz. EconomyConfig.BASE_SALVAGE_RATIO gerekcesi.
+        assertEquals("satis iadesi %90", 0.90, maxed.salvageRatio, 1e-9)
+        assertEquals("rank 0 iadesi %70", 0.70, MetaUpgrades().salvageRatio, 1e-9)
         assertEquals(EconomyConfig.TREE_TOTAL_COST, maxed.spentCoins())
-        assertEquals(28, maxed.totalRanks())
+        assertEquals(22, maxed.totalRanks())
         assertTrue(maxed.isMaxed())
     }
 
@@ -235,43 +242,44 @@ class EconomySimulationTest {
 
     @Test
     fun purchaseThatBreaksReserveIsRejected() {
-        // GDD H.3: bakiye 200, siradaki kilit 150 (L12), 150 coin'lik yukseltme -> RED.
+        // GDD H.3: bakiye 200, siradaki kilit 150 (L12), 200 coin'lik yukseltme -> RED.
+        // Dukkan tabani (en ucuz rank-1) Baslangic Tedariki = 200.
         val wallet = walletAt(200, (1..11).toSet(), (1..11).toSet())
         assertEquals(150, reserveFor(wallet))
 
-        val denied = purchaseAllowed(wallet, MetaUpgrades(), UpgradeLine.FIREPOWER)
+        val denied = purchaseAllowed(wallet, MetaUpgrades(), UpgradeLine.STARTING_SUPPLY)
         assertTrue("rezerv engellemeli", denied is PurchaseDecision.ReserveLocked)
         assertEquals(150, (denied as PurchaseDecision.ReserveLocked).reserve)
-        assertEquals(100, denied.shortfall)
+        assertEquals(150, denied.shortfall)
 
         // Bakiye ve rank DEGISMEMELI.
-        val (w2, u2) = applyPurchase(wallet, MetaUpgrades(), UpgradeLine.FIREPOWER)
+        val (w2, u2) = applyPurchase(wallet, MetaUpgrades(), UpgradeLine.STARTING_SUPPLY)
         assertEquals(200, w2.coins)
-        assertEquals(0, u2.firepower)
+        assertEquals(0, u2.startingSupplyRank)
     }
 
     @Test
     fun purchaseThatLandsExactlyOnReserveIsAllowed() {
         // GDD H.3 ikinci madde: bakiye TAM rezerve inebilir.
-        // Bakiye 250, rezerv 100 (L7) -> 150'lik alim -> 100 = rezerv -> KABUL.
-        val wallet = walletAt(250, (1..6).toSet(), (1..6).toSet())
+        // Bakiye 300, rezerv 100 (L7) -> 200'luk alim -> 100 = rezerv -> KABUL.
+        val wallet = walletAt(300, (1..6).toSet(), (1..6).toSet())
         assertEquals(100, reserveFor(wallet))
-        val decision = purchaseAllowed(wallet, MetaUpgrades(), UpgradeLine.FIREPOWER)
+        val decision = purchaseAllowed(wallet, MetaUpgrades(), UpgradeLine.STARTING_SUPPLY)
         assertTrue(decision is PurchaseDecision.Allowed)
         assertEquals(100, (decision as PurchaseDecision.Allowed).balanceAfter)
 
-        val (w2, u2) = applyPurchase(wallet, MetaUpgrades(), UpgradeLine.FIREPOWER)
+        val (w2, u2) = applyPurchase(wallet, MetaUpgrades(), UpgradeLine.STARTING_SUPPLY)
         assertEquals("bakiye tam rezerv kadar kalir", 100, w2.coins)
-        assertEquals(1, u2.firepower)
+        assertEquals(1, u2.startingSupplyRank)
     }
 
     @Test
     fun insufficientFundsIsDistinctFromReserveLock() {
         // Analytics sozlesmesi: `reserve_lock_blocked` yalnizca para YETERKEN gonderilir.
         val poor = walletAt(50, (1..6).toSet(), (1..6).toSet())
-        val decision = purchaseAllowed(poor, MetaUpgrades(), UpgradeLine.FIREPOWER)
+        val decision = purchaseAllowed(poor, MetaUpgrades(), UpgradeLine.STARTING_SUPPLY)
         assertTrue(decision is PurchaseDecision.InsufficientFunds)
-        assertEquals(100, (decision as PurchaseDecision.InsufficientFunds).shortfall)
+        assertEquals(150, (decision as PurchaseDecision.InsufficientFunds).shortfall)
     }
 
     @Test
@@ -1075,7 +1083,7 @@ class EconomySimulationTest {
         assertEquals(EconomyConfig.TREE_TOTAL_COST, purchasableTreeCeiling(0))
         // Kapisiz halde bile yeni oyuncu agaci ilk gun ALAMAZ: para yetmez.
         val newPlayer = walletAt(1_000, (1..6).toSet(), (1..3).toSet())
-        assertTrue(purchaseAllowed(newPlayer, MetaUpgrades(firepower = 2), UpgradeLine.FIREPOWER) is PurchaseDecision.Allowed)
+        assertTrue(purchaseAllowed(newPlayer, MetaUpgrades(firepower = 1), UpgradeLine.FIREPOWER) is PurchaseDecision.Allowed)
     }
 
     @Test
@@ -1133,7 +1141,7 @@ class EconomySimulationTest {
     fun maxedMetaDoesNotMakePeakLevelsThreeStarTrivial() {
         // LEVEL_DESIGN E.3: L22 ELL = 9,0 sizma (20 can uzerinden).
         // Tam maksli meta: etkin verim 1,426 -> ELL ~ 6,3; maks can 30.
-        val maxed = MetaUpgrades(firepower = 8, optics = 5, fortification = 5)
+        val maxed = MetaUpgrades(firepower = 4, optics = 3, fortification = 5)
         assertEquals(1.4260, maxed.effectiveThroughput, 1e-4)
 
         val scaledLeaks = Math.round(9.0 / maxed.effectiveThroughput).toInt() // 6

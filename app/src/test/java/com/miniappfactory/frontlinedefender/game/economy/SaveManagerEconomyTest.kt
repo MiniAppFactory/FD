@@ -103,7 +103,7 @@ class SaveManagerEconomyTest {
     @Test
     fun metaUpgradesRoundTrip() {
         val store = InMemoryKeyValueStore()
-        val upgrades = MetaUpgrades(firepower = 5, optics = 3, startingSupplyRank = 6, fortification = 2, salvage = 4)
+        val upgrades = MetaUpgrades(firepower = 3, optics = 2, startingSupplyRank = 6, fortification = 2, salvage = 4)
         manager(store).saveMetaUpgrades(upgrades)
         assertEquals(upgrades, manager(store).loadMetaUpgrades())
     }
@@ -341,7 +341,7 @@ class SaveManagerEconomyTest {
         val save = manager(store)
         save.soundEnabled = false
         save.saveWallet(PlayerWallet(coins = 5_000, unlockedLevels = (1..15).toSet(), clearedLevels = (1..14).toSet()))
-        save.saveMetaUpgrades(MetaUpgrades(firepower = 8))
+        save.saveMetaUpgrades(MetaUpgrades(firepower = 4))
         save.setLevelStars(14, 3)
 
         save.resetProgress()

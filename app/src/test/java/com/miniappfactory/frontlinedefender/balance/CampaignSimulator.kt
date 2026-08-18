@@ -1,5 +1,9 @@
 package com.miniappfactory.frontlinedefender.balance
 
+import com.miniappfactory.frontlinedefender.game.economy.EconomyConfig
+import com.miniappfactory.frontlinedefender.game.economy.MetaUpgrades
+import com.miniappfactory.frontlinedefender.game.economy.starHealthFromLeaks
+import com.miniappfactory.frontlinedefender.game.economy.starsFor
 import com.miniappfactory.frontlinedefender.game.model.GameConfig
 import com.miniappfactory.frontlinedefender.game.model.GameConfig.EnemyType
 import com.miniappfactory.frontlinedefender.game.model.GameConfig.TowerType
@@ -62,7 +66,10 @@ import kotlin.random.Random
  *    oyuncu LEHINE ~%2,5 iyimserdir.
  *  · Dusman yay uzerinde ilerler; motorun waypoint'e "yapisma" karesinde
  *    kaybettigi ~%0,6 mesafe modellenmez (yine oyuncu lehine).
- *  · Meta yukseltme SIFIR, guclendirici YOK, reklam odulu YOK, kule SATISI yok.
+ *  · Guclendirici YOK, reklam odulu YOK, kule SATISI yok. Meta yukseltme
+ *    VARSAYILAN OLARAK SIFIR; [play]/[bestOutcome] bir `MetaUpgrades` alir,
+ *    yani "meta 0 ile ne oluyor, tam rank ile ne oluyor" AYNI motorla olculur.
+ *    Kule satisi modellenmedigi icin Hurda Degeri hattinin etkisi burada 0'dir.
  *
  * Model iyimser oldugu icin **KIRMIZI kesin bir hatadir**; yesil "rahat"
  * demek degil "matematiksel olarak mumkun" demektir.
@@ -238,12 +245,24 @@ object CampaignSimulator {
     // Calisma zamani nesneleri
     // =======================================================================
 
-    private class SimTower(val pad: Pad, val type: TowerType) {
+    /**
+     * @param damageMul meta Ates Gucu carpani ([MetaUpgrades.damageMultiplier]).
+     * @param rangeMul meta Menzil carpani ([MetaUpgrades.rangeMultiplier]).
+     *
+     * Motorla BIREBIR: `TowerEntity` de carpani getter'in ICINDE uygular,
+     * kullanim yerinde degil (bkz. `GameEntities.kt` meta blogu).
+     */
+    private class SimTower(
+        val pad: Pad,
+        val type: TowerType,
+        val damageMul: Float = 1f,
+        val rangeMul: Float = 1f
+    ) {
         var tier: Int = 1
         var cooldown: Float = 0f
         val stats: GameConfig.TowerStats get() = GameConfig.TOWER_SPECS.getValue(type)
-        val range: Float get() = stats.tier(tier).range
-        val damage: Float get() = stats.tier(tier).damage
+        val range: Float get() = stats.tier(tier).range * rangeMul
+        val damage: Float get() = stats.tier(tier).damage * damageMul
         val interval: Float get() = stats.tier(tier).fireRate
     }
 
@@ -337,6 +356,8 @@ object CampaignSimulator {
         val livesLeft: Int,
         val maxLives: Int,
         val leaked: Int,
+        /** Bolumun TABAN us cani (meta Tahkimat bonusu HARIC). */
+        val baseMaxLives: Int,
         val wavesCleared: Int,
         val totalWaves: Int,
         val roster: String,
@@ -345,12 +366,17 @@ object CampaignSimulator {
         /** Dalga dalga "sizinti/kule sayisi/eldeki Tedarik" izi — teshis icin. */
         val trace: List<String> = emptyList()
     ) {
+        /**
+         * **META-NOTR** yildiz — motorun `starHealthFromLeaks` doktrini ile
+         * BIREBIR: yildiz yalnizca SIZINTI SAYISINA bakar, Tahkimat'in verdigi
+         * fazladan can yildiz satin almaz. Meta 0'da bu, eski
+         * `livesLeft / maxLives` hesabiyla ozdestir (livesLeft = taban - sizinti).
+         */
         val stars: Int
-            get() = when {
-                !cleared -> 0
-                livesLeft >= GameConfig.STAR3_LIVES_FRACTION * maxLives -> 3
-                livesLeft >= GameConfig.STAR2_LIVES_FRACTION * maxLives -> 2
-                else -> 1
+            get() = if (!cleared) {
+                0
+            } else {
+                starsFor(starHealthFromLeaks(baseMaxLives, leaked), baseMaxLives)
             }
     }
 
@@ -366,10 +392,21 @@ object CampaignSimulator {
     fun play(
         model: LevelModel,
         style: Playstyle,
-        startingSupplyOverride: Int? = null
+        startingSupplyOverride: Int? = null,
+        meta: MetaUpgrades = MetaUpgrades()
     ): Outcome {
-        var supply = startingSupplyOverride ?: model.spec.startingSupply  // meta SIFIR
-        var lives = model.spec.maxBaseLives          // meta can bonusu SIFIR
+        // Meta etkileri `MetaUpgrades`in KENDI turetilmis alanlarindan okunur;
+        // simulator kendi yukseltme matematigini YAZMAZ (GameEngine ile ayni kural).
+        val damageMul = meta.damageMultiplier.toFloat()
+        val rangeMul = meta.rangeMultiplier.toFloat()
+        // Motor: `_gold = levelSpec.startingSupply + (meta - BASE)` (GameEngine:895).
+        val supplyBonus = meta.startingSupply - EconomyConfig.BASE_STARTING_SUPPLY
+        // Motor: `_lives = levelSpec.maxBaseLives + (meta - BASE)` (GameEngine:896).
+        val livesBonus = meta.maxBaseHealth - EconomyConfig.BASE_MAX_HEALTH
+        val effectiveMaxLives = model.spec.maxBaseLives + livesBonus
+
+        var supply = startingSupplyOverride ?: (model.spec.startingSupply + supplyBonus)
+        var lives = effectiveMaxLives
         var leaked = 0
         var elapsed = 0f
         val towers = ArrayList<SimTower>()
@@ -426,9 +463,10 @@ object CampaignSimulator {
          */
         fun perBodyDamage(pad: Pad, type: TowerType, tier: Int, ci: Int): Float {
             val row = GameConfig.TOWER_SPECS.getValue(type).tier(tier)
-            val cover = model.cover(pad, row.range)
+            val cover = model.cover(pad, row.range * rangeMul)
             if (cover <= 0f) return 0f
-            return row.dps * damageMultiplier(type, classes[ci]) * (cover / classSpeed[ci])
+            return row.dps * damageMul * damageMultiplier(type, classes[ci]) *
+                (cover / classSpeed[ci])
         }
 
         /** Kadronun sinif bazinda birikmis teslim gucu. */
@@ -485,7 +523,7 @@ object CampaignSimulator {
                     out.add(
                         Move(gain, stats.buildCost, true, delta) {
                             occupied.add(pad.id)
-                            towers.add(SimTower(pad, type))
+                            towers.add(SimTower(pad, type, damageMul, rangeMul))
                         }
                     )
                 }
@@ -524,7 +562,7 @@ object CampaignSimulator {
             while (guard++ < 400) {
                 val nextType = unlockOrder[towers.size % unlockOrder.size]
                 val stats = GameConfig.TOWER_SPECS.getValue(nextType)
-                val range = stats.tier(1).range
+                val range = stats.tier(1).range * rangeMul
                 val pad = model.pads.filter { it.id !in occupied }
                     .filter { model.cover(it, range) > 1f }
                     .maxByOrNull { model.cover(it, range) }
@@ -532,7 +570,7 @@ object CampaignSimulator {
                     if (supply < stats.buildCost) return
                     supply -= stats.buildCost
                     occupied.add(pad.id)
-                    towers.add(SimTower(pad, nextType))
+                    towers.add(SimTower(pad, nextType, damageMul, rangeMul))
                     continue
                 }
                 // Tahta doldu -> en ucuz yukseltme.
@@ -551,7 +589,7 @@ object CampaignSimulator {
         fun spendSingleTower() {
             if (towers.isEmpty()) {
                 val best = attackTypes.flatMap { type ->
-                    val range = GameConfig.TOWER_SPECS.getValue(type).tier(1).range
+                    val range = GameConfig.TOWER_SPECS.getValue(type).tier(1).range * rangeMul
                     model.pads.map { pad ->
                         Triple(type, pad, model.cover(pad, range) * model.mixMultiplier(type) *
                             GameConfig.TOWER_SPECS.getValue(type).tier(1).dps)
@@ -561,7 +599,7 @@ object CampaignSimulator {
                 if (supply < stats.buildCost) return
                 supply -= stats.buildCost
                 occupied.add(best.second.id)
-                towers.add(SimTower(best.second, best.first))
+                towers.add(SimTower(best.second, best.first, damageMul, rangeMul))
             }
             val only = towers.first()
             while (only.tier < min(model.maxTier(only.type), only.stats.maxTier)) {
@@ -585,14 +623,14 @@ object CampaignSimulator {
                     TowerType.SLOW in model.unlockedTowers
                 ) {
                     val slowStats = GameConfig.TOWER_SPECS.getValue(TowerType.SLOW)
-                    val slowRange = slowStats.tier(1).range
+                    val slowRange = slowStats.tier(1).range * rangeMul
                     val best = model.pads.filter { it.id !in occupied }
                         .maxByOrNull { model.cover(it, slowRange) }
                     if (best != null && model.cover(best, slowRange) > 1f) {
                         if (supply < slowStats.buildCost) return
                         supply -= slowStats.buildCost
                         occupied.add(best.id)
-                        towers.add(SimTower(best, TowerType.SLOW))
+                        towers.add(SimTower(best, TowerType.SLOW, damageMul, rangeMul))
                         slowBuilt++
                         continue
                     }
@@ -833,7 +871,8 @@ object CampaignSimulator {
             )
             if (lives <= 0) {
                 return Outcome(
-                    model.levelId, style, false, 0, model.spec.maxBaseLives, leaked,
+                    model.levelId, style, false, 0, effectiveMaxLives, leaked,
+                    model.spec.maxBaseLives,
                     wavesCleared, model.waves.size, rosterOf(towers), supply, elapsed, trace
                 )
             }
@@ -843,7 +882,8 @@ object CampaignSimulator {
         }
 
         return Outcome(
-            model.levelId, style, true, lives, model.spec.maxBaseLives, leaked,
+            model.levelId, style, true, lives, effectiveMaxLives, leaked,
+            model.spec.maxBaseLives,
             wavesCleared, model.waves.size, rosterOf(towers), supply, elapsed, trace
         )
     }
@@ -873,11 +913,15 @@ object CampaignSimulator {
     )
 
     /** ILK gecen davranisi dondurur; hicbiri gecemezse en uzaga giden kosuyu. */
-    fun bestOutcome(levelId: Int, startingSupplyOverride: Int? = null): Outcome {
+    fun bestOutcome(
+        levelId: Int,
+        startingSupplyOverride: Int? = null,
+        meta: MetaUpgrades = MetaUpgrades()
+    ): Outcome {
         val model = LevelModel(levelId)
         var best: Outcome? = null
         for (style in CAREFUL_STYLES) {
-            val outcome = play(model, style, startingSupplyOverride)
+            val outcome = play(model, style, startingSupplyOverride, meta)
             if (outcome.cleared) return outcome
             val b = best
             if (b == null || outcome.wavesCleared > b.wavesCleared || outcome.leaked < b.leaked) {
@@ -888,8 +932,8 @@ object CampaignSimulator {
     }
 
     /** Ayni bolumu TUM davranislarla kosar (rapor/olcum icin). */
-    fun allOutcomes(levelId: Int): List<Outcome> {
+    fun allOutcomes(levelId: Int, meta: MetaUpgrades = MetaUpgrades()): List<Outcome> {
         val model = LevelModel(levelId)
-        return CAREFUL_STYLES.map { play(model, it) }
+        return CAREFUL_STYLES.map { play(model, it, null, meta) }
     }
 }

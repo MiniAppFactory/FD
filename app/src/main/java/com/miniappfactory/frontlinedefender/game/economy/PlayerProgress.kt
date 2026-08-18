@@ -15,11 +15,11 @@ package com.miniappfactory.frontlinedefender.game.economy
 // =====================================================================================
 
 enum class UpgradeLine(val maxRank: Int) {
-    /** Ates Gucu — tum kule hasari +%3/rank, maks +%24. */
-    FIREPOWER(8),
+    /** Ates Gucu — tum kule hasari +%6/rank, maks +%24. */
+    FIREPOWER(4),
 
-    /** Menzil (Optics) — tum kule menzili +%3/rank, maks +%15. */
-    OPTICS(5),
+    /** Menzil (Optics) — tum kule menzili +%5/rank, maks +%15. */
+    OPTICS(3),
 
     /** Baslangic Tedariki — savas basi Tedarik +25/rank, 150 -> 300. */
     STARTING_SUPPLY(6),
@@ -27,7 +27,13 @@ enum class UpgradeLine(val maxRank: Int) {
     /** Us Tahkimi — maks us cani +2/rank, 20 -> 30. */
     FORTIFICATION(5),
 
-    /** Hurda Degeri — kule satis iadesi +%5/rank, %50 -> %70. */
+    /**
+     * Hurda Degeri — kule satis iadesi +%5/rank, **%70 -> %90**.
+     *
+     * Rank 0 = %70, yani oyunun her zaman verdigi iade
+     * ([EconomyConfig.BASE_SALVAGE_RATIO] gerekcesine bak: taban bir zamanlar
+     * 0,50'ye indirilmisti ve hat "sahip oldugunu geri satin al"a donmustu).
+     */
     SALVAGE(4),
     ;
 
@@ -91,11 +97,11 @@ data class MetaUpgrades(
 
     // ---- Turetilmis oynanis etkileri ---------------------------------------------
 
-    /** Tum kule hasarina uygulanan carpan. Rank 8 -> 1,24 (GDD H.6). */
+    /** Tum kule hasarina uygulanan carpan. Maks rank (4) -> 1,24 (GDD H.6). */
     val damageMultiplier: Double
         get() = 1.0 + EconomyConfig.FIREPOWER_DAMAGE_PER_RANK * firepower
 
-    /** Tum kule menziline uygulanan carpan. Rank 5 -> 1,15. */
+    /** Tum kule menziline uygulanan carpan. Maks rank (3) -> 1,15. */
     val rangeMultiplier: Double
         get() = 1.0 + EconomyConfig.OPTICS_RANGE_PER_RANK * optics
 
@@ -109,7 +115,7 @@ data class MetaUpgrades(
         get() = EconomyConfig.BASE_MAX_HEALTH +
             EconomyConfig.FORTIFICATION_HEALTH_PER_RANK * fortification
 
-    /** Kule satis iade orani. Rank 4 -> 0,70. */
+    /** Kule satis iade orani. Rank 0 -> 0,70 (oyunun tabani), rank 4 -> 0,90. */
     val salvageRatio: Double
         get() = EconomyConfig.BASE_SALVAGE_RATIO + EconomyConfig.SALVAGE_PER_RANK * salvage
 
