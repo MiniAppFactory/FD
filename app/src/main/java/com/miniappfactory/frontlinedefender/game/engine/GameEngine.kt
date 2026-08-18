@@ -2,8 +2,14 @@ package com.miniappfactory.frontlinedefender.game.engine
 
 import androidx.compose.ui.geometry.Offset
 import com.miniappfactory.frontlinedefender.game.audio.AudioManager
+import com.miniappfactory.frontlinedefender.game.audio.HapticsFeedback
 import com.miniappfactory.frontlinedefender.game.data.SaveManager
+import com.miniappfactory.frontlinedefender.game.economy.BattleResources
+import com.miniappfactory.frontlinedefender.game.economy.BoosterActivation
 import com.miniappfactory.frontlinedefender.game.economy.EconomyConfig
+import com.miniappfactory.frontlinedefender.game.economy.airSupportDamage
+import com.miniappfactory.frontlinedefender.game.economy.applyBoosterToResources
+import com.miniappfactory.frontlinedefender.game.economy.starHealthFromLeaks
 import com.miniappfactory.frontlinedefender.game.economy.starsFor
 import com.miniappfactory.frontlinedefender.game.model.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -11,6 +17,254 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlin.math.*
 import kotlin.random.Random
+
+/**
+ * Faz 14 - ZINCIR (kill-streak) takibi.
+ *
+ * NEDEN AYRI VE SAF BIR SINIF: `GameEngine` yapicisinda `SaveManager(Context)`
+ * ve `AudioManager(Context)` istedigi icin saf JUnit'te ornek uretilemiyor
+ * (bkz. StarRatingTest'teki test-edilebilirlik borcu notu). Zincir kurallari
+ * motorun icine gomulseydi ESIKLER hic test edilemezdi. Burada Android
+ * bagimliligi YOK, yani ComboTrackerTest gercek nesneyi surer.
+ *
+ * OYNANISA ETKISI SIFIR: zincir ne altin, ne hasar, ne hiz verir. Yalnizca
+ * geri bildirimin (olcek / renk / ses / hit stop) siddetini surer. Bu bilincli
+ * bir karar: denge tablolari (WaveDefinitions, EconomyConfig) baska ajanlarin
+ * sahipliginde ve bir "combo bonusu" onlarin cozdugu tedarik egrisini sessizce
+ * bozardi.
+ *
+ * ZAMAN TABANI: [age] SIMULASYON dt'si ile beslenir (oyun hizi carpani DAHIL).
+ * Gercek zaman kullanilsaydi 2x hizda ayni dalga daha uzun bir zincir uretirdi:
+ * ayni oynanis, farkli geri bildirim.
+ */
+class ComboTracker(
+    private val windowSeconds: Float = COMBO_WINDOW_SECONDS,
+    private val thresholds: List<Int> = COMBO_TIER_THRESHOLDS
+) {
+    /** Aktif zincirdeki oldurme sayisi. Zincir yoksa 0. */
+    var count: Int = 0
+        private set
+
+    /** 0 = zincir yok. 1..thresholds.size arasi kademe. */
+    var tier: Int = 0
+        private set
+
+    /** Zincirin kopmasina kalan SIMULASYON suresi. */
+    var timeRemainingSeconds: Float = 0f
+        private set
+
+    val isActive: Boolean get() = timeRemainingSeconds > 0f
+
+    /** Bu bolumde ulasilan en yuksek kademe (istatistik/test). */
+    var peakTier: Int = 0
+        private set
+
+    /**
+     * Bir oldurme kaydet.
+     *
+     * @return zincir bu oldurmede bir kademe TIRMANDIYSA yeni kademe,
+     *   tirmanmadiysa 0. Cagiran yalnizca sifirdan farkli donuste patlama
+     *   uretir, her oldurmede degil.
+     */
+    fun registerKill(): Int {
+        count = if (isActive) count + 1 else 1
+        timeRemainingSeconds = windowSeconds
+        val newTier = tierFor(count)
+        val climbed = newTier > tier
+        tier = newTier
+        if (newTier > peakTier) peakTier = newTier
+        return if (climbed) newTier else 0
+    }
+
+    /** Zincir penceresini yaslandirir; pencere dolunca zincir KOPAR. */
+    fun age(dt: Float) {
+        if (timeRemainingSeconds <= 0f) return
+        timeRemainingSeconds -= dt
+        if (timeRemainingSeconds <= 0f) reset()
+    }
+
+    /** Zinciri koparir. [peakTier] KORUNUR. */
+    fun reset() {
+        count = 0
+        tier = 0
+        timeRemainingSeconds = 0f
+    }
+
+    /** Bolum sinirinda tam sifirlama. */
+    fun resetAll() {
+        reset()
+        peakTier = 0
+    }
+
+    fun tierFor(kills: Int): Int {
+        var t = 0
+        for (i in thresholds.indices) if (kills >= thresholds[i]) t = i + 1
+        return t
+    }
+
+    companion object {
+        /**
+         * Zincir penceresi. 2.6 sn bilincli: makineli tufek ve top birlikte
+         * calisirken oldurmeler 0.6-1.2 sn araliga duser, yani calisan bir
+         * savunma hatti zincir KURAR; tek kuleli erken bolumlerde zincir
+         * kendiliginden kopar ve tirmanma bir odul olarak kalir.
+         */
+        const val COMBO_WINDOW_SECONDS = 2.6f
+
+        /** Kademe esikleri (oldurme sayisi). 4 kademe, 4 tirmanma ani. */
+        val COMBO_TIER_THRESHOLDS: List<Int> = listOf(3, 6, 10, 16)
+
+        /** Yuzen "+4g" yazisina "x7" eklenmeye baslanan esik. */
+        const val COMBO_LABEL_MIN_KILLS = 3
+
+        val MAX_TIER: Int get() = COMBO_TIER_THRESHOLDS.size
+    }
+}
+
+/**
+ * Faz 14 - HIT STOP ve gorsel efekt butcesi sabitleri.
+ *
+ * GameConfig'e KONULMADI: GameConfig kampanya/denge ajaninin sahipliginde ve
+ * bunlarin hicbiri bir denge degeri degil. Simulasyonun ilerleyisini
+ * DURDURURLAR ama hiz, hasar, altin ya da can uretmezler.
+ */
+internal object GameFeel {
+    /**
+     * Hit stop tavani. 80 ms uzeri "oyun takildi" olarak okunur; altinda
+     * kalan degerler "agir vurus" olarak okunur (2-5 kare).
+     */
+    const val HIT_STOP_MAX_SECONDS = 0.08f
+
+    const val HIT_STOP_BOSS_KILL = 0.075f
+    const val HIT_STOP_TANK_KILL = 0.055f
+    const val HIT_STOP_VEHICLE_KILL = 0.038f
+    const val HIT_STOP_BASE_LEAK = 0.060f
+    const val HIT_STOP_COMBO_TIER = 0.030f
+
+    /**
+     * Ekranda ayni anda yasayabilecek gorsel efekt sayisi tavani.
+     *
+     * Neden gerekli: 18 dusmanlik bir dalgada 4 kule ates ederken namlu alevi,
+     * isabet kivilcimi, olum patlamasi ve coin yazisi ayni karede birikebilir.
+     * Ustten sinir yoksa cizim maliyeti ve tahsis baskisi dogrusal artar.
+     * Tavana gelindiginde EN ESKI efekt dusurulur: yeni geri bildirim HER
+     * ZAMAN gorunur, kaybolan sey zaten sonmek uzere olandir.
+     */
+    const val MAX_VISUAL_EFFECTS = 96
+}
+
+/**
+ * ENTITY KIMLIGI — kare yolundaki tahsis kaynagi.
+ *
+ * `GameEntities`in varsayilani `UUID.randomUUID().toString()`. Olculdu
+ * (`FramePathAllocationTest`, ayni JVM, ayni kosu):
+ *
+ *     UUID.randomUUID().toString()  = 384 bayt, ~600 ns / cagri
+ *     "e" + artan sayac             =  48 bayt, ~100 ns / cagri
+ *
+ * Bu bir mikro-optimizasyon degil, kare yolundadir: her ATIS bir mermi, her
+ * SPAWN bir dusman uretir. Son kademe Gatling'in atis araligi 0,20 sn; 11
+ * pad'li bir Act II haritasinda saniyede ~35 mermi olusur. Ustelik
+ * `UUID.randomUUID()` KRIPTOGRAFIK bir `SecureRandom` cagrisidir ve o uretec
+ * process genelinde PAYLASILIR/KILITLIDIR — mermi kimliginin tahmin edilemez
+ * olmasi gereken hicbir sebep yok.
+ *
+ * NEDEN `GameEntities.kt` DEGISTIRILMEDI: o dosya kampanya ajaninin
+ * sahipliginde. Varsayilan orada duruyor; kimlik burada, URETIM NOKTASINDA
+ * aciktan veriliyor. Sonuc ayni, catisma yok.
+ *
+ * IS PARCACIGI: yalnizca oyun dongusu (ana thread) cagirir. Senkronizasyon
+ * BILINCLI olarak yok — kilit almak tam da kacinilan maliyeti geri getirirdi.
+ */
+internal object EntityIds {
+    private var counter: Long = 0L
+
+    /** Process omru boyunca tekrarlamayan, ucuz kimlik. */
+    fun next(): String = "e" + (counter++)
+}
+
+/**
+ * KARE SURESI OLCERI — cihazda calisan enstrumantasyon.
+ *
+ * NEDEN VAR: bu oyunun performansi bugune kadar hic GERCEK CIHAZDA
+ * olculmedi ve JVM sayilari cihazi temsil etmez. Kullanici cihaz testini
+ * kendisi yapiyor; elinde ekstra bir arac olmadan tek satirlik bir
+ * `adb logcat -s FDPerf` ile kare butcesini gorebilmeli.
+ *
+ * NE RAPORLAR — ORTALAMA DEGIL YUZDELIK: ortalama kare suresi jank'i tam
+ * olarak gizleyen sayidir. p50 = 14 ms, p99 = 45 ms olan bir oyun "takiliyor"
+ * diye sikayet alir; ortalamasi hâlâ guzeldir.
+ *
+ *   frame = iki `withFrameNanos` geri cagrisi arasindaki sure, yani GERCEK
+ *           kare araligi (dusen kare buraya 33 ms olarak yansir).
+ *   sim   = `tick` govdesinin suresi. Kalan sure = Compose recomposition +
+ *           cizim + sistem. Ikisini ayirmak sart: "yavas" cevabi cizimde mi
+ *           simulasyonda mi sorusuna cevap vermez.
+ *   jank  = 16,6 ms'yi asan kare yuzdesi. Hedef < %5.
+ *
+ * TAHSISI: pencere tamponlari BIR KEZ ayrilir, siralama YERINDE yapilir.
+ * Kare basina tahsis SIFIR; yalnizca 300 karede bir tek log satiri uretilir.
+ */
+internal class FramePerfMonitor(
+    private val windowFrames: Int = 300,
+    private val logger: (String) -> Unit = { android.util.Log.i(TAG, it) }
+) {
+    private val frameNanos = LongArray(windowFrames)
+    private val simNanos = LongArray(windowFrames)
+    private val scratch = LongArray(windowFrames)
+    private var index = 0
+    private var windowsReported = 0
+
+    fun record(frameDeltaSeconds: Float, simDurationNanos: Long) {
+        frameNanos[index] = (frameDeltaSeconds * 1_000_000_000.0).toLong()
+        simNanos[index] = simDurationNanos
+        index++
+        if (index < windowFrames) return
+        index = 0
+        windowsReported++
+        emit()
+    }
+
+    private fun emit() {
+        var jank = 0
+        for (v in frameNanos) if (v > JANK_THRESHOLD_NANOS) jank++
+        val jankPct = jank * 100f / windowFrames
+
+        System.arraycopy(frameNanos, 0, scratch, 0, windowFrames)
+        java.util.Arrays.sort(scratch)
+        val f50 = ms(scratch[pct(50)])
+        val f95 = ms(scratch[pct(95)])
+        val f99 = ms(scratch[pct(99)])
+        val fMax = ms(scratch[windowFrames - 1])
+
+        System.arraycopy(simNanos, 0, scratch, 0, windowFrames)
+        java.util.Arrays.sort(scratch)
+        val s50 = ms(scratch[pct(50)])
+        val s95 = ms(scratch[pct(95)])
+        val s99 = ms(scratch[pct(99)])
+
+        logger(
+            "pencere#$windowsReported n=$windowFrames | " +
+                "kare p50=${fmt(f50)} p95=${fmt(f95)} p99=${fmt(f99)} max=${fmt(fMax)} ms | " +
+                "sim p50=${fmt(s50)} p95=${fmt(s95)} p99=${fmt(s99)} ms | " +
+                "jank=${fmt(jankPct.toDouble())}% (hedef <5%)"
+        )
+    }
+
+    private fun pct(p: Int): Int =
+        ((p / 100.0) * (windowFrames - 1)).toInt().coerceIn(0, windowFrames - 1)
+
+    private fun ms(nanos: Long): Double = nanos / 1_000_000.0
+
+    private fun fmt(v: Double): String = String.format(java.util.Locale.US, "%.2f", v)
+
+    companion object {
+        const val TAG = "FDPerf"
+
+        /** 60 FPS butcesi. 90 Hz panelde 11,1 ms olurdu. */
+        const val JANK_THRESHOLD_NANOS = 16_666_667L
+    }
+}
 
 enum class GameState {
     MAIN_MENU,
@@ -25,7 +279,20 @@ enum class GameState {
 
 class GameEngine(
     val saveManager: SaveManager,
-    val audioManager: AudioManager
+    val audioManager: AudioManager,
+    /**
+     * Faz 14 — DOKUNSAL GERI BILDIRIM DIKISI.
+     *
+     * SAF KOTLIN arayuz ([HapticsFeedback]): motor `Vibrator`i da,
+     * `View`i da, Compose'u da TANIMAZ. `null` varsayilani bugunku
+     * davranistir, yani mevcut cagri yerleri ve testler etkilenmez.
+     *
+     * Akis yerine dogrudan cagri olmasinin gerekcesi arayuzun KDoc'unda:
+     * `StateFlow` ayni degeri tekrar yaymaz (arka arkaya iki kademe-2
+     * tirmanisi TEK titresim uretirdi) ve akis toplama bir kare gecikir —
+     * oysa asagidaki zincir dalinin kendi kurali "uc kanal AYNI KAREDE".
+     */
+    private val haptics: HapticsFeedback? = null
 ) {
     private val _gameState = MutableStateFlow(GameState.MAIN_MENU)
     val gameState: StateFlow<GameState> = _gameState.asStateFlow()
@@ -76,7 +343,8 @@ class GameEngine(
      */
     fun previewRangeRef(type: GameConfig.TowerType?): Float {
         val spec = type?.let { GameConfig.TOWER_SPECS[it] } ?: return GameConfig.BUILD_PREVIEW_RANGE_PX
-        return spec.level1Range * metaRangeMultiplier
+        // Onizleme YENI kurulacak kuleyi gosterir, yani daima ilk kademeyi.
+        return spec.tier(1).range * metaRangeMultiplier
     }
 
     private val _screenShake = MutableStateFlow(Offset.Zero)
@@ -104,8 +372,79 @@ class GameEngine(
     private val _lastEarnedStars = MutableStateFlow(0)
     val lastEarnedStars: StateFlow<Int> = _lastEarnedStars.asStateFlow()
 
+    /**
+     * SAVAS DONGUSU KIMLIGI. Her [startNewGame] cagrisinda BIR ARTAR ve baska
+     * hicbir yerde degismez.
+     *
+     * Neden ayri bir sayac: guclendiriciler savasa kapsamlidir, yani yeni savas
+     * baslarken HUD sayaclarinin ve `CampaignProgressImpl.beginBattle` cagrisinin
+     * tam o anda tetiklenmesi gerekir. `gameState`e bakmak bunun icin YETMEZ:
+     * PAUSED -> "yeniden basla" ve DEFEAT -> "tekrar dene" akislarinin ikisi de
+     * PREPARATION uretir, ama PREPARATION zaten bir onceki savasin degeriyse
+     * StateFlow ayni degeri iki kez yaymaz ve UI yeni savasin basladigini
+     * KACIRIR — oyuncu bir onceki savastan kalmis "kullanildi" rozetleriyle
+     * yeni savasa girer.
+     */
+    private val _battleEpoch = MutableStateFlow(0)
+    val battleEpoch: StateFlow<Int> = _battleEpoch.asStateFlow()
+
     /** Aktif bolumun konfigurasyonu. Tek kaynak: GameConfig.CAMPAIGN. */
     var levelSpec: GameConfig.LevelSpec = GameConfig.levelSpec(1)
+        private set
+
+    /**
+     * Bu bolumdeki us caninin TAVANI — taban + meta yukseltme bonusu; yani
+     * [startNewGame] icinde `_lives`e yazilan degerin ta kendisi.
+     *
+     * Us Tamiri'nin asamayacagi sinir budur. Formulun iki yerde ayri ayri
+     * yazilmamasi kasitli: taban ile bonusun toplandigi tek bir yer olmazsa
+     * "tamir 20'yi asamaz ama savas 24 canla basliyor" turu sessiz bir
+     * uyusmazlik dogar.
+     */
+    val maxLives: Int get() = levelSpec.maxBaseLives + metaLivesBonus
+
+    /**
+     * Bu savasta usse SIZAN dusman sayisi (kaybedilen can).
+     *
+     * Meta bonusundan bagimsizdir: bonus hem baslangic canina hem [maxLives]'a
+     * ayni miktarda girdigi icin farkta sadelesir. Yildiz hesabinin ve zafer
+     * ekranindaki "kac sizinti daha az" ipucunun tek dogru girdisi budur.
+     */
+    val livesLost: Int get() = (maxLives - _lives.value).coerceAtLeast(0)
+
+    /**
+     * ZAFER aninda yildiz ve "Kusursuz Savunma" hesabina giren can —
+     * **meta yukseltmeden ARINDIRILMIS**.
+     *
+     * ## Neden meta yukseltme yildiza girmiyor
+     * "Tahkimat" (maks us cani) rank 5'te cani 20'den 30'a cikariyor. Pay meta
+     * DAHIL, payda taban 20 iken oyuncu 12 sizinti verip 3 yildiz, 10 sizinti
+     * verip Kusursuz Savunma madalyasi (+80 coin) aliyordu: meta yukseltme bir
+     * yildiz hilesine donusmustu.
+     *
+     * Iki cozum vardi. Paydayi [maxLives] yapmak matematigi duzeltirdi ama
+     * Tahkimat'i bir CEZAYA cevirirdi — 30 canli oyuncunun 3 yildiz icin 3
+     * sizintiya, 20 canlinin 2 sizintiya hakki olurdu; oyuncu satin aldigi
+     * seyle zorlastirilmis olurdu. Secilen cozum: **yildizi meta bonusundan
+     * tamamen bagimsiz kilmak.** Pay da payda da taban can uzerinden gider,
+     * yani her rankta 3 yildiz AYNI sizinti sayisini gerektirir. Tahkimat
+     * ne yildiz kazandirir ne de zorlastirir; aldigi sey hayatta kalma
+     * marjidir — `effectiveStarHealth` deseninin ta kendisi ("geri verilen /
+     * fazladan can, yildiz degil dayaniklilik satin alir").
+     *
+     * En az 1: meta sayesinde ayakta kalan oyuncuya 0 yildiz demek zaferi
+     * iptal etmek olurdu ve `resolveLevelClear` (stars > 0 sartli) patlardi.
+     * **Yalnizca zafer dalinda okunur**; yenilgide anlami yoktur.
+     */
+    val victoryStarHealth: Int
+        get() = starHealthFromLeaks(levelSpec.maxBaseLives.coerceAtLeast(1), livesLost)
+
+    /**
+     * Son zaferde yildiz hesabina GERCEKTEN giren can (guclendirici/takviye
+     * duzeltmesi uygulanmis hali). Zafer ekraninin "3 yildiza ne kadar kaldi"
+     * ipucu bunu okur — `lastEarnedStars` ile ayni anda yazilir.
+     */
+    var lastStarHealth: Int = 0
         private set
 
     /**
@@ -231,6 +570,25 @@ class GameEngine(
     private var timeUntilNextSpawn = 0f
     private var screenShakeDuration = 0f
 
+    /**
+     * Faz 14 - ZINCIR. Motorun disindan (renderer/test) OKUNUR, yazilmaz.
+     * Compose snapshot state DEGIL: GameCanvas bunu draw lambda'sinin ICINDE
+     * okur ve kare zaten `frameTick` ile gecersiz kilindigi icin ekstra bir
+     * gozlemlenebilir gerekmiyor. StateFlow olsaydi her oldurmede tum HUD
+     * recompose olurdu.
+     */
+    val combo = ComboTracker()
+
+    /**
+     * Faz 14 - HIT STOP: sifirdan buyukken SIMULASYON durur.
+     *
+     * DENGEYE ETKISI YOK: duran sey tum simulasyondur, bir parcasi degil.
+     * Dusman da kule de mermi de AYNI kareyi kaybeder, yani hasar/hiz/menzil
+     * oranlari birebir korunur. Kaybedilen tek sey duvar saati zamanidir ve
+     * bolumler sure ile degil DALGA ile kazaniliyor.
+     */
+    private var hitStopRemainingSeconds = 0f
+
     init {
         loadLevel(GameConfig.levelSpec(1))
     }
@@ -297,7 +655,10 @@ class GameEngine(
         }
         scaledWaypoints = scaledRoutes.firstOrNull() ?: emptyList()
 
-        // Act II krater kisiti: devre disi pad'ler haritada HIC gorunmez.
+        // Devre disi pad'ler haritada HIC gorunmez — Act I'de MENZIL DISI
+        // olduklari (uzerlerine kurulan kule hicbir seye ates edemez), Act
+        // II'de ayrica krater kisiti geregi. Gorunur birakip insaati blokemek
+        // yanlis olurdu: oyuncu neden secemedigini anlamaz.
         // Kisit yalnizca spec'in KENDI haritasi ciziliyorsa uygulanir; yedek
         // haritaya dusuldugunde pad id'leri baska bir haritaya ait olur ve
         // alakasiz pad'leri kapatirdi.
@@ -392,11 +753,17 @@ class GameEngine(
         _lastEarnedStars.value = 0
         screenShakeDuration = 0f
         _screenShake.value = Offset.Zero
+        hitStopRemainingSeconds = 0f
+        combo.resetAll()
 
         setupWave(0)
         _gameState.value = GameState.PREPARATION
         stateBeforePause = GameState.PREPARATION
         _preparationTimer.value = GameConfig.PREPARATION_TIME_SECONDS.toFloat()
+
+        // EN SONDA: epoch degistiginde savas kurulumu TAMAMLANMIS olmali, yoksa
+        // dinleyici yarim kurulmus bir savasi okur.
+        _battleEpoch.value += 1
     }
 
     /**
@@ -425,6 +792,64 @@ class GameEngine(
 
     fun openLevelSelect() {
         _gameState.value = GameState.LEVEL_SELECT
+    }
+
+    /**
+     * Faz 13 — R2 TAKVIYE: yenilgiden cikip savasi **kaldigi dalgadan** surdurur.
+     *
+     * Bu API eksikti ve `AdRewardBridge.reinforcementSupported` tam da bu yuzden
+     * `false` idi: DEFEAT terminaldi, disari cikan tek yol `startNewGame()` yani
+     * savasi BASTAN baslatmakti. "Reklam izle, savasa devam et" teklifi ancak
+     * gercek bir devam varsa mesrudur.
+     *
+     * ## Ne yapar
+     * 1. Us cani [lives] degerine getirilir ([maxLives] tavaniyla kirpilir).
+     * 2. **Sahadaki dusmanlar ve mermiler temizlenir.** Bu sart: yenilgi ani,
+     *    ussun dibinde birden fazla dusmanin oldugu andir; temizlemeden devam
+     *    edilirse takviye ilk saniyede tukenir ve oyuncu reklami bosa izlemis
+     *    olur — "calismayan odul"un ta kendisi.
+     * 3. Kaldigi dalga BASTAN kurulur ve oyun PREPARATION'a doner: oyuncu
+     *    savunmasini duzeltmek icin hazirlik suresi bulur.
+     * 4. **Kuleler, Tedarik ve skor KORUNUR** — oyuncunun o ana kadarki
+     *    yatirimi silinmez, silinseydi bu bir "devam" degil "yeniden basla"
+     *    olurdu.
+     *
+     * ## Ne YAPMAZ
+     * - [_battleEpoch] ARTMAZ: bu ayni savasin devamidir, yeni savas degil.
+     *   Artsaydi savas-basi sayaclar (guclendirici haklari, rewarded savas
+     *   hakki) sifirlanir ve sinirsiz takviye acilirdi.
+     * - Yildiza dokunmaz. Geri verilen can ekonomi tarafinda yildiz hesabindan
+     *   dusulur (`CampaignProgressImpl.noteReinforcement`), yani takviye
+     *   hayatta kalma satin alir; yildiz ve coin ASLA.
+     *
+     * Cagiran taraf oyunu teklif ekrani kapanana kadar duraklatmalidir; bu
+     * fonksiyon PREPARATION'a doner ve hazirlik sayaci akmaya baslar.
+     *
+     * @param lives us caninin getirilecegi deger.
+     * @return gercekten uygulanan can; **0 = uygulanmadi** (durum DEFEAT degil
+     *   veya gecersiz girdi) ve bu durumda hicbir sey degismemistir.
+     */
+    fun reinforceAfterDefeat(lives: Int): Int {
+        if (_gameState.value != GameState.DEFEAT) return 0
+        if (lives <= 0) return 0
+
+        val restored = lives.coerceAtMost(maxLives)
+        enemies.clear()
+        projectiles.clear()
+        visualEffects.clear()
+        _lives.value = restored
+        _selectedBuildSpot.value = null
+        _selectedTower.value = null
+        screenShakeDuration = 0f
+        _screenShake.value = Offset.Zero
+        hitStopRemainingSeconds = 0f
+        combo.resetAll()
+
+        setupWave(_currentWaveIndex.value)
+        _gameState.value = GameState.PREPARATION
+        stateBeforePause = GameState.PREPARATION
+        _preparationTimer.value = GameConfig.PREPARATION_TIME_SECONDS.toFloat()
+        return restored
     }
 
     private fun setupWave(waveIndex: Int) {
@@ -539,13 +964,17 @@ class GameEngine(
             totalInvestedGold = spec.buildCost,
             damageMultiplier = metaDamageMultiplier,
             rangeMultiplier = metaRangeMultiplier,
-            salvageRate = metaSalvageRate
+            salvageRate = metaSalvageRate,
+            // Faz 13: kademe kilidi de meta carpanlari gibi INSA ANINDA verilir.
+            // Boylece panel ve motor ayni cevabi verir; oyuncuya bu bolumde
+            // odeyemeyecegi bir yukseltme butonu gosterilmez.
+            tierCap = GameConfig.maxTowerTier(type, levelSpec.levelId)
         )
         towers.add(newTower)
 
         audioManager.playSound(AudioManager.SoundEffect.TOWER_BUILD)
         // Faz 3: insa geri bildirimi namlu alevi degil, TOZ bulutu.
-        visualEffects.add(
+        addEffect(
             VisualEffect(
                 type = EffectType.SMOKE_PUFF,
                 posX = spot.normX,
@@ -564,16 +993,21 @@ class GameEngine(
     fun upgradeSelectedTower(): Boolean {
         if (!acceptsBattlefieldInput()) return false
         val tower = _selectedTower.value ?: return false
+        // Faz 13: `upgradeCost` null ise BU KULE ICIN yukseltme YOKTUR — ya
+        // merdivenin sonundadir ya da kademe bu bolumde henuz acilmamistir.
+        // Motor son sozu soyler: UI bir sekilde butonu cizse bile buradan doner.
         val cost = tower.upgradeCost ?: return false
 
         if (_gold.value < cost) return false
 
         _gold.value -= cost
-        tower.level = 2
+        // Sabit "2" yok: merdivende BIR basamak yukari. Kademe 4 bir gun
+        // eklenirse bu satir degismez.
+        tower.level += 1
         tower.totalInvestedGold += cost
 
         audioManager.playSound(AudioManager.SoundEffect.TOWER_UPGRADE)
-        visualEffects.add(
+        addEffect(
             VisualEffect(
                 type = EffectType.FROST_WAVE,
                 posX = tower.posX,
@@ -596,7 +1030,7 @@ class GameEngine(
         towers.remove(tower)
 
         audioManager.playSound(AudioManager.SoundEffect.TOWER_SELL)
-        visualEffects.add(
+        addEffect(
             VisualEffect(
                 type = EffectType.COIN_POPUP,
                 posX = tower.posX,
@@ -607,6 +1041,89 @@ class GameEngine(
         )
 
         _selectedTower.value = null
+        return true
+    }
+
+    /**
+     * Faz 10 — GUCLENDIRICININ OYNANISA UYGULANDIGI TEK YER.
+     *
+     * Ekonomi katmani ([com.miniappfactory.frontlinedefender.game.economy.CampaignProgressImpl.activateBooster])
+     * izni verir, coini duser ve etkiyi SAYIYA cevirir; motor yalnizca o sayiyi
+     * savas alanina isler. Karar mantigi burada TEKRARLANMAZ.
+     *
+     * Kaynak matematigi bilincli olarak saf katmandadir
+     * ([applyBoosterToResources]) — motorun birim testi yok, o fonksiyonun var.
+     *
+     * @return etki gercekten uygulandiysa `true`. `false` donerse **hicbir sey
+     *   degismemistir**; cagiran taraf ses/animasyon oynatmamalidir.
+     */
+    fun applyBoosterActivation(activation: BoosterActivation): Boolean {
+        // Modal aciksa, oyun duraklamissa veya savas bittiyse guclendirici
+        // islenmez. Ekonomi tarafi kullanimi ZATEN harcamis olur; bu yuzden
+        // cagiran taraf `activateBooster`i bu kontrolden GECTIKTEN sonra
+        // cagirmalidir.
+        //
+        // !!! REWARDED REKLAM TUZAGI (UI tarafinin cozmesi gereken dikis) !!!
+        // Rewarded reklam acilinca ON_PAUSE -> `pauseForLifecycle()` -> PAUSED
+        // gelir ve oyun BILINCLI olarak PAUSED kalir (GameScreen: "oyuncu devam
+        // tusuna kendi basar"). Reklam odulu callback'inde dogrudan buraya
+        // gelinirse durum hala PAUSED'dir, `false` doner ve oyuncu reklami
+        // izleyip HICBIR SEY alamaz. Odul akisi ya once oyunu devam ettirmeli
+        // ya da aktivasyonu oyun devam edene kadar bekletmelidir.
+        if (!acceptsBattlefieldInput()) return false
+        if (!activation.applied) return false
+
+        val updated = applyBoosterToResources(
+            res = BattleResources(supply = _gold.value, lives = _lives.value),
+            act = activation,
+            maxLives = maxLives,
+        )
+        _gold.value = updated.supply
+        _lives.value = updated.lives
+
+        val fraction = activation.airSupportDamageFraction
+        if (fraction > 0.0) {
+            // SNAPSHOT ZORUNLU: asagidaki `onEnemyKilled` olen dusmani `enemies`
+            // listesinden SILER. Canli liste uzerinde donmek
+            // ConcurrentModificationException verirdi ve hata ancak hava destegi
+            // gercekten bir sey oldurdugunde — yani en kotu anda — patlardi.
+            val targets = enemies.toList()
+            targets.forEach { enemy ->
+                if (enemy.isDead) return@forEach
+                enemy.hp -= airSupportDamage(enemy.maxHp, fraction)
+                enemy.hitFlashTimerSeconds = 0.12f
+                addEffect(
+                    VisualEffect(
+                        type = EffectType.CANNON_EXPLOSION,
+                        posX = enemy.posX,
+                        posY = enemy.posY,
+                        maxAgeSeconds = 0.45f,
+                        scale = enemy.radius / 15f
+                    )
+                )
+                // Var olan olum yolu: odul, skor, kayit sayaci, ses ve efekt
+                // guclendiriciyle olen dusmanda da AYNEN calisir.
+                if (enemy.isDead) onEnemyKilled(enemy)
+            }
+        }
+
+        // Ses, sarsinti ve gorsel AYNI KAREDE tetiklenir; girdi ile geri bildirim
+        // arasinda bir kare bile gecikme "gec kalan kontrol" olarak hissedilir.
+        when {
+            fraction > 0.0 -> {
+                audioManager.playSound(AudioManager.SoundEffect.EXPLOSION_HEAVY)
+                triggerScreenShake(0.30f)
+            }
+
+            activation.healthRestored > 0 ->
+                audioManager.playSound(AudioManager.SoundEffect.TOWER_UPGRADE)
+
+            activation.supplyGranted > 0 ->
+                audioManager.playSound(AudioManager.SoundEffect.COIN_EARNED)
+
+            else -> audioManager.playSound(AudioManager.SoundEffect.UI_CLICK)
+        }
+
         return true
     }
 
@@ -640,6 +1157,20 @@ class GameEngine(
      * (devam edince efekt kaldigi yerden soner).
      */
     private fun ageCosmetics(dt: Float) {
+        updateScreenShake(dt)
+        ageEffects(dt)
+        combo.age(dt)
+    }
+
+    /**
+     * Faz 14 - sarsinti AYRI bir fonksiyona alindi cunku HIT STOP sirasinda
+     * TEK calisan sey odur.
+     *
+     * Donma + sarsinti birlikte "crunch" hissi verir; donma sirasinda sarsinti
+     * da dursaydi oyuncu 60 ms boyunca tamamen olu bir ekran gorurdu ve bunu
+     * "oyun takildi" diye okurdu. Sarsinti her zaman SONUMLENEREK sifira iner.
+     */
+    private fun updateScreenShake(dt: Float) {
         if (screenShakeDuration > 0f) {
             screenShakeDuration -= dt
             val intensity = (screenShakeDuration * 15f).coerceAtMost(10f)
@@ -650,7 +1181,9 @@ class GameEngine(
         } else {
             _screenShake.value = Offset.Zero
         }
+    }
 
+    private fun ageEffects(dt: Float) {
         val effectIterator = visualEffects.iterator()
         while (effectIterator.hasNext()) {
             val fx = effectIterator.next()
@@ -662,7 +1195,26 @@ class GameEngine(
     }
 
     // Core Frame Update Tick
+    /**
+     * Kare olceri. `tick` HER karede cagrilir (menude bile), yani gecen sure
+     * gercek vsync araligidir ve dusen kareler buraya yansir.
+     *
+     * Maliyeti kare basina iki `System.nanoTime()` cagrisi (~50 ns) ve 300
+     * karede bir tek log satiri. Oynanisa etkisi yok, olcum degeri buyuk:
+     * cihazda `adb logcat -s FDPerf` ile p50/p95/p99 ve jank yuzdesi cikar.
+     */
+    private val framePerf = FramePerfMonitor()
+
     fun tick(deltaSeconds: Float) {
+        val simStart = System.nanoTime()
+        try {
+            tickSimulation(deltaSeconds)
+        } finally {
+            framePerf.record(deltaSeconds, System.nanoTime() - simStart)
+        }
+    }
+
+    private fun tickSimulation(deltaSeconds: Float) {
         val dt = deltaSeconds * _gameSpeed.value
 
         // Beyaz liste: yeni bir GameState eklendiginde simulasyon KAZAYLA
@@ -672,10 +1224,32 @@ class GameEngine(
             // Bolum bitti: SIMULASYON durur ama kozmetik efektler soner
             // (bkz. ageCosmetics — takili kalan "+4g" bugunun kok sebebi).
             GameState.VICTORY, GameState.DEFEAT -> {
+                // Bolum bitti: bekleyen bir donma zafer/yenilgi modalinin
+                // arkasinda ASILI KALMAMALI.
+                hitStopRemainingSeconds = 0f
+                combo.reset()
                 ageCosmetics(dt)
                 return
             }
             else -> return
+        }
+
+        // --------------------------------------------------------------------
+        // HIT STOP - agir vurusta simulasyon 30-80 ms DURUR.
+        //
+        // Neden burada, `tick`in en basinda: donmanin ANLAMI simulasyonun
+        // ilerlememesi. Efekt yaslanmasi da donar (patlama karesi ekranda
+        // ASILI kalir, vurusu "agir" yapan sey budur); yalnizca sarsinti
+        // calismaya devam eder.
+        //
+        // Zaman tabani `dt`, yani OYUN HIZI CARPANI DAHIL: 2x hizda donma da
+        // yariya iner. Gercek zaman kullanilsaydi 2x hizda hit stop oyunun
+        // geri kalanina gore iki kat uzun hissedilirdi.
+        // --------------------------------------------------------------------
+        if (hitStopRemainingSeconds > 0f) {
+            hitStopRemainingSeconds -= dt
+            updateScreenShake(dt)
+            return
         }
 
         ageCosmetics(dt)
@@ -743,7 +1317,16 @@ class GameEngine(
                         // kendi vurusuyla karistiriyordu.
                         audioManager.playSound(AudioManager.SoundEffect.EXPLOSION_HEAVY)
                         triggerScreenShake(0.30f)
-                        visualEffects.add(
+                        // Faz 14: can kaybi oyuncunun HISSETMESI gereken tek
+                        // olumsuz olay. Donma burada "kotu bir sey oldu"
+                        // vurgusu; ayrica zincir kopar (savunma delindi).
+                        triggerHitStop(GameFeel.HIT_STOP_BASE_LEAK)
+                        // Ekrana bakmiyor olabilir: can kaybi dokunsal olarak da
+                        // bildirilir. Cift darbe deseni bilincli — olumlu
+                        // olaylarin tek darbesinden AYIRT EDILEBILIR olmali.
+                        haptics?.onBaseHit()
+                        combo.reset()
+                        addEffect(
                             VisualEffect(
                                 type = EffectType.DAMAGE_TEXT,
                                 posX = enemy.posX,
@@ -834,19 +1417,32 @@ class GameEngine(
                 // meta yukseltmelere gore degistigi icin (20 -> meta ile 30) bu
                 // yanlis yildiz veriyordu: 30 canli bir bolumu 18 canla bitirmek
                 // %60 iken 3 yildiz sayiliyordu.
-                val maxLives = levelSpec.maxBaseLives.coerceAtLeast(1)
+                //
+                // Faz 13 — PAYDA/PAY UYUSMAZLIGI KAPATILDI. Pay `_lives.value`
+                // (meta DAHIL, Tahkimat rank 5'te 30'a kadar), payda ise taban
+                // `maxBaseLives` (20) idi: Tahkimat'li oyuncu 12 sizinti verip
+                // 3 yildiz, 10 sizinti verip "Kusursuz Savunma" +80 coin
+                // aliyordu. Cozum [victoryStarHealth]: ikisi de TABAN can
+                // uzerinden, yani yildiz artik yalnizca SIZINTI SAYISINA bakar.
+                val starDenominator = levelSpec.maxBaseLives.coerceAtLeast(1)
                 // Faz 10: yildiz formulu ARTIK KOPYALANMIYOR. Motor ekonomi
                 // katmanindaki tek gercek fonksiyonu (`starsFor`) cagirir; iki
                 // yerde ayni esikleri tutmak zaten AEHP hatasinin sebebiydi.
                 //
-                // `starHealthAdjuster`: Us Tamiri guclendiricisiyle geri alinan
-                // can yildiza SAYILMAMALI (ekonomi: tamir hayatta kalma satin
-                // alir, yildiz ve coin ASLA). Duzeltmeyi ekonomi katmani biliyor
-                // (CampaignProgressImpl.starHealthFor), motor bilmez — bu yuzden
-                // burada bir DIKIS var; varsayilani kimlik oldugu icin baglanmasa
-                // da davranis Faz 9 ile birebir ayni kalir.
-                val starHealth = starHealthAdjuster(_lives.value)
-                val stars = starsFor(starHealth, maxLives)
+                // `starHealthAdjuster`: Us Tamiri guclendiricisi ve R2 Takviye
+                // ile geri alinan can yildiza SAYILMAMALI (ekonomi: ikisi de
+                // hayatta kalma satin alir, yildiz ve coin ASLA). Duzeltmeyi
+                // ekonomi katmani biliyor (CampaignProgressImpl.starHealthFor),
+                // motor bilmez — bu yuzden burada bir DIKIS var; varsayilani
+                // kimlik oldugu icin baglanmasa da davranis bozulmaz.
+                val starHealth = starHealthAdjuster(victoryStarHealth).coerceAtLeast(1)
+                val stars = starsFor(starHealth, starDenominator)
+                // Zafer ekranindaki "N sizinti daha az = 3 yildiz" ipucu bu
+                // sayiyi kullanir. Ipucunun yildiz sayisiyla ayni girdiden
+                // uretilmesi sart: modal kendi hesabini yapsaydi guclendirici
+                // duzeltmesini (Us Tamiri / R2 Takviye) goremez ve oyuncuya
+                // ulasilamayan bir hedef gosterirdi.
+                lastStarHealth = starHealth
                 _lastEarnedStars.value = stars
                 // Bolum ID'si de sabit `1` yaziliydi: hangi bolum bitirilirse
                 // bitirilsin yildiz bolum 1'e kaydediliyordu.
@@ -861,7 +1457,14 @@ class GameEngine(
                 setupWave(_currentWaveIndex.value)
                 _gameState.value = GameState.PREPARATION
                 _preparationTimer.value = GameConfig.PREPARATION_TIME_SECONDS.toFloat()
-                audioManager.playSound(AudioManager.SoundEffect.COIN_EARNED)
+                // Faz 14 SES AYRIMI TAMAMLANDI. Once COIN_EARNED caliyordu
+                // ("bir dusman oldu" ile "dalga temizlendi" kulakta AYNI
+                // olaydi), sonra gecici olarak TOWER_BUILD kullanildi. Artik
+                // dalga sonuna OZEL, yukselen uc notali `sfx_wave_cleared`
+                // calar: tek ve daha uzun bir olay, coin tinisiyla
+                // karistirilamaz.
+                audioManager.playSound(AudioManager.SoundEffect.WAVE_CLEARED)
+                combo.resetAll()
             }
         }
     }
@@ -885,6 +1488,9 @@ class GameEngine(
 
         enemies.add(
             EnemyEntity(
+                // Kimlik UUID DEGIL (bkz. EntityIds): kare yolunda cagri
+                // basina 384 -> 48 bayt, 600 -> 100 ns.
+                id = EntityIds.next(),
                 type = type,
                 posX = spawnPt.x,
                 posY = spawnPt.y,
@@ -908,23 +1514,50 @@ class GameEngine(
         )
     }
 
+    /**
+     * Hedef secimi - TAHSISSIZ tek gecis.
+     *
+     * FAZ 14 KARE BUTCESI DUZELTMESI: burasi eskiden `enemies.filter { }` ile
+     * her KULE icin her KAREDE yeni bir liste uretiyordu. 11 kuleli bir Act II
+     * bolumunde bu saniyede 660 kisa omurlu liste demek, yani saf GC baskisi
+     * ve gorunur jank. Artik aday listesi hic olusturulmuyor.
+     *
+     * DAVRANIS BIREBIR KORUNDU: `maxByOrNull`/`minByOrNull` esitlikte ILK
+     * elemani dondurur, bu yuzden karsilastirmalar KESIN (`>` / `<`) ve
+     * dusmanlar liste sirasinda taraniyor. Gevsek karsilastirma (`>=`) esit
+     * skorlu iki dusmanda hedefi sessizce degistirir, yani kule titrer.
+     */
     private fun findTargetEnemyForTower(tower: TowerEntity): EnemyEntity? {
         // Menzil REFERANS tuvalde tanimli; mesafe kiyasi canvas px'te yapilir.
         val range = tower.rangePx(renderScale)
-        val candidateEnemies = enemies.filter { enemy ->
+        val rangeSq = range * range
+
+        var best: EnemyEntity? = null
+        var bestScore = 0f
+        val wantsMax = when (tower.targetingMode) {
+            GameConfig.TargetingMode.FIRST, GameConfig.TargetingMode.STRONGEST -> true
+            GameConfig.TargetingMode.LAST, GameConfig.TargetingMode.WEAKEST -> false
+        }
+
+        for (i in enemies.indices) {
+            val enemy = enemies[i]
             val dx = enemy.posX - tower.posX
             val dy = enemy.posY - tower.posY
-            (dx * dx + dy * dy) <= range * range
-        }
+            if (dx * dx + dy * dy > rangeSq) continue
 
-        if (candidateEnemies.isEmpty()) return null
+            val score = when (tower.targetingMode) {
+                GameConfig.TargetingMode.FIRST,
+                GameConfig.TargetingMode.LAST -> enemy.distanceTraveledPx
+                GameConfig.TargetingMode.STRONGEST,
+                GameConfig.TargetingMode.WEAKEST -> enemy.hp
+            }
 
-        return when (tower.targetingMode) {
-            GameConfig.TargetingMode.FIRST -> candidateEnemies.maxByOrNull { it.distanceTraveledPx }
-            GameConfig.TargetingMode.LAST -> candidateEnemies.minByOrNull { it.distanceTraveledPx }
-            GameConfig.TargetingMode.STRONGEST -> candidateEnemies.maxByOrNull { it.hp }
-            GameConfig.TargetingMode.WEAKEST -> candidateEnemies.minByOrNull { it.hp }
+            if (best == null || (if (wantsMax) score > bestScore else score < bestScore)) {
+                best = enemy
+                bestScore = score
+            }
         }
+        return best
     }
 
     private fun fireTower(tower: TowerEntity, target: EnemyEntity) {
@@ -946,7 +1579,7 @@ class GameEngine(
 
         // Namlu alevi: YONLU sprite. Namlu ucu ofseti referans tuvalde tanimli.
         val muzzleOffset = GameConfig.MUZZLE_OFFSET_REF_PX * renderScale
-        visualEffects.add(
+        addEffect(
             VisualEffect(
                 type = EffectType.MUZZLE_FLASH,
                 posX = tower.posX + cos(tower.currentAngleRad) * muzzleOffset,
@@ -966,6 +1599,10 @@ class GameEngine(
         val s = renderScale
         projectiles.add(
             ProjectileEntity(
+                // Kimlik UUID DEGIL (bkz. EntityIds). Mermi kare yolundaki EN
+                // sik uretilen nesnedir: son kademe Gatling 0,20 sn'de bir
+                // ates eder, 11 pad'li haritada saniyede ~35 mermi.
+                id = EntityIds.next(),
                 type = pType,
                 posX = tower.posX,
                 posY = tower.posY,
@@ -1016,7 +1653,7 @@ class GameEngine(
         triggerScreenShake(0.25f)
         audioManager.playSound(AudioManager.SoundEffect.EXPLOSION)
 
-        visualEffects.add(
+        addEffect(
             VisualEffect(
                 type = EffectType.CANNON_EXPLOSION,
                 posX = proj.targetX,
@@ -1048,7 +1685,7 @@ class GameEngine(
         // Ses BURADA CALINMAZ: cryo sesi atis aninda (fireTower) caliyor. Iki
         // yerde calmak 0.38 sn arayla ayni ornegi ust uste bindirir ve alan
         // darbesi "cift tetiklenmis" gibi duyulur.
-        visualEffects.add(
+        addEffect(
             VisualEffect(
                 type = EffectType.FROST_PULSE_RING,
                 posX = proj.targetX,
@@ -1076,7 +1713,7 @@ class GameEngine(
     private fun impactMissile(proj: ProjectileEntity) {
         triggerScreenShake(0.12f)
         audioManager.playSound(AudioManager.SoundEffect.EXPLOSION)
-        visualEffects.add(
+        addEffect(
             VisualEffect(
                 type = EffectType.MISSILE_IMPACT,
                 posX = proj.targetX,
@@ -1122,7 +1759,7 @@ class GameEngine(
         // Faz 3: tek hedef isabetinde artik NAMLU ALEVI degil, isabet
         // kivilcimi cizilir. Namlu alevi yalnizca ates aninda kullanilir.
         audioManager.playSound(AudioManager.SoundEffect.ENEMY_HIT)
-        visualEffects.add(
+        addEffect(
             VisualEffect(
                 type = EffectType.HIT_SPARK,
                 posX = proj.targetX,
@@ -1201,11 +1838,38 @@ class GameEngine(
                     else -> 0.14f
                 }
             )
+            // Faz 14 - HIT STOP. Yalnizca ARACLARDA: piyade olumu saniyede
+            // 4-6 kez oluyor ve her birinde donmak oyunu kekeme yapardi.
+            // Agirlik hissi agir hedefe ait olmali.
+            triggerHitStop(
+                when (enemy.type) {
+                    GameConfig.EnemyType.COMMAND_TANK -> GameFeel.HIT_STOP_BOSS_KILL
+                    GameConfig.EnemyType.TANK -> GameFeel.HIT_STOP_TANK_KILL
+                    else -> GameFeel.HIT_STOP_VEHICLE_KILL
+                }
+            )
         }
         audioManager.playSound(AudioManager.SoundEffect.COIN_EARNED)
 
+        // --------------------------------------------------------------------
+        // ZINCIR (kill-streak).
+        //
+        // Denetimin tespiti: 18 dusmanlik bir dalgada 18 kez AYNI ses ve AYNI
+        // "+4g" yazisi cikiyordu, hicbir sey tirmanmiyordu. Artik ayni yuzen
+        // yazi zincir sayacini TASIYOR (yeni bir nesne degil, ayni nesne) ve
+        // kademe atlandiginda tek seferlik bir patlama uretiliyor.
+        //
+        // EKONOMIYE DOKUNULMADI: altin `enemy.rewardGold` olarak kaliyor.
+        // --------------------------------------------------------------------
+        val climbedTier = combo.registerKill()
+        val comboLabel = if (combo.count >= ComboTracker.COMBO_LABEL_MIN_KILLS) {
+            "  x${combo.count}"
+        } else {
+            ""
+        }
+
         // Death effect and coin popup
-        visualEffects.add(
+        addEffect(
             VisualEffect(
                 type = EffectType.ENEMY_DEATH,
                 posX = enemy.posX,
@@ -1215,18 +1879,73 @@ class GameEngine(
             )
         )
 
-        visualEffects.add(
+        addEffect(
             VisualEffect(
                 type = EffectType.COIN_POPUP,
                 posX = enemy.posX,
                 posY = enemy.posY,
                 maxAgeSeconds = 0.9f,
-                text = "+${enemy.rewardGold}g"
+                text = "+${enemy.rewardGold}g$comboLabel",
+                tier = combo.tier
             )
         )
+
+        if (climbedTier > 0) {
+            // Uc kanal AYNI KAREDE: gorsel patlama + ses + donma/sarsinti.
+            // Ses bir kare gecikirse oyuncu bunu "gecikmeli kontrol" olarak
+            // algilar.
+            //
+            // Faz 14: gecici `TOWER_UPGRADE` KALDIRILDI. Artik kademeye gore
+            // yukselen `sfx_combo_up_1..4` seti calar; tirmanma perde,
+            // parlaklik ve mix seviyesi olarak birlikte duyulur.
+            audioManager.playComboTier(climbedTier)
+            // DORDUNCU KANAL: dokunsal. Sesle AYNI satirda, ayni karede.
+            haptics?.onComboTierUp(climbedTier)
+            triggerScreenShake(0.10f + 0.03f * climbedTier)
+            triggerHitStop(GameFeel.HIT_STOP_COMBO_TIER)
+            addEffect(
+                VisualEffect(
+                    type = EffectType.COMBO_BURST,
+                    posX = enemy.posX,
+                    posY = enemy.posY,
+                    maxAgeSeconds = 0.55f,
+                    text = "x${combo.count}",
+                    tier = climbedTier
+                )
+            )
+        }
     }
 
     fun triggerScreenShake(durationSeconds: Float) {
         screenShakeDuration = durationSeconds
+    }
+
+    /**
+     * Faz 14 - hit stop tetikleyici.
+     *
+     * Ust uste BINMEZ, EN UZUNU kazanir: ayni karede boss olumu ve top
+     * patlamasi birlikte gelirse sureler toplansaydi oyun yarim saniye
+     * donardi. Tavan [GameFeel.HIT_STOP_MAX_SECONDS].
+     */
+    fun triggerHitStop(seconds: Float) {
+        if (seconds <= 0f) return
+        hitStopRemainingSeconds =
+            max(hitStopRemainingSeconds, seconds).coerceAtMost(GameFeel.HIT_STOP_MAX_SECONDS)
+    }
+
+    /** Test/teshis: simulasyon su an hit stop yuzunden donmus mu. */
+    val isHitStopped: Boolean get() = hitStopRemainingSeconds > 0f
+
+    /**
+     * Gorsel efekt ekleme - TEK GIRIS NOKTASI.
+     *
+     * `visualEffects.add(...)` dogrudan cagrilmaz; butce kontrolu tek yerde
+     * dursun (bkz. [GameFeel.MAX_VISUAL_EFFECTS]).
+     */
+    private fun addEffect(effect: VisualEffect) {
+        if (visualEffects.size >= GameFeel.MAX_VISUAL_EFFECTS) {
+            visualEffects.removeAt(0)
+        }
+        visualEffects.add(effect)
     }
 }

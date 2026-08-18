@@ -19,7 +19,104 @@ import com.miniappfactory.frontlinedefender.game.engine.GameEngine
 import com.miniappfactory.frontlinedefender.game.model.*
 import kotlin.math.atan2
 import kotlin.math.cos
+import kotlin.math.hypot
+import kotlin.math.min
 import kotlin.math.sin
+
+/**
+ * Dusmanin bunker agzindan "cikma" ve us rampasinda "girme" gecisinin
+ * uzunlugu, REFERANS tuval px'i (1920x1080). Rota uclari artik ekran ICINDE
+ * (bkz. LevelGeometry) — gecis olmadan dusman kapinin onunde POP ederek
+ * belirir/kaybolurdu.
+ *
+ * GameConfig'e degil buraya konuldu: bu sayi bir DENGE degeri degil, saf
+ * cizim sabitidir; simulasyona hic girmez.
+ */
+private const val ENEMY_GATE_FADE_REF_PX = 60f
+
+/**
+ * Faz 14 - ZINCIR patlamasinin yazi boyu, REFERANS tuval px.
+ * Coin yazisindan (32) belirgin sekilde buyuk: kademe atlama bir OLAY.
+ */
+private const val COMBO_BURST_TEXT_REF_PX = 46f
+
+/**
+ * Faz 14 - zincir kademesinin RENGI: soguk altindan sicak kirmiziya.
+ *
+ * "Artan renk sicakligi" combo geri bildiriminin uc kanalindan biri (digerleri
+ * artan olcek ve ses). Dizi `IntArray` cunku her karede okunuyor ve `Color`
+ * listesi kutulama uretirdi; `Color(Long)` cagrisi deger sinifi oldugu icin
+ * tahsissizdir.
+ */
+private val COMBO_TIER_ARGB = longArrayOf(
+    0xFFFFD54F, // kademe 1 - altin
+    0xFFFFA726, // kademe 2 - turuncu
+    0xFFFF7043, // kademe 3 - derin turuncu
+    // Kademe 4 KIZIL DEGIL, AK-SICAK. Isinan metal gibi (kirmizi -> turuncu ->
+    // sari -> ak) en sicak ucta beyaz durur. Saf kirmizi kullanilsaydi "+4g x18"
+    // yazisi hasar/can kaybi yazisiyla (DAMAGE_TEXT, 244/67/54) ayni renk
+    // ailesine duserdi: en iyi anin en kotu anla ayni renkte olmasi.
+    0xFFFFF3E0  // kademe 4 - ak sicak
+)
+
+private fun comboTierColor(tier: Int): Color {
+    if (tier <= 0) return Color(0xFFFFD54F)
+    return Color(COMBO_TIER_ARGB[(tier - 1).coerceAtMost(COMBO_TIER_ARGB.lastIndex)])
+}
+
+/**
+ * Kademe gostergesi renkleri (harita uzerinde okunabilirlik).
+ *
+ * Kademe 2 ile 3 eskiden AYNI ciziliyordu (`level >= 2`): panel "Kd.3/3" derken
+ * oyuncu hangi pad'inin derinlestigini haritadan okuyamiyordu. 7-11 kuleli
+ * Act II bolumlerinde bu gercek bir okunabilirlik kaybi.
+ */
+private val TIER_PIP_COLORS = longArrayOf(
+    0xCCB0BEC5, // kademe 1 - notr gri
+    0xFFFFD700, // kademe 2 - altin
+    0xFF4FC3F7  // kademe 3 - parlak camgobegi
+)
+
+/**
+ * Yuzen yazi icin PAYLASILAN Paint.
+ *
+ * FAZ 14 KARE BUTCESI DUZELTMESI: `drawFloatingText` her cagrida yeni bir
+ * `android.graphics.Paint` ayiriyordu. Bir dalgada ayni anda 8-10 yuzen yazi
+ * yasayabildigi icin bu saniyede ~600 kisa omurlu nesne demekti, yani GC
+ * duraklamasi ve gorunur jank. Cizim tek bir is parcaciginda (render thread)
+ * kostugu icin paylasilan tek ornek guvenli.
+ */
+private val floatingTextPaint = android.graphics.Paint().apply {
+    isFakeBoldText = true
+    isAntiAlias = true
+    textAlign = android.graphics.Paint.Align.CENTER
+}
+
+/**
+ * ISABET PARLAMASI RENK FILTRESI — PAYLASILAN, sabit.
+ *
+ * KARE BUTCESI DUZELTMESI (olculdu: `WorstCaseFrameBudgetTest`).
+ * `drawEnemy` her cagrida `ColorFilter.tint(Color.White, BlendMode.SrcIn)`
+ * uretiyordu. Deger SABIT — ne renk ne harman modu degisiyor; degisen tek sey
+ * `alpha` ve o zaten `drawImage`e AYRI parametre olarak gidiyor.
+ *
+ * Neden `Paint` bugu ile ayni siniftan: uretilen nesnenin **native esi** var
+ * (android.graphics color filter). Agir bir dalgada ayni anda 20 dusman
+ * parlayabildigi icin bu, saniyede 1200 kisa omurlu native-esli nesne
+ * demekti; yani dogrudan GC duraklamasi ve gorunur jank.
+ *
+ * Cizim tek is parcaciginda (kare basina, ana thread) kostugu icin
+ * paylasilan tek ornek guvenlidir — `floatingTextPaint` ile ayni gerekce.
+ */
+private val enemyHitFlashFilter = ColorFilter.tint(Color.White, BlendMode.SrcIn)
+
+/** easeOutBack - hafif overshoot. Vurgu anlarinda kullanilir (lineer DEGIL). */
+private fun easeOutBack(t: Float): Float {
+    val x = t.coerceIn(0f, 1f) - 1f
+    val c1 = 1.70158f
+    val c3 = c1 + 1f
+    return 1f + c3 * x * x * x + c1 * x * x
+}
 
 @Composable
 fun GameCanvas(
@@ -48,7 +145,14 @@ fun GameCanvas(
     // o an guncel olur (motor loadLevel'da ikisini birlikte set ediyor).
     // Harita bitmap'i 8.3 MB; bellekte TEK harita tutulur.
     val levelId by gameEngine.currentLevelId.collectAsState()
-    val mapBitmap = rememberMapBitmap(remember(levelId) { gameEngine.activeMapId })
+    // Faz 11 — BIYOM: ayni 11 taban harita, bolume gore 5 farkli renk durumu
+    // (docs/BIOME_VARIANTS.md). Harita ID'si HÂLÂ motordan gelir; motor eksik
+    // bitmap'te fallback yapabildigi icin `BiomeVariants.baseMapIdFor` cizim
+    // yolunda TEK BASINA yetkili degil. Biyom ise tamamen bolum numarasinin
+    // fonksiyonu — deterministik, ayni bolum her zaman ayni varyant.
+    val mapId = remember(levelId) { gameEngine.activeMapId }
+    val biome = remember(levelId) { BiomeVariants.biomeFor(levelId) }
+    val mapBitmap = rememberMapBitmap(mapId, biome)
 
     Canvas(
         modifier = modifier
@@ -86,14 +190,21 @@ fun GameCanvas(
             // 1. Harita: FIT + letterbox. Sarsinti kenarda koyu serit acmasin
             //    diye bitmap oynanis dikdortgeninden birkac px tasar cizilir;
             //    oynanis koordinatlari tasmayan gercek dikdortgene bagli.
+            //    Faz 11: biyom donusumu ARKA PLANDA yapiliyor; hazir olana
+            //    kadar `mapBitmap` null olur ve YALNIZCA bu katman atlanir.
+            //    Pad/kule/dusman/HUD cizimi ve dokunma girdisi kesintiye
+            //    ugramaz — bolum PREPARATION fazinda basladigi icin oyuncu
+            //    bu kisa boslugu bir gecikme olarak hissetmez.
             val over = GameConfig.SHAKE_OVERSCAN_REF_PX * s
-            drawSprite(
-                image = mapBitmap,
-                left = gameEngine.fieldLeftPx - over,
-                top = gameEngine.fieldTopPx - over,
-                width = gameEngine.fieldWidthPx + over * 2f,
-                height = gameEngine.fieldHeightPx + over * 2f
-            )
+            if (mapBitmap != null) {
+                drawSprite(
+                    image = mapBitmap,
+                    left = gameEngine.fieldLeftPx - over,
+                    top = gameEngine.fieldTopPx - over,
+                    width = gameEngine.fieldWidthPx + over * 2f,
+                    height = gameEngine.fieldHeightPx + over * 2f
+                )
+            }
 
             // 2. Yol/spawn/us CIZIMI YOK — yol artik haritada boyali.
             if (GameConfig.DEBUG_DRAW_PATH) drawDebugPath(gameEngine)
@@ -126,8 +237,13 @@ fun GameCanvas(
             }
 
             // 6. Dusmanlar
+            //    Rota uclari kapi agzinda oldugu icin belirme/kaybolma
+            //    alfa ile yumusatilir; rotanin son noktasi kare basina
+            //    TAHSIS YAPMADAN okunur (mevcut PointF referansi).
+            val routes = gameEngine.scaledRoutes
             gameEngine.enemies.forEach { enemy ->
-                drawEnemy(enemy, sprites, s)
+                val end = routes.getOrNull(enemy.routeIndex)?.lastOrNull()
+                drawEnemy(enemy, sprites, s, end)
             }
 
             // 7. Mermiler
@@ -347,36 +463,104 @@ private fun DrawScope.drawTower(
         pivotYFrac = spec.pivotYFrac
     )
 
-    // Kademe gostergesi (bilgi, sprite degil) — kulenin altinda kucuk cubuklar
+    // ------------------------------------------------------------------------
+    // KADEME GOSTERGESI (bilgi, sprite degil).
+    //
+    // Faz 14 duzeltmesi: eski esik `tower.level >= 2` idi, yani kademe 2 ile
+    // kademe 3 HARITADA BIREBIR AYNI gorunuyordu. Panel "Kd.3/3" diyor ama
+    // oyuncu 7-11 kuleli bir haritada hangi pad'ini derinlestirdigini
+    // goremiyordu. Artik centik SAYISI = kademe ve renk de kademeyle degisir
+    // (iki kanal: sayim + renk). Kademe 3 ayrica bir taban yayi alir.
+    //
+    // Ucuncu kademe isareti icin YENI ASSET URETILMEDI - saf Canvas cizimi.
+    // ------------------------------------------------------------------------
+    val tierIndex = (tower.level - 1).coerceIn(0, TIER_PIP_COLORS.lastIndex)
+    val tierColor = Color(TIER_PIP_COLORS[tierIndex])
+    val pipCount = tierIndex + 1
     val dotR = 3.5f * s
     val dotY = tower.posY + spec.widthRefPx * s * 0.42f
-    if (tower.level >= 2) {
-        drawCircle(Color(0xFFFFD700), dotR, Offset(tower.posX - dotR * 2.2f, dotY))
-        drawCircle(Color(0xFFFFD700), dotR, Offset(tower.posX + dotR * 2.2f, dotY))
-    } else {
-        drawCircle(Color(0xCCB0BEC5), dotR, Offset(tower.posX, dotY))
+    val pipSpacing = dotR * 2.6f
+    val pipStartX = tower.posX - pipSpacing * (pipCount - 1) / 2f
+    for (i in 0 until pipCount) {
+        drawCircle(tierColor, dotR, Offset(pipStartX + pipSpacing * i, dotY))
+    }
+
+    if (tower.level >= 3) {
+        // TABAN YAYI - yalnizca SON kademe. Kasitli olarak yarim yay: tam
+        // halka olsaydi secim halkasiyla (0.62 yaricap, altin) karisirdi;
+        // kulenin ALTINI saran bir yaka "guclendirilmis platform" okunur.
+        val r = spec.widthRefPx * s * 0.50f
+        drawArc(
+            color = tierColor,
+            startAngle = 20f,
+            sweepAngle = 140f,
+            useCenter = false,
+            topLeft = Offset(tower.posX - r, tower.posY - r),
+            size = Size(r * 2f, r * 2f),
+            style = Stroke(width = 2.6f * s.coerceAtLeast(0.5f))
+        )
     }
 }
 
-private fun DrawScope.drawEnemy(enemy: EnemyEntity, sprites: GameSprites, s: Float) {
+/** Yumusak giris/cikis egrisi (smoothstep) — lineer alfa "kesik" hissettirir. */
+private fun smoothstep(t: Float): Float {
+    val x = t.coerceIn(0f, 1f)
+    return x * x * (3f - 2f * x)
+}
+
+/**
+ * Kapi gecisi alfasi.
+ *
+ * - Yolun ilk [ENEMY_GATE_FADE_REF_PX] referans px'inde 0 -> 1: dusman cikis
+ *   bunkerinin AGZINDAN cikiyormus gibi belirir.
+ * - Son [ENEMY_GATE_FADE_REF_PX] referans px'inde 1 -> 0: us rampasina
+ *   varirken ussun ICINE giriyormus gibi soner.
+ *
+ * YENI ALAN YOK: giris `enemy.distanceTraveledPx` (zaten var, canvas px),
+ * cikis ise dusmanin rota son noktasina kalan kus ucusu mesafesi. Son segment
+ * pratikte duz oldugu icin bu, kalan yay uzunluguna esittir.
+ *
+ * [routeEnd] null ise (rota indeksi gecersiz) sonme uygulanmaz — dusman
+ * gorunur kalir, yani hata durumunda oyuncu bir seyi kaybetmez.
+ */
+private fun gateFadeAlpha(enemy: EnemyEntity, routeEnd: PointF?, s: Float): Float {
+    val fadePx = ENEMY_GATE_FADE_REF_PX * s
+    if (fadePx <= 0f) return 1f
+    val fadeIn = smoothstep(enemy.distanceTraveledPx / fadePx)
+    if (routeEnd == null) return fadeIn
+    val remaining = hypot(routeEnd.x - enemy.posX, routeEnd.y - enemy.posY)
+    return min(fadeIn, smoothstep(remaining / fadePx))
+}
+
+private fun DrawScope.drawEnemy(
+    enemy: EnemyEntity,
+    sprites: GameSprites,
+    s: Float,
+    routeEnd: PointF?
+) {
     val spec = GameConfig.ENEMY_SPRITES[enemy.type] ?: return
     val image = sprites.enemies[enemy.type] ?: return
+
+    // Bunkerden cikis / usse giris gecisi. Tam sonmusse hic cizme.
+    val gate = gateFadeAlpha(enemy, routeEnd, s)
+    if (gate <= 0.01f) return
 
     val width = spec.widthRefPx * s
     // Dusman sprite'lari ASAGI bakiyor; atan2 0 = sag -> base aci cikarilir.
     val rotation = Math.toDegrees(enemy.rotationAngleRad.toDouble()).toFloat() -
         GameConfig.ENEMY_SPRITE_BASE_ANGLE_DEG
 
-    drawSpriteAt(image, enemy.posX, enemy.posY, width, rotation, spec.pivotYFrac)
+    drawSpriteAt(image, enemy.posX, enemy.posY, width, rotation, spec.pivotYFrac, alpha = gate)
 
     // Isabet parlamasi: ayni silueti beyaz olarak ustune bindir (tint yerine
     // SrcIn -> sprite'in sekli korunur, sadece rengi beyazlar).
     if (enemy.hitFlashTimerSeconds > 0f) {
-        val a = (enemy.hitFlashTimerSeconds / 0.12f).coerceIn(0f, 1f) * 0.75f
+        val a = (enemy.hitFlashTimerSeconds / HIT_FLASH_DURATION_SECONDS)
+            .coerceIn(0f, 1f) * 0.75f
         drawSpriteAt(
             image, enemy.posX, enemy.posY, width, rotation, spec.pivotYFrac,
-            alpha = a,
-            colorFilter = ColorFilter.tint(Color.White, BlendMode.SrcIn)
+            alpha = a * gate,
+            colorFilter = enemyHitFlashFilter
         )
     }
 
@@ -386,6 +570,7 @@ private fun DrawScope.drawEnemy(enemy: EnemyEntity, sprites: GameSprites, s: Flo
             color = Color(0x8800E5FF),
             radius = width * 0.62f,
             center = Offset(enemy.posX, enemy.posY),
+            alpha = gate,
             style = Stroke(width = 2.5f * s.coerceAtLeast(0.5f))
         )
     }
@@ -396,13 +581,19 @@ private fun DrawScope.drawEnemy(enemy: EnemyEntity, sprites: GameSprites, s: Flo
     val barHeight = 5f * s.coerceAtLeast(0.6f)
     val barTopLeft = Offset(enemy.posX - barWidth / 2f, enemy.posY - width * 0.72f)
 
-    drawRect(color = Color(0xBB000000), topLeft = barTopLeft, size = Size(barWidth, barHeight))
+    drawRect(
+        color = Color(0xBB000000), topLeft = barTopLeft,
+        size = Size(barWidth, barHeight), alpha = gate
+    )
     val hpColor = when {
         hpRatio > 0.6f -> Color(0xFF4CAF50)
         hpRatio > 0.3f -> Color(0xFFFFEB3B)
         else -> Color(0xFFF44336)
     }
-    drawRect(color = hpColor, topLeft = barTopLeft, size = Size(barWidth * hpRatio, barHeight))
+    drawRect(
+        color = hpColor, topLeft = barTopLeft,
+        size = Size(barWidth * hpRatio, barHeight), alpha = gate
+    )
 }
 
 private fun DrawScope.drawProjectile(proj: ProjectileEntity, sprites: GameSprites, s: Float) {
@@ -410,14 +601,26 @@ private fun DrawScope.drawProjectile(proj: ProjectileEntity, sprites: GameSprite
         atan2(proj.targetY - proj.startY, proj.targetX - proj.startX).toDouble()
     ).toFloat() - GameConfig.PROJECTILE_SPRITE_BASE_ANGLE_DEG
 
-    val (image, refWidth) = when (proj.type) {
-        ProjectileType.BULLET -> sprites.tracer to GameConfig.FX_TRACER_REF_PX
-        ProjectileType.CANNON_SHELL -> sprites.cannonShell to GameConfig.FX_CANNON_SHELL_REF_PX
-        // ANTI_ARMOR kulesi missile_launcher sprite'i kullaniyor -> mermisi de
-        // fuze. Sprite ucus yonunde doner (PROJECTILE_SPRITE_BASE_ANGLE_DEG = 0,
-        // yani nominal olarak saga bakiyor).
-        ProjectileType.MISSILE -> sprites.missile to GameConfig.FX_MISSILE_REF_PX
-        ProjectileType.FROST_PULSE -> sprites.hitSpark to GameConfig.FX_HIT_SPARK_REF_PX
+    // KARE BUTCESI DUZELTMESI (olculdu: `FramePathAllocationTest`).
+    // Burasi `sprite to refWidth` ile bir `Pair` uretiyordu ve `Pair` generic
+    // oldugu icin `Float` de KUTULANIYORDU: cagri basina 28 bayt, mermi
+    // BASINA her KAREDE. 40 mermilik agir bir dalgada saniyede ~67 KB saf
+    // cop. Iki ayri `when` ayni sonucu 0 bayt ile veriyor.
+    //
+    // ANTI_ARMOR kulesi missile_launcher sprite'i kullaniyor -> mermisi de
+    // fuze. Sprite ucus yonunde doner (PROJECTILE_SPRITE_BASE_ANGLE_DEG = 0,
+    // yani nominal olarak saga bakiyor).
+    val image = when (proj.type) {
+        ProjectileType.BULLET -> sprites.tracer
+        ProjectileType.CANNON_SHELL -> sprites.cannonShell
+        ProjectileType.MISSILE -> sprites.missile
+        ProjectileType.FROST_PULSE -> sprites.hitSpark
+    }
+    val refWidth = when (proj.type) {
+        ProjectileType.BULLET -> GameConfig.FX_TRACER_REF_PX
+        ProjectileType.CANNON_SHELL -> GameConfig.FX_CANNON_SHELL_REF_PX
+        ProjectileType.MISSILE -> GameConfig.FX_MISSILE_REF_PX
+        ProjectileType.FROST_PULSE -> GameConfig.FX_HIT_SPARK_REF_PX
     }
 
     // Fuze YOL ALIR ve bunun gorunmesi lazim: kalkista biraz kucuk baslar,
@@ -510,8 +713,52 @@ private fun DrawScope.drawVisualEffect(fx: VisualEffect, sprites: GameSprites, s
                 alpha = fade * 0.55f
             )
         }
-        EffectType.COIN_POPUP -> drawFloatingText(fx, progress, s, 255, 215, 0, 32f, 40f)
+        EffectType.COIN_POPUP -> {
+            // ZINCIR TIRMANMASI - iki gorsel kanal ayni anda:
+            //  1) OLCEK: kademe basina %14 buyume,
+            //  2) RENK SICAKLIGI: altin -> turuncu -> kizil.
+            // Ucuncu kanal (ses) motorda, ayni karede.
+            // Yeni bir efekt NESNESI eklenmedi: sayac zaten ekranda olan
+            // "+4g" yazisinin icine girdi, yani ekran bogulmadi.
+            val c = comboTierColor(fx.tier)
+            drawFloatingText(
+                fx, progress, s,
+                (c.red * 255f).toInt(), (c.green * 255f).toInt(), (c.blue * 255f).toInt(),
+                32f * (1f + 0.14f * fx.tier), 40f
+            )
+        }
         EffectType.DAMAGE_TEXT -> drawFloatingText(fx, progress, s, 244, 67, 54, 30f, 30f)
+        EffectType.COMBO_BURST -> {
+            // Kademe atlama - dalgada en fazla 4 kez cikar.
+            val c = comboTierColor(fx.tier)
+            // Genisleyen halka: easeOutCubic ile hizli acilir, yavas soner.
+            val ringR = GameConfig.FX_FROST_RING_REF_PX * s *
+                (0.22f + eased * 0.68f) * (1f + 0.12f * fx.tier)
+            drawCircle(
+                color = c,
+                radius = ringR,
+                center = Offset(fx.posX, fx.posY),
+                alpha = fade * 0.8f,
+                style = Stroke(width = 2.5f * s.coerceAtLeast(0.5f))
+            )
+            // Yazi: easeOutBack ile hafif overshoot (vurgu egrisi).
+            val txt = fx.text
+            if (txt != null) {
+                val pop = easeOutBack(progress.coerceAtMost(0.45f) / 0.45f)
+                val paint = floatingTextPaint
+                val alpha = ((1f - progress) * 255f).toInt().coerceIn(0, 255)
+                paint.color = android.graphics.Color.argb(
+                    alpha,
+                    (c.red * 255f).toInt(), (c.green * 255f).toInt(), (c.blue * 255f).toInt()
+                )
+                paint.textSize = COMBO_BURST_TEXT_REF_PX * s.coerceAtLeast(0.5f) *
+                    (0.55f + 0.45f * pop) * (1f + 0.10f * fx.tier)
+                paint.setShadowLayer(4f, 0f, 2f, android.graphics.Color.argb(alpha, 0, 0, 0))
+                drawContext.canvas.nativeCanvas.drawText(
+                    txt, fx.posX, fx.posY - (18f + eased * 22f) * s, paint
+                )
+            }
+        }
     }
 }
 
@@ -528,13 +775,10 @@ private fun DrawScope.drawFloatingText(
     val txt = fx.text ?: return
     val yOffset = fx.posY - progress * riseRefPx * s
     val alpha = ((1f - progress) * 255).toInt().coerceIn(0, 255)
-    val paint = android.graphics.Paint().apply {
-        color = android.graphics.Color.argb(alpha, r, g, b)
-        textSize = sizeRefPx * s.coerceAtLeast(0.5f)
-        isFakeBoldText = true
-        isAntiAlias = true
-        textAlign = android.graphics.Paint.Align.CENTER
-        setShadowLayer(3f, 0f, 1f, android.graphics.Color.argb(alpha, 0, 0, 0))
-    }
+    // Paint PAYLASILIR, her karede yeniden ayrilmaz (bkz. floatingTextPaint).
+    val paint = floatingTextPaint
+    paint.color = android.graphics.Color.argb(alpha, r, g, b)
+    paint.textSize = sizeRefPx * s.coerceAtLeast(0.5f)
+    paint.setShadowLayer(3f, 0f, 1f, android.graphics.Color.argb(alpha, 0, 0, 0))
     drawContext.canvas.nativeCanvas.drawText(txt, fx.posX, yOffset, paint)
 }
