@@ -151,6 +151,78 @@ internal object GameFeel {
      * ZAMAN gorunur, kaybolan sey zaten sonmek uzere olandir.
      */
     const val MAX_VISUAL_EFFECTS = 96
+
+    // ------------------------------------------------------------------------
+    // HAVA TAARRUZU — Hava Destegi guclendiricisinin geri bildirim zinciri
+    //
+    // BURADAKI HICBIR SAYI BIR DENGE DEGERI DEGIL. Hasar orani
+    // (EconomyConfig.AIR_SUPPORT_DAMAGE_FRACTION = 0,45), fiyat ve savas basi
+    // kullanim hakki EKONOMI katmanindadir ve DEGISMEDI: iki kullanim x 0,45
+    // = 0,90 < 1,0 garantisi ("hava destegi tek basina hicbir dusmani
+    // olduremez", yani dalga temizleme butonu degildir) ekonomi testleriyle
+    // kilitli. Asagidakiler yalnizca o hasarin GORUNUR olmasini saglar.
+    // ------------------------------------------------------------------------
+
+    /**
+     * Ucagin sahayi bastan basa gecme suresi. Patlamalar bu pencereye yayilir.
+     *
+     * NEDEN 0,42 sn: hasar TEK KAREDE uygulanir (simulasyon degismedi), yalniz
+     * gorsel zincir yayilir. Pencere buyudukce en uzaktaki dusmanin can barinin
+     * dusmesi ile ustundeki patlama arasindaki fark buyur ve olay "gecikmis"
+     * hissedilir. 0,42 sn hem bir SIRA olarak okunur (~7 kare arayla inen
+     * bombalar) hem de o farki tek bir "kosu" izlenimi icinde tutar.
+     */
+    const val AIR_STRIKE_RUN_SECONDS = 0.42f
+
+    /** Ucagin sahadan cikisi + duman izinin sonme kuyrugu. */
+    const val AIR_STRIKE_TAIL_SECONDS = 0.30f
+
+    /** Tek bir bomba patlamasinin omru. */
+    const val AIR_STRIKE_BLAST_SECONDS = 0.50f
+
+    /** Hasar sayisinin ekranda kalma suresi — okunacak kadar uzun. */
+    const val AIR_STRIKE_DAMAGE_TEXT_SECONDS = 0.90f
+
+    /**
+     * Hasar sayisi patlamadan bu kadar SONRA cikar: sayi patlamanin parlak
+     * karesinin altinda kaybolmasin, once vurus gorunsun sonra olcu.
+     */
+    const val AIR_STRIKE_DAMAGE_TEXT_LAG_SECONDS = 0.07f
+
+    /**
+     * Taarruz sarsintisi. Onceki deger 0,30 idi ve top atisiyla (0,25) neredeyse
+     * ayniydi — savasin en pahali tek girdisi, siradan bir top mermisi kadar
+     * agir hissediyordu. Yine de tavana yakin degil: sarsinti okunabilirligi
+     * bozmamali ve HER ZAMAN sonumlenerek sifira iner.
+     */
+    const val AIR_STRIKE_SHAKE_SECONDS = 0.55f
+
+    /** Ekran flasinin omru. 0,2 sn ustu "ekran beyazladi" olarak okunur. */
+    const val AIR_STRIKE_FLASH_SECONDS = 0.16f
+
+    /**
+     * Flasin TEPE saydamligi. 0,22 bilincli olarak dusuk: flas bir vurgu
+     * isaretidir, savas alanini gizleyen bir perde degil. Sonumleme karesel
+     * (easeInCubic'e yakin) oldugu icin ilk kareden sonra hizla siliniyor.
+     */
+    const val AIR_STRIKE_FLASH_PEAK_ALPHA = 0.22f
+
+    /**
+     * Ustunde hasar SAYISI cikacak en fazla hedef.
+     *
+     * Iki gerekce, ikisi de gorsel:
+     *  1) 20'den fazla yuzen sayi ust uste biner ve hicbiri okunmaz — sayinin
+     *     tek isi olcuyu bildirmek, kalabalik onu yok eder.
+     *  2) Efekt butcesi: taarruz en kotu durumda 1 (kosu) + N (patlama) + 20
+     *     (sayi) slot ister; N = 75'e kadar tavan asilmaz, yani taarruz
+     *     KENDI efektlerini dusurmez.
+     * Sayi alan hedefler rota uzerinde EN ILERIDEKILER, yani oyuncunun o an
+     * en cok onemsedikleri. PATLAMA HER HEDEFTE cikar, sinir yalnizca yazidir.
+     */
+    const val AIR_STRIKE_MAX_DAMAGE_TEXTS = 20
+
+    /** Patlama capinin dusman yaricapina orani — bomba dusmandan buyuk gorunur. */
+    const val AIR_STRIKE_BLAST_RADIUS_FACTOR = 1.7f
 }
 
 /**
@@ -589,12 +661,63 @@ class GameEngine(
      */
     private var hitStopRemainingSeconds = 0f
 
+    // ------------------------------------------------------------------------
+    // EKRAN FLASI — tek karelik "buyuk olay" isareti (bugun yalniz hava taarruzu)
+    //
+    // StateFlow DEGIL, `combo` ile ayni gerekce: `GameCanvas` bunu draw
+    // lambda'sinin ICINDE okur ve kare zaten `frameTick` ile gecersiz kilinir.
+    // StateFlow olsaydi flasin her karesi TUM HUD'u recompose ederdi.
+    // ------------------------------------------------------------------------
+    private var screenFlashRemaining = 0f
+    private var screenFlashDuration = 0f
+
+    /**
+     * Cizim icin flas saydamligi, 0 = flas yok.
+     *
+     * Sonumleme KARESEL: ilk kare tam siddette, sonrasi hizla siliniyor
+     * (lineer sonumleme "ekran yavasca karariyor" gibi okunur, vurus gibi
+     * degil). Sarsinti ile ayni kural: her zaman sifira iner.
+     */
+    val screenFlashAlpha: Float
+        get() {
+            if (screenFlashRemaining <= 0f || screenFlashDuration <= 0f) return 0f
+            val f = (screenFlashRemaining / screenFlashDuration).coerceIn(0f, 1f)
+            return GameFeel.AIR_STRIKE_FLASH_PEAK_ALPHA * f * f
+        }
+
+    /**
+     * GECIKMELI SES KUYRUGU — "yuvarlanan bombardiman" icin.
+     *
+     * Neden gerekli: hava taarruzu ekranda 0,42 saniyeye yayilan bir ZINCIR,
+     * kulakta ise tek bir patlamaydi. Goz sirali patlama gorurken kulagin tek
+     * atis duymasi olayi kucultuyordu.
+     *
+     * Zaman tabani `dt`, yani OYUN HIZI CARPANI DAHIL ve duraklamada (PAUSED /
+     * reklam) akmaz: gorsel zincirle ses ayni saatte yurur. Kuyruk savas
+     * sifirlanmasinda temizlenir, yoksa bir onceki savasin patlamasi yeni
+     * bolumun ilk karesinde calardi.
+     *
+     * Tahsis: savas basina en fazla iki taarruz x 2 eleman. Kare yolunda
+     * DEGIL — `ageCosmetics` yalnizca var olan elemanlari yaslar.
+     */
+    private class PendingSound(var delaySeconds: Float, val sound: AudioManager.SoundEffect)
+
+    private val pendingSounds = mutableListOf<PendingSound>()
+
     init {
         loadLevel(GameConfig.levelSpec(1))
     }
 
     /** Ust HUD seridinin px yuksekligi; oynanis alani bunun altinda baslar. */
     private var hudTopInsetPx: Float = 0f
+
+    /**
+     * Yerlesimin hangi HARITA icin hesaplandigi. Kaydirma orani artik haritaya
+     * gore degistigi icin ("ust bant ne kadar bos") olcuyu kisa devre yapan
+     * kontrolun bunu da bilmesi gerekir: ayni ekranda baska bir haritaya gecmek
+     * yerlesimi DEGISTIRIR.
+     */
+    private var dimsMapId: Int = -1
 
     fun updateMapDimensions(width: Float, height: Float, topInsetPx: Float = hudTopInsetPx) {
         if (width <= 0f || height <= 0f) return
@@ -607,27 +730,35 @@ class GameEngine(
         // invalidation'i duzeltildikten sonra draw saniyede 60 kez kosuyor; olcu
         // degismedigi halde her karede iki liste yeniden uretmek saf tahsis
         // baskisidir (GC duraklamasi = jank). Olcu ayniysa cik.
-        if (width == mapWidthPx && height == mapHeightPx && scaledWaypoints.isNotEmpty()) return
+        if (width == mapWidthPx && height == mapHeightPx &&
+            dimsMapId == activeMapId && scaledWaypoints.isNotEmpty()
+        ) {
+            return
+        }
         mapWidthPx = width
         mapHeightPx = height
+        dimsMapId = activeMapId
 
-        // FIT (crop DEGIL): en-boy orani korunur, haritanin oynanis iceren
-        // bandi HUD'un altindaki serbest alana sigdirilir. Haritanin ust %10'u
-        // dekoratif oldugu icin HUD'un altina kasitli olarak tasar.
-        val safeFrac = 1f - GameConfig.MAP_SAFE_TOP_FRAC
-        val availableHeight = (height - hudTopInsetPx).coerceAtLeast(1f)
-        var fh = availableHeight / safeFrac
-        var fw = fh * GameConfig.MAP_ASPECT_RATIO
-        if (fw > width) {
-            // Genislik sinirli (daha kare tuval / tablet) -> altta serit kalir.
-            fw = width
-            fh = width / GameConfig.MAP_ASPECT_RATIO
-        }
-        fieldWidthPx = fw
-        fieldHeightPx = fh
-        fieldLeftPx = (width - fw) / 2f
-        fieldTopPx = hudTopInsetPx - GameConfig.MAP_SAFE_TOP_FRAC * fh
-        renderScale = fieldWidthPx / GameConfig.REFERENCE_WIDTH
+        // FIT (crop DEGIL): en-boy orani korunur.
+        //
+        // KAYDIRMA ARTIK OLCULU (P0 duzeltmesi). Eskiden burada sabit
+        // `MAP_SAFE_TOP_FRAC = 0.10` vardi ve HUD'in OLCULEN yuksekligi ile
+        // haritanin GERCEK geometrisi hicbir yerde karsilastirilmiyordu:
+        // 360 dp ekranda 0,10 * 338 dp = 34 dp kaydirma, 56 dp HUD -> ust
+        // pad'ler seridin altinda kaliyor ve dokunus almiyordu (cihazda
+        // goruldu, harita 4).
+        //
+        // `GameConfig.mapSafeTopFrac` bu orani haritanin en ust pad'i ve yolun
+        // en ust noktasindan TURETIR ve gerekirse NEGATIF doner; negatif deger
+        // "HUD'un altina sigmiyor, kucult" demektir (letterbox). Bu yuzden
+        // asagidaki iki satirin disinda hicbir sey degismedi: formul ayni,
+        // orani artik veri veriyor.
+        val rect = GameConfig.computeFieldRect(activeMapId, width, height, hudTopInsetPx)
+        fieldWidthPx = rect.width
+        fieldHeightPx = rect.height
+        fieldLeftPx = rect.left
+        fieldTopPx = rect.top
+        renderScale = rect.renderScale
 
         // Faz 4: AKTIF bolumun geometrisi. Eskiden burada `LevelData.LEVEL_1`
         // sabit kodluydu, yani hangi bolum yuklenirse yuklensin ilk karede
@@ -754,6 +885,7 @@ class GameEngine(
         screenShakeDuration = 0f
         _screenShake.value = Offset.Zero
         hitStopRemainingSeconds = 0f
+        clearScreenFlashAndCues()
         combo.resetAll()
 
         setupWave(0)
@@ -778,6 +910,7 @@ class GameEngine(
         _gameSpeed.value = 1.0f
         _screenShake.value = Offset.Zero
         screenShakeDuration = 0f
+        clearScreenFlashAndCues()
         _gameState.value = GameState.LEVEL_SELECT
     }
 
@@ -787,6 +920,7 @@ class GameEngine(
         _gameSpeed.value = 1.0f
         _screenShake.value = Offset.Zero
         screenShakeDuration = 0f
+        clearScreenFlashAndCues()
         _gameState.value = GameState.MAIN_MENU
     }
 
@@ -843,6 +977,7 @@ class GameEngine(
         screenShakeDuration = 0f
         _screenShake.value = Offset.Zero
         hitStopRemainingSeconds = 0f
+        clearScreenFlashAndCues()
         combo.resetAll()
 
         setupWave(_currentWaveIndex.value)
@@ -1087,33 +1222,15 @@ class GameEngine(
             // listesinden SILER. Canli liste uzerinde donmek
             // ConcurrentModificationException verirdi ve hata ancak hava destegi
             // gercekten bir sey oldurdugunde — yani en kotu anda — patlardi.
-            val targets = enemies.toList()
-            targets.forEach { enemy ->
-                if (enemy.isDead) return@forEach
-                enemy.hp -= airSupportDamage(enemy.maxHp, fraction)
-                enemy.hitFlashTimerSeconds = 0.12f
-                addEffect(
-                    VisualEffect(
-                        type = EffectType.CANNON_EXPLOSION,
-                        posX = enemy.posX,
-                        posY = enemy.posY,
-                        maxAgeSeconds = 0.45f,
-                        scale = enemy.radius / 15f
-                    )
-                )
-                // Var olan olum yolu: odul, skor, kayit sayaci, ses ve efekt
-                // guclendiriciyle olen dusmanda da AYNEN calisir.
-                if (enemy.isDead) onEnemyKilled(enemy)
-            }
+            runAirStrike(enemies.toList(), fraction)
         }
 
         // Ses, sarsinti ve gorsel AYNI KAREDE tetiklenir; girdi ile geri bildirim
         // arasinda bir kare bile gecikme "gec kalan kontrol" olarak hissedilir.
         when {
-            fraction > 0.0 -> {
-                audioManager.playSound(AudioManager.SoundEffect.EXPLOSION_HEAVY)
-                triggerScreenShake(0.30f)
-            }
+            // Hava taarruzunun ses/sarsinti/flas zinciri `runAirStrike` icinde,
+            // hasarla AYNI KAREDE baslar; burada tekrar tetiklenmez.
+            fraction > 0.0 -> Unit
 
             activation.healthRestored > 0 ->
                 audioManager.playSound(AudioManager.SoundEffect.TOWER_UPGRADE)
@@ -1125,6 +1242,155 @@ class GameEngine(
         }
 
         return true
+    }
+
+    /**
+     * HAVA TAARRUZU — hasarin GORUNUR hale getirildigi yer.
+     *
+     * ## Neden yeniden yazildi (cihazda kullanici bulgusu)
+     * *"hava destek istedim bir sey gelmedi sanki."* Mekanizma calisiyordu:
+     * ucret kesiliyor, bekleme basliyor, her dusman maks caninin %45'ini
+     * kaybediyordu. Sorun OKUNABILIRLIKTI — hasar tanim geregi hicbir dusmani
+     * oldurmedigi icin (bkz. asagidaki kisit) ekranda "bir sey oldu" diyen tek
+     * isaret dusman basina 0,45 saniyelik kucuk bir patlama sprite'iydi.
+     *
+     * ## DEGISMEYEN KISIT
+     * Hasar hesabi HALA [airSupportDamage] — zirhi ve patlama zafiyetini
+     * bilerek yok sayar, orani [EconomyConfig.AIR_SUPPORT_DAMAGE_FRACTION].
+     * "Savas basina 2 kullanim x 0,45 = 0,90 < 1,0, yani hava destegi tam canli
+     * hicbir dusmani tek basina olduremez" garantisi bir pay-to-win korumasidir
+     * ve ekonomi testleriyle kilitlidir. Bu fonksiyon HASARA DOKUNMAZ; yalnizca
+     * ayni hasari gorunur, duyulur ve hissedilir kilar.
+     *
+     * ## Zincir
+     * 1. Sahayi bastan basa kesen bir UCUS HATTI ([EffectType.AIR_STRIKE_RUN]) —
+     *    tek efekt nesnesi, tum ekran.
+     * 2. Hat boyunca SIRALI patlamalar: her hedefin patlamasi, ucak onun
+     *    uzerinden gecerken cikar. Gecikme `VisualEffect.ageSeconds`'in negatif
+     *    baslangici ile kurulur, yani SIMULASYON ZAMANINA baglidir — 2x oyun
+     *    hizinda zincir de iki kat hizli akar, duraklamada bekler.
+     * 3. Her hedefin ustunde HASAR SAYISI. "37" goren oyuncu "hicbir sey
+     *    olmadi" demez; olcuyu gorur ve neyi satin aldigini anlar.
+     * 4. Ekran flasi + artirilmis sarsinti + yuvarlanan bombardiman sesi.
+     *
+     * ## Hasar ANINDA uygulanir, gorsel yayilir
+     * Zincir yalnizca GORSELDIR. Hasari da yaymak simulasyonu degistirirdi:
+     * bomba havadayken usse ulasan bir dusman, oyuncunun bu karede odedigi
+     * hasari yemeden can goturebilirdi. Gorsel pencere ([GameFeel.AIR_STRIKE_RUN_SECONDS])
+     * tam da bu yuzden kisa tutuldu.
+     *
+     * @param targets savas alanindaki dusmanlarin ANLIK KOPYASI. Kopya sart:
+     *   asagidaki `onEnemyKilled` olen dusmani `enemies` listesinden siler.
+     */
+    private fun runAirStrike(targets: List<EnemyEntity>, fraction: Double) {
+        val live = targets.filter { !it.isDead }
+
+        val left = fieldLeftPx
+        val width = fieldWidthPx.coerceAtLeast(1f)
+
+        // Ucus hatti hedef yayilimini GERCEKTEN ozler: giris yuksekligi en
+        // soldaki, cikis yuksekligi en sagdaki hedefin yuksekligidir. Tek
+        // hedefte hat yatay olur ve tam onun uzerinden gecer. Hedef yoksa
+        // (ekonomi katmani bunu zaten reddeder, burasi savunma amacli) hat
+        // sahanin ortasindan gecer.
+        val midY = fieldTopPx + fieldHeightPx * 0.5f
+        val entryY = live.minByOrNull { it.posX }?.posY ?: midY
+        val exitY = live.maxByOrNull { it.posX }?.posY ?: midY
+
+        val runSeconds = GameFeel.AIR_STRIKE_RUN_SECONDS
+        val life = runSeconds + GameFeel.AIR_STRIKE_TAIL_SECONDS
+
+        addEffect(
+            VisualEffect(
+                type = EffectType.AIR_STRIKE_RUN,
+                posX = left,
+                posY = entryY,
+                maxAgeSeconds = life,
+                radiusPx = hypot(width, exitY - entryY),
+                angleRad = atan2(exitY - entryY, width),
+                scale = runSeconds / life
+            )
+        )
+
+        // Hasar sayisi alacak hedefler: rota uzerinde EN ILERIDEKILER, yani
+        // oyuncunun o an en cok onemsedikleri (bkz. AIR_STRIKE_MAX_DAMAGE_TEXTS).
+        val textTargets: Set<String> =
+            if (live.size <= GameFeel.AIR_STRIKE_MAX_DAMAGE_TEXTS) {
+                live.mapTo(HashSet(live.size.coerceAtLeast(1))) { it.id }
+            } else {
+                live.sortedByDescending { it.currentWayPointIndex }
+                    .take(GameFeel.AIR_STRIKE_MAX_DAMAGE_TEXTS)
+                    .mapTo(HashSet(GameFeel.AIR_STRIKE_MAX_DAMAGE_TEXTS)) { it.id }
+            }
+
+        live.forEach { enemy ->
+            // Ucagin X'i zamanla dogrusal ilerledigi icin hedefin X orani
+            // DOGRUDAN bombasinin dusme anidir: patlama, ucak tam ustundeyken.
+            val alongRun = ((enemy.posX - left) / width).coerceIn(0f, 1f)
+            val delay = alongRun * runSeconds
+
+            val damage = airSupportDamage(enemy.maxHp, fraction)
+            enemy.hp -= damage
+            enemy.hitFlashTimerSeconds = HIT_FLASH_DURATION_SECONDS
+
+            // GECIKME TELAFISI (yoksa "bomba yanina dustu" gorunur).
+            // `VisualEffect` konumu SABIT, ama hedef gecikme boyunca yuruyor:
+            // en hizli dusman (115 ref-px/sn) 0,42 sn'de kendi capinin iki
+            // katindan fazla yol alir. Efekt hedefin O ANDAKI degil, patlama
+            // ANINDAKI konumuna kurulur. Yon her karede guncellenen
+            // `rotationAngleRad`; virajda hata kalir ama buyuklugu ayni
+            // (bir dusman capi mertebesinde) sinirla cevrilidir.
+            val heading = enemy.rotationAngleRad
+            val leadX = cos(heading) * enemy.currentSpeed
+            val leadY = sin(heading) * enemy.currentSpeed
+
+            addEffect(
+                VisualEffect(
+                    type = EffectType.CANNON_EXPLOSION,
+                    posX = enemy.posX + leadX * delay,
+                    posY = enemy.posY + leadY * delay,
+                    ageSeconds = -delay,
+                    maxAgeSeconds = GameFeel.AIR_STRIKE_BLAST_SECONDS,
+                    radiusPx = enemy.radius * GameFeel.AIR_STRIKE_BLAST_RADIUS_FACTOR
+                )
+            )
+
+            if (enemy.id in textTargets) {
+                val textDelay = delay + GameFeel.AIR_STRIKE_DAMAGE_TEXT_LAG_SECONDS
+                addEffect(
+                    VisualEffect(
+                        type = EffectType.DAMAGE_TEXT,
+                        posX = enemy.posX + leadX * textDelay,
+                        posY = enemy.posY + leadY * textDelay,
+                        ageSeconds = -textDelay,
+                        maxAgeSeconds = GameFeel.AIR_STRIKE_DAMAGE_TEXT_SECONDS,
+                        text = "-" + damage.roundToInt()
+                    )
+                )
+            }
+
+            // Var olan olum yolu: odul, skor, kayit sayaci, ses ve efekt
+            // guclendiriciyle olen dusmanda da AYNEN calisir.
+            if (enemy.isDead) onEnemyKilled(enemy)
+        }
+
+        // ---------------------------------------------------------------------
+        // SES / SARSINTI / FLAS — girdi ile AYNI KAREDE baslar.
+        //
+        // Ses tek atis DEGIL: goz 0,42 saniyeye yayilan sirali patlamalar
+        // gorurken kulagin tek "bum" duymasi olayi kucultuyordu. Yuvarlanan
+        // bombardiman MEVCUT uc ses dosyasindan kuruluyor (yeni asset YOK):
+        // fuze kalkisi -> agir patlama -> orta patlama -> agir patlama.
+        // Iki agir patlama arasi ~310 ms, yani EXPLOSION_HEAVY'nin 90 ms'lik
+        // minimum araligini rahatca asiyor; ses kirpilmaz.
+        // ---------------------------------------------------------------------
+        audioManager.playSound(AudioManager.SoundEffect.MISSILE_LAUNCH)
+        scheduleSound(AudioManager.SoundEffect.EXPLOSION_HEAVY, runSeconds * 0.18f)
+        scheduleSound(AudioManager.SoundEffect.EXPLOSION, runSeconds * 0.55f)
+        scheduleSound(AudioManager.SoundEffect.EXPLOSION_HEAVY, runSeconds * 0.92f)
+
+        triggerScreenShake(GameFeel.AIR_STRIKE_SHAKE_SECONDS)
+        triggerScreenFlash(GameFeel.AIR_STRIKE_FLASH_SECONDS)
     }
 
     fun cycleTargetingMode() {
@@ -1158,8 +1424,39 @@ class GameEngine(
      */
     private fun ageCosmetics(dt: Float) {
         updateScreenShake(dt)
+        updateScreenFlash(dt)
         ageEffects(dt)
+        agePendingSounds(dt)
         combo.age(dt)
+    }
+
+    private fun updateScreenFlash(dt: Float) {
+        if (screenFlashRemaining <= 0f) return
+        screenFlashRemaining -= dt
+        if (screenFlashRemaining <= 0f) {
+            screenFlashRemaining = 0f
+            screenFlashDuration = 0f
+        }
+    }
+
+    /**
+     * Gecikmeli sesleri calar. Geriye dogru dolasilir: cagri sirasinda listeden
+     * eleman SILINIYOR ve ileri giden bir dongu bir sonraki elemani atlardi.
+     */
+    private fun agePendingSounds(dt: Float) {
+        if (pendingSounds.isEmpty()) return
+        // Ciplak `while`: `indices.reversed()` KARE YOLUNDA iki `IntRange`
+        // tahsis ederdi (bkz. EntityIds notu — bu dosyada kural budur).
+        var i = pendingSounds.size - 1
+        while (i >= 0) {
+            val cue = pendingSounds[i]
+            cue.delaySeconds -= dt
+            if (cue.delaySeconds <= 0f) {
+                pendingSounds.removeAt(i)
+                audioManager.playSound(cue.sound)
+            }
+            i--
+        }
     }
 
     /**
@@ -1918,6 +2215,37 @@ class GameEngine(
 
     fun triggerScreenShake(durationSeconds: Float) {
         screenShakeDuration = durationSeconds
+    }
+
+    /**
+     * Ekran flasi. Ust uste BINMEZ, en uzun/en yeni kazanir — sarsinti ile
+     * ayni kural. Sifir ya da negatif sure flasi kapatir.
+     */
+    private fun triggerScreenFlash(durationSeconds: Float) {
+        if (durationSeconds <= 0f) return
+        screenFlashRemaining = durationSeconds
+        screenFlashDuration = durationSeconds
+    }
+
+    /** Gecikmeli ses isareti kuyruga alinir; sifir gecikme ANINDA calar. */
+    private fun scheduleSound(sound: AudioManager.SoundEffect, delaySeconds: Float) {
+        if (delaySeconds <= 0f) {
+            audioManager.playSound(sound)
+            return
+        }
+        pendingSounds.add(PendingSound(delaySeconds, sound))
+    }
+
+    /**
+     * Savas sifirlanmasi: bekleyen flas ve ses isaretleri DUSURULUR.
+     *
+     * Kuyruk temizlenmezse bir onceki savasta baslamis bir bombardiman, yeni
+     * bolumun ilk karesinde ya da ana menude calardi.
+     */
+    private fun clearScreenFlashAndCues() {
+        screenFlashRemaining = 0f
+        screenFlashDuration = 0f
+        pendingSounds.clear()
     }
 
     /**

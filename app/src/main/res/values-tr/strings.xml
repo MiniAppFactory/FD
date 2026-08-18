@@ -213,7 +213,8 @@
     <string name="booster_base_repair_name">Üs Tamiri</string>
 
     <string name="booster_chip_ad">REKLAM</string>
-    <string name="booster_chip_cooldown">%1$d sn</string>
+    <!-- Bkz. values/strings.xml: ciplak sayi fiyatla karisiyordu. -->
+    <string name="booster_chip_cooldown">BEKLE %1$d</string>
     <string name="booster_chip_confirm">ONAYLA</string>
     <string name="booster_chip_spent">BİTTİ</string>
     <string name="booster_chip_reserve">REZERV</string>

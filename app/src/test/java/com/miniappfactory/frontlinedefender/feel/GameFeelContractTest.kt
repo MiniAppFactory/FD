@@ -119,6 +119,75 @@ class GameFeelContractTest {
         assertTrue(EffectType.entries.contains(EffectType.COMBO_BURST))
     }
 
+    @Test
+    fun airStrikeRunEffectTypeExists() {
+        assertTrue(EffectType.entries.contains(EffectType.AIR_STRIKE_RUN))
+    }
+
+    // --------------------------------------------------- hava taarruzu penceresi
+
+    /**
+     * Zincir penceresi bir SOZLESME: hasar tek karede uygulanir, yalnizca
+     * GORSEL yayilir. Pencere buyudukce en uzaktaki hedefin can barinin
+     * dusmesi ile ustundeki patlama arasindaki fark buyur ve olay "gecikmis
+     * kontrol" olarak okunur — teknik olarak dogru, hissen bozuk.
+     */
+    @Test
+    fun airStrikeChainWindowIsShortEnoughToReadAsOneEvent() {
+        assertTrue(
+            "Zincir penceresi (${GameFeel.AIR_STRIKE_RUN_SECONDS} sn) 0,6 sn'yi gecerse " +
+                "hasar ile patlama gorunur sekilde ayrisir",
+            GameFeel.AIR_STRIKE_RUN_SECONDS <= 0.6f
+        )
+        assertTrue(
+            "Pencere en az birkac kare olmali, yoksa SIRA olusmaz ve tek puf gorunur",
+            GameFeel.AIR_STRIKE_RUN_SECONDS >= 4f / 60f
+        )
+    }
+
+    /**
+     * Ekran flasi bir VURGU isaretidir, savas alanini gizleyen perde degil.
+     * Uzun ya da opak bir flas, oyuncunun tam da o an okumasi gereken sahneyi
+     * (kimin oldugu, kimin usse yaklastigi) siler.
+     */
+    @Test
+    fun screenFlashStaysShortAndTransparentEnoughToSeeThrough() {
+        assertTrue(
+            "Flas suresi ${GameFeel.AIR_STRIKE_FLASH_SECONDS} sn - 0,25 sn ustu " +
+                "'ekran beyazladi' olarak okunur",
+            GameFeel.AIR_STRIKE_FLASH_SECONDS <= 0.25f
+        )
+        assertTrue(
+            "Flas en az bir kare surmeli",
+            GameFeel.AIR_STRIKE_FLASH_SECONDS >= 1f / 60f
+        )
+        assertTrue(
+            "Flas tepe saydamligi ${GameFeel.AIR_STRIKE_FLASH_PEAK_ALPHA} - 0,35 ustu " +
+                "sahneyi orter",
+            GameFeel.AIR_STRIKE_FLASH_PEAK_ALPHA in 0.05f..0.35f
+        )
+    }
+
+    /**
+     * Yuzen hasar sayilari okunacak kadar yasamali ama ekranda birikmemeli.
+     * Ustten sinir da gorseldir: 20'den fazla sayi ust uste biner.
+     */
+    @Test
+    fun airStrikeDamageNumbersAreReadableAndBounded() {
+        assertTrue(
+            "Hasar sayisi okunacak kadar kalmali",
+            GameFeel.AIR_STRIKE_DAMAGE_TEXT_SECONDS >= 0.5f
+        )
+        assertTrue(
+            "Sayi patlamadan SONRA cikmali ama gecikme fark edilmemeli",
+            GameFeel.AIR_STRIKE_DAMAGE_TEXT_LAG_SECONDS in 0f..0.15f
+        )
+        assertTrue(
+            "Yazi tavani efekt butcesinin bir parcasi olmali",
+            GameFeel.AIR_STRIKE_MAX_DAMAGE_TEXTS in 6..GameFeel.MAX_VISUAL_EFFECTS / 3
+        )
+    }
+
     /**
      * `tier` alani varsayilan 0: zincir bilmeyen her mevcut cagiran
      * (kule insasi, satis, us hasari) BIREBIR eski davranisini korur.

@@ -122,14 +122,24 @@ class LevelGeometryDataTest {
     }
 
     /**
-     * Betik her rotayi yay uzunlugunun %5'i araligiyla ornekler -> 21 OLCULMUS
-     * nokta. v1'de buna 2 ekran disi uc eklendigi icin sayi 23'tu; uclar
-     * kaldirildi. Sayi kilitli ki uc uzatmasi sessizce geri gelmesin.
+     * v3'te betik her rotayi yay uzunlugunun %5'i araligiyla ornekliyordu ->
+     * rota basina 21 nokta, ortalama segment 83-109 ref-px. **Bu sayi artik
+     * kilitli DEGIL**: v4 (2026-08-18) rotalari Catmull-Rom ile yogunlastirdi,
+     * olcut nokta SAYISI degil SEGMENT UZUNLUGU oldu — kirisin yolun disina
+     * tasip tasmadigini belirleyen sey odur. Segment kilidi ve zemin kanitlari
+     * [RouteStaysOnRoadTest] icindedir.
+     *
+     * Burada kalan tek sey TABAN: 21'e geri dusmek v3'un kirislerini geri
+     * getirir, o yuzden sessizce olmasin.
      */
     @Test
-    fun everyRouteHasExactlyTheTwentyOneMeasuredWaypoints() {
+    fun everyRouteIsDenserThanTheOldTwentyOnePointSampling() {
         allRoutes().forEach { (label, route) ->
-            assertEquals("$label waypoint sayisi", 21, route.size)
+            assertTrue(
+                "$label yalnizca ${route.size} nokta — v4 yogunlastirmasi geri alinmis " +
+                    "olmali (v3 = 21, v4 >= 45)",
+                route.size >= 45
+            )
         }
     }
 
@@ -368,7 +378,7 @@ class LevelGeometryDataTest {
             2 to setOf(3, 4, 7, 8, 10, 12), // 372 / 409 / 582 / 383 / 553 / 272
             3 to setOf(10),                 // 327
             4 to setOf(4, 7, 9, 12),        // 406 / 487 / 621 / 383
-            5 to setOf(3),                  // 274
+            // harita 5: pad 3 v4 merkezlemesinden sonra 274 -> 262 ref-px, ARTIK OLU DEGIL.
             6 to setOf(4, 10),              // 324 / 355
             7 to setOf(3, 6),               // 311 / 347
             8 to setOf(6, 8, 11),           // 336 / 316 / 311
@@ -428,12 +438,13 @@ class LevelGeometryDataTest {
         // Gercek olculum. DECISIONS P3'teki "106/134" yanlis; asil deger 79.
         // 106, "160 ref-px (MACHINE_GUN L1) icindeki pad sayisi = 105" ile
         // karistirilmis gorunuyor (134 - 28 uzak pad = 106).
-        assertEquals("130 ref-px icindeki pad sayisi", 79, within130)
+        assertEquals("130 ref-px icindeki pad sayisi", 82, within130)
         assertEquals(
             // Faz 10: en kisa L1 menzili artik MACHINE_GUN (160 -> 150 ref-px);
             // SLOW 270'e cikti. Sayi ayni cunku esik degeri hâlâ 150.
+            // v4: rota merkezlemesi bazi pad'lari yola yaklastirdi (41 -> 38).
             "en kisa L1 menzili (MACHINE_GUN = 150 ref-px) disindaki pad sayisi",
-            41, beyondShortestL1
+            38, beyondShortestL1
         )
         assertEquals(
             "160 ref-px disindaki pad sayisi — DECISIONS'in '28 uzak pad'i",

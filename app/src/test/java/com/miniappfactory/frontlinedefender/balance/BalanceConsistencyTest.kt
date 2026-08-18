@@ -185,14 +185,45 @@ class BalanceConsistencyTest {
                 "kule oldurmeyle KAZANILIR",
             first < cheapest * 2
         )
-        val actIBudgets = (1..6).map { GameConfig.levelSpec(it).startingSupply }
-        for (i in 1 until actIBudgets.size) {
+        // MONOTONLUK **TABAN** UZERINDE OLCULUR.
+        //
+        // `COVERAGE_SCARCITY_SUPPLY_FACTOR` (1,5) bir zorluk rampasi degil bir
+        // TELAFIDIR: catallanan ya da dar tahtali bolumde AYNI kadroyu kurmak
+        // daha pahaliya gelir. Catallanma esigi 9'dan 3'e indiginde L4 telafi
+        // aliyor (215 -> 323) ve L5 (255) ondan kucuk kaliyor; bu ekonomi
+        // hatasi DEGILDIR, L4'un iki cephesi vardir. Kampanyanin gercekten
+        // artmasi gereken sey kadronun kendisidir.
+        val actIBase = (1..6).map { GameConfig.startingSupplyBaseFor(it) }
+        for (i in 1 until actIBase.size) {
             assertTrue(
-                "bolum ${i + 1} tedariki (${actIBudgets[i]}) oncekinden " +
-                    "(${actIBudgets[i - 1]}) az olmamali",
-                actIBudgets[i] >= actIBudgets[i - 1]
+                "bolum ${i + 1} TABAN tedariki (${actIBase[i]}) oncekinden " +
+                    "(${actIBase[i - 1]}) az olmamali",
+                actIBase[i] >= actIBase[i - 1]
             )
         }
+        // Telafi hicbir zaman tabanin ALTINA inmemeli.
+        (1..6).forEach { lv ->
+            assertTrue(
+                "bolum $lv tedariki tabanin altina dusemez",
+                GameConfig.levelSpec(lv).startingSupply >= GameConfig.startingSupplyBaseFor(lv)
+            )
+        }
+
+        // CATALLANMA ESIGI KURALI — sayi elle secilmedi.
+        // Esik, baslangic Tedariginin BIRDEN FAZLA kule aldigi ILK bolumdur:
+        // iki kolu ayni anda savunmak iki mevzi ister, tek kule ile acilan bir
+        // catal "ogret" degil "cezalandir" olur (bkz. ALT_ROUTE_FIRST_LEVEL).
+        val forkLevel = GameConfig.ALT_ROUTE_FIRST_LEVEL
+        assertTrue(
+            "catallanmanin acildigi bolum ($forkLevel) en az iki kule almali " +
+                "(${GameConfig.startingSupplyFor(forkLevel)} vs ${cheapest * 2})",
+            GameConfig.startingSupplyFor(forkLevel) >= cheapest * 2
+        )
+        assertTrue(
+            "catallanmadan onceki bolum (${forkLevel - 1}) hâlâ TEK kule almali — " +
+                "aksi halde esik gereksiz yere gec",
+            forkLevel <= 1 || GameConfig.startingSupplyFor(forkLevel - 1) < cheapest * 2
+        )
         assertTrue(
             "INITIAL_GOLD (${GameConfig.INITIAL_GOLD}) L7+ icin taban degerdir ve " +
                 "en az iki kule almali",
@@ -950,7 +981,12 @@ class BalanceConsistencyTest {
             "insa on-izleme menzili en kisa L1 menzilinden cok sapmamali",
             GameConfig.BUILD_PREVIEW_RANGE_PX > 0f
         )
-        assertTrue("harita ust guvenli bant 0..0.5 araliginda olmali", GameConfig.MAP_SAFE_TOP_FRAC in 0f..0.5f)
+        assertTrue(
+            "harita ust guvenli bant sinirlari sirali ve makul olmali",
+            GameConfig.MAP_SAFE_TOP_FRAC_MIN < GameConfig.MAP_SAFE_TOP_FRAC_MAX &&
+                GameConfig.MAP_SAFE_TOP_FRAC_MAX in 0f..0.5f &&
+                GameConfig.MAP_SAFE_TOP_FRAC_MIN in -0.5f..0f
+        )
         assertTrue("HUD varsayilan yuksekligi pozitif olmali", GameConfig.HUD_TOP_INSET_DP > 0f)
         assertTrue("sarsinti tasmasi negatif olamaz", GameConfig.SHAKE_OVERSCAN_REF_PX >= 0f)
         assertTrue(

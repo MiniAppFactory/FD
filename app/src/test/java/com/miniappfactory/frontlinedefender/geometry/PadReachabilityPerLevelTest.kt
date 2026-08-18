@@ -152,7 +152,9 @@ class PadReachabilityPerLevelTest {
     @Test
     fun supportOnlyPadsMatchTheFrozenList() {
         val expected: Map<Int, Set<Int>> = mapOf(
-            5 to setOf(11, 12),   // harita 05 · 175 < d <= 270
+            // v4 rota merkezlemesi pad 3'u 274 -> 262 ref-px'e getirdi: artik
+            // gizli degil ama yalnizca Frost Field menzilinde -> destek mevzisi.
+            5 to setOf(3, 11, 12),// harita 05 · 175 < d <= 270
             7 to setOf(9),        // harita 07 · 250 < d <= 270
             10 to setOf(4, 6),    // harita 10 · 250 < d <= 270
             13 to setOf(4),       // harita 10 · 250 < d <= 270 (Act II; 6 krater ile kapali)

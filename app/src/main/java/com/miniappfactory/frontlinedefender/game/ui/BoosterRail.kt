@@ -504,7 +504,12 @@ private fun BoosterButton(
                 isArmed -> SleekDarkBg
                 decision is BoosterDecision.Allowed && viaAd -> SleekTextAccent
                 decision is BoosterDecision.Allowed -> SleekGold
-                decision is BoosterDecision.Cooldown -> SleekTextAccent
+                // BEKLEME CIPI ALTIN: butonun uzerindeki bekleme YAYI da altin.
+                // Ayni renk ikisini TEK gosterge yapar — bosalan yay ile azalan
+                // sayi birbirini aciklar. Onceden cip acik yesildi ve REKLAM
+                // cipiyle birebir ayni gorunuyordu, yani iki farkli durum ayni
+                // rozetle temsil ediliyordu.
+                decision is BoosterDecision.Cooldown -> SleekGold
                 else -> SleekRedText
             }
             Box(
@@ -560,6 +565,14 @@ private fun chipText(
     decision is BoosterDecision.Allowed -> stringResource(
         R.string.booster_chip_price_supply, decision.price
     )
+    // BEKLEME: cip artik FIILLI ("BEKLE 34" / "WAIT 34"), ciplak sayi degil.
+    //
+    // Gerekce cihazdan geldi: *"bu sayac ne yapiyor anlamadim."* Ayni yuvada
+    // Tedarik fiyati da ciplak sayi olarak cikiyor (booster_chip_price_supply
+    // = "%1$d"), yani "34" ile "125" ayirt edilemiyordu — biri "oder isen
+    // simdi", digeri "odeyemezsin, bekle". Fiil ikisini yapisal olarak ayirir.
+    // Birim ("sn") bilincli olarak yok: 44 dp'lik cip genisligine sigmiyor ve
+    // sayac zaten saniyede bir azaliyor, yani birim gozle okunuyor.
     decision is BoosterDecision.Cooldown -> stringResource(
         R.string.booster_chip_cooldown, ((decision.remainingMs + 999) / 1000).toInt()
     )

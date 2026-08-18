@@ -291,7 +291,10 @@ fun GameScreen(
     // recompose olur ve `adHost.bannerAllowed` yeniden okunur. Aksi halde
     // banner ilk acilista hic gelmez (@Volatile alan recomposition tetiklemez).
     val canRequestAds by ConsentManager.canRequestAdsFlow.collectAsState()
-    val bannerEnabled = canRequestAds && adHost.bannerAllowed
+    // `BANNER_ENABLED` en basta: kapatildiginda riza durumu ve SDK hic
+    // sorgulanmaz. Gerekce AdPolicyConfig.BANNER_ENABLED KDoc'unda
+    // (yatayda 360 dp ekranin %14'unu yiyordu).
+    val bannerEnabled = AdPolicyConfig.BANNER_ENABLED && canRequestAds && adHost.bannerAllowed
 
     /** Savas gercekten devam ediyor mu? Dalga aralarindaki PREPARATION'i saymaz. */
     var battleActive by remember { mutableStateOf(false) }

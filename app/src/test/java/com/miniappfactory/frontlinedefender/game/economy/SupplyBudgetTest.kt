@@ -238,7 +238,9 @@ class SupplyBudgetTest {
         // Yeniden olculdu: bolumler 5-7 dalgaya indi (gelir dustu) ve sermaye
         // kadrodan turetilir oldu (L3+ arttı). Net etki asagida.
         val expected = mapOf(
-            1 to 502, 2 to 596, 3 to 719, 4 to 921,
+            // L4: 921 -> 1029. Catallanma esigi 9 -> 3 indi, L4 artik iki kollu ve
+            // kapsama telafisi (x1,5) devreye girdi: baslangic 215 -> 323.
+            1 to 502, 2 to 596, 3 to 719, 4 to 1029,
             5 to 929, 6 to 1078, 7 to 1172, 8 to 1131,
         )
         expected.forEach { (level, budget) ->
@@ -313,7 +315,8 @@ class SupplyBudgetTest {
         // YENIDEN OLCULDU (tek ritim + kadrodan turetilen sermaye).
         // Once: 2,28 / 1,85 / 1,88 / 2,03 / 1,70 / 2,22 / 1,62 / 1,76.
         val expected = mapOf(
-            1 to 2.01, 2 to 1.59, 3 to 1.65, 4 to 2.12,
+            // L4: 2,12 -> 2,37. Sebep yukaridaki butce satiri; bant 1,5-2,6 KORUNDU.
+            1 to 2.01, 2 to 1.59, 3 to 1.65, 4 to 2.37,
             5 to 1.88, 6 to 2.18, 7 to 1.62, 8 to 1.56,
         )
         expected.forEach { (level, spi) ->
@@ -795,7 +798,10 @@ class SupplyBudgetTest {
         // assert duz bir tabloda da gecerdi). L1/L2 ogretici sabitleri, L3+
         // kadronun kademe-1 maliyeti.
         val early = (1..6).map { GameConfig.levelSpec(it).startingSupply }
-        assertEquals("ilk alti bolum butcesi", listOf(80, 90, 215, 215, 255, 255), early)
+        // L4 = 323: kadro tabani 215 x kapsama telafisi 1,5 (bolum iki kollu).
+        // L5-L6 tek kollu oldugu icin telafi almaz; monotonluk TABAN uzerinde
+        // olculur (bkz. GameConfig.startingSupplyBaseFor).
+        assertEquals("ilk alti bolum butcesi", listOf(80, 90, 215, 323, 255, 255), early)
         // L7'de Fuze Bataryasi aciliyor ve tasarlanan kadroya giriyor; sermaye
         // dort kulelik kademe-1 maliyetini (370) karsilar. Eskiden burada
         // "L7+ taban Tedarige (150) donmeli" yaziyordu — o taban, kadro bes

@@ -225,7 +225,34 @@ enum class EffectType {
      * Renk/olcek [VisualEffect.tier] uzerinden surulur; ses, sarsinti ve
      * hit stop ile AYNI KAREDE tetiklenir.
      */
-    COMBO_BURST
+    COMBO_BURST,
+
+    /**
+     * HAVA TAARRUZU KOSUSU — Hava Destegi guclendiricisinin EKRAN CAPINDA
+     * okunan tek olayi.
+     *
+     * NEDEN VAR (cihazda kullanici tarafindan bulundu): *"hava destek istedim
+     * bir sey gelmedi sanki."* Guclendirici teknik olarak calisiyordu —
+     * ucret kesiliyor, bekleme basliyor, her dusman maks caninin %45'ini
+     * kaybediyordu — ama sahada gorunen tek sey dusman basina 0,45 saniyelik
+     * bir patlama sprite'iydi. 120+ Tedarik ve 45 saniyelik beklemenin
+     * karsiligi olarak bu "kazara bir kivilcim" gibi okunuyordu.
+     *
+     * TEK NESNE, TUM EKRAN: bu efekt sahayi bastan basa kesen ucus hattini,
+     * hat boyunca ilerleyen ucagi/fuzeyi ve arkasindaki duman izini TEK bir
+     * `VisualEffect` olarak cizer. Iz parcaciklari cizim sirasinda hesaplanir,
+     * ayri efekt NESNESI uretilmez — kare basina tahsis yok, efekt butcesinden
+     * ([com.miniappfactory.frontlinedefender.game.engine.GameFeel.MAX_VISUAL_EFFECTS])
+     * yalnizca 1 slot yer.
+     *
+     * ALAN KULLANIMI (renderer bu sozlesmeye gore cizer):
+     *   - `posX`/`posY` : hattin GIRIS noktasi (sahanin sol kenari),
+     *   - `angleRad`    : ucus dogrultusu, atan2(dy, dx),
+     *   - `radiusPx`    : hattin TOPLAM uzunlugu px,
+     *   - `scale`       : ucagin gecis suresinin efekt omrune orani (0..1);
+     *                     bu andan sonrasi "cikis" kuyrugudur.
+     */
+    AIR_STRIKE_RUN
 }
 
 data class VisualEffect(
@@ -233,6 +260,20 @@ data class VisualEffect(
     val type: EffectType,
     val posX: Float,
     val posY: Float,
+    /**
+     * Efektin yasi. **NEGATIF DEGER = HENUZ BASLAMADI (gecikmeli efekt).**
+     *
+     * Zincirleme geri bildirim (ornek: hava taarruzunun ucus hatti boyunca
+     * sirali patlamalari) icin gerekli. Efekt listeye HEMEN girer ama
+     * `ageSeconds` negatif oldugu surece renderer onu CIZMEZ; motorun efekt
+     * yaslamasi ([com.miniappfactory.frontlinedefender.game.engine.GameEngine])
+     * her karede `dt` kadar artirdigi icin gecikme SIMULASYON ZAMANINA
+     * baglidir — oyun hizi carpani 2x iken zincir de iki kat hizli akar ve
+     * duraklamada (PAUSED / reklam) oldugu yerde bekler.
+     *
+     * Gecikmeyi `-gecikmeSaniye` olarak vermek yeterlidir; omur olcumu
+     * (`ageSeconds >= maxAgeSeconds`) kendiliginden dogru calisir.
+     */
     var ageSeconds: Float = 0f,
     val maxAgeSeconds: Float,
     val text: String? = null,

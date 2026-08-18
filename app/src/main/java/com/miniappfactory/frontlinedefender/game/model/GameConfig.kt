@@ -37,20 +37,41 @@ object GameConfig {
     const val SHAKE_OVERSCAN_REF_PX = 10f
 
     /**
-     * Haritanin UST %10'u dekoratiftir: orada ne cizili yol ne build pad var
-     * (olculdu — en ustteki pad merkezi normY=0.1655, yolun en ustu 0.1933).
-     * Bu bant bilincli olarak ust HUD seridinin ALTINA kaydirilir.
+     * ------------------------------------------------------------------------
+     * UST HUD SERIDI ILE HARITANIN ILISKISI — **OLCULUR, VARSAYILMAZ**
+     * ------------------------------------------------------------------------
+     * Eskiden burada tek bir sabit vardi (`MAP_SAFE_TOP_FRAC = 0.10`) ve KDoc
+     * "haritanin ust %10'u dekoratiftir, en ustteki pad normY=0.1655" diyordu.
+     * **Iki iddia da yanlisti.** 11 haritanin gercek olcumu (bkz. bu dosyadaki
+     * [mapSafeTopFrac] ve `MapLayoutSafetyTest`):
      *
-     * Neden: HUD 56 dp opak bir serit ve cihazda ust iki pad'in yarisini
-     * kapatiyordu. (Eskiden burada bir ekran goruntusune atif vardi;
-     * **o dosya diskte hic yoktu** — `docs/` git disinda oldugu icin kopuk
-     * atif fark edilmeden durabiliyor. Bkz. `docs/COMMIT_PLAN.md`.)
-     * Alternatif olan
-     * "oynanis alanini HUD'un altina sigdir" haritayi %14 kucultuyordu; bu
-     * yontem yalnizca %4 kucultuyor. game-asset-draw skill'inin onerdigi
-     * "harita kenarina oynanista kullanilmayan dolgu bandi" cozumu.
+     *   harita 10 -> en ust pad normY = 0,0691
+     *   harita 06 -> en ust pad normY = 0,0878
+     *   harita 04 -> en ust pad normY = 0,1121   (kullanicinin oynadigi harita)
+     *
+     * Yani "ust %10 bostur" varsayimi haritanin YARISI icin yanlis, ve harita
+     * 10'da pad merkezi bandin BILE ustunde. Sonuc cihazda goruldu (Galaxy S8,
+     * 740x360 dp, HUD 56 dp): harita 4'te ust siradaki pad'lerin dokunma
+     * dairesi opak HUD seridinin altinda kaliyor ve **dokunus almiyordu.**
+     *
+     * ESKI FORMULUN HATASI: kaydirma miktari SABIT bir orandi
+     * (`fieldTop = hudInset - 0.10 * fh`), yani HUD'in olculen yuksekligi ile
+     * haritanin gercek geometrisi hicbir yerde karsilastirilmiyordu.
+     * 360 dp'lik ekranda 0,10 * 338 = 34 dp kaydirma vs 56 dp HUD -> 22 dp
+     * ortulme.
+     *
+     * YENI KURAL — kaydirma HARITANIN KENDI GEOMETRISINDEN turer:
+     *   kaydirma <= (en ust pad normY) - (pad temizlik payi)
+     *   kaydirma <= (yolun en ust normY) - (dusman temizlik payi)
+     * ve deger **NEGATIF olabilir**: o zaman harita HUD'in tamamen altina
+     * sigacak sekilde KUCULTULUR (letterbox). Kucultmek gorseldir;
+     * ulasilamayan pad OYNANAMAZ.
      */
-    const val MAP_SAFE_TOP_FRAC = 0.10f
+    /** Kaydirmanin ust siniri — bu kadarindan fazlasi haritayi anlamsiz buyutur. */
+    const val MAP_SAFE_TOP_FRAC_MAX = 0.20f
+
+    /** Alt sinir: harita en fazla bu kadar KUCULTULUR (letterbox emniyeti). */
+    const val MAP_SAFE_TOP_FRAC_MIN = -0.25f
 
     /** HUD seridi olculemezse kullanilan varsayilan (HUDOverlay ~56 dp). */
     const val HUD_TOP_INSET_DP = 56f
@@ -202,6 +223,146 @@ object GameConfig {
     const val FX_SMOKE_PUFF_REF_PX = 78f
     const val FX_BUILD_PAD_REF_PX = 98f
     const val FX_FROST_RING_REF_PX = 96f
+
+    // ------------------------------------------------------------------------
+    // HUD TEMIZLIK PAYLARI — hepsi mevcut sprite tablolarindan TURETILIR.
+    // Elle sabit yazilmaz: bir sprite buyurse pay da buyur, yerlesim otomatik
+    // olarak daha az kaydirir.
+    // ------------------------------------------------------------------------
+
+    /**
+     * Bir build pad'in MERKEZININ ustunde bos kalmasi gereken alan (ref-px).
+     *
+     * Uc aday vardir, en buyugu kazanir:
+     *  · [TAP_RADIUS_REF_PX] = 46 — dokunma dairesinin yaricapi. Bu saglanmazsa
+     *    pad'e DOKUNULAMAZ (P0 hatasi buydu).
+     *  · secili pad sprite'inin yarisi = [FX_BUILD_PAD_REF_PX] * 1,08 / 2.
+     *  · en "uzun" kule sprite'inin pivot ustundeki kismi
+     *    (`widthRefPx * pivotYFrac`; ANTI_ARMOR 112 * 0,72 = 80,6 en buyugu).
+     *    Bu olmadan kurulan kulenin namlusu HUD'in altinda kalirdi.
+     */
+    val PAD_TOP_CLEARANCE_REF_PX: Float = maxOf(
+        TAP_RADIUS_REF_PX,
+        FX_BUILD_PAD_REF_PX * 1.08f / 2f,
+        TOWER_SPRITES.values.maxOf { it.widthRefPx * it.pivotYFrac }
+    )
+
+    /**
+     * Yolun uzerindeki bir dusmanin MERKEZININ ustunde bos kalmasi gereken
+     * alan (ref-px) — en buyuk dusman sprite'inin pivot ustu (COMMAND_TANK
+     * 96 * 0,50 = 48). Yolun ust ucu HUD'in altinda kalirsa oyuncu dusmanin
+     * NEREDEN geldigini goremez.
+     */
+    val PATH_TOP_CLEARANCE_REF_PX: Float =
+        ENEMY_SPRITES.values.maxOf { it.widthRefPx * it.pivotYFrac }
+
+    /**
+     * Referans tuval px'ini, oynanis dikdortgeninin YUKSEKLIGINE oranina cevirir.
+     *
+     * Neden bu carpan: cizimde `renderScale = fw / REFERENCE_WIDTH`, yani
+     * `px = ref * fw / 1920`. Yuksekligin orani `px / fh` ve `fw / fh` HER
+     * ZAMAN [MAP_ASPECT_RATIO]'dur (letterbox en-boy oranini korur), dolayisiyla
+     * oran EKRANDAN BAGIMSIZ bir sabittir. Yerlesim guvenligi bu yuzden tek bir
+     * cihazda degil TUM cihazlarda ayni esikle dogrulanabilir.
+     */
+    fun refPxToHeightFrac(refPx: Float): Float =
+        refPx * MAP_ASPECT_RATIO / REFERENCE_WIDTH
+
+    /** [mapSafeTopFrac] sonuclari — olcum sabit, harita basina bir kez yapilir. */
+    private val safeTopFracCache = HashMap<Int, Float>()
+
+    /**
+     * Haritanin ust HUD seridinin ALTINA kaydirilabilecek DEKORATIF bant orani.
+     *
+     * POZITIF deger: harita bu kadar yukari kaydirilir (kazanc — oynanis alani
+     * buyur). NEGATIF deger: harita HUD'un altina sigmiyor demektir ve bu kadar
+     * KUCULTULUR (letterbox). Her iki durumda da `GameEngine` ayni formulu
+     * kullanir:
+     *
+     *   fh        = (ekranYuksekligi - hudInset) / (1 - s)
+     *   fieldTop  = hudInset - s * fh
+     *
+     * Bu formulle bir pad'in ust kenari `fieldTop + (padY - payOrani) * fh`
+     * olur ve sartimiz `>= hudInset`, yani `s <= padY - payOrani`. **fh sadelesir**
+     * — guvenlik ekran boyutundan BAGIMSIZDIR, bu yuzden 740x360 dp'de dogru
+     * olan tablette de dogrudur.
+     *
+     * Olcum haritanin TUM pad'lerini ve TUM rotalarini (ikinci kol dahil)
+     * kullanir; o bolumde gizlenmis ya da kapali olsalar bile. Boylece harita
+     * boyutu bolumden bolume DEGISMEZ ve `disabledPadIds` degisince yerlesim
+     * sessizce bozulmaz.
+     */
+    fun mapSafeTopFrac(mapId: Int): Float = safeTopFracCache.getOrPut(mapId) {
+        val data = LevelData.forMapId(mapId)
+        val minPadY = data.buildSpots.minOfOrNull { it.normY } ?: 1f
+        val minPathY = LevelData.routesForMapId(mapId)
+            .flatten()
+            .minOfOrNull { it.y } ?: 1f
+
+        val byPad = minPadY - refPxToHeightFrac(PAD_TOP_CLEARANCE_REF_PX)
+        val byPath = minPathY - refPxToHeightFrac(PATH_TOP_CLEARANCE_REF_PX)
+        minOf(byPad, byPath).coerceIn(MAP_SAFE_TOP_FRAC_MIN, MAP_SAFE_TOP_FRAC_MAX)
+    }
+
+    /**
+     * Letterbox sonrasi OYNANIS DIKDORTGENI. Tum oynanis koordinatlari buna
+     * gore hesaplanir.
+     *
+     * @param left Sol kenar, ekranin kendi px uzayinda.
+     * @param top Ust kenar. HUD'in ALTINDA olmak zorunda DEGIL: haritanin ust
+     *   bandi dekoratifse ([mapSafeTopFrac] > 0) bilincli olarak seridin
+     *   arkasina kayar.
+     */
+    data class MapFieldRect(
+        val left: Float,
+        val top: Float,
+        val width: Float,
+        val height: Float
+    ) {
+        val right: Float get() = left + width
+        val bottom: Float get() = top + height
+        /** Referans tuvalde tanimli gorsel boyutlari px'e cevirme carpani. */
+        val renderScale: Float get() = width / REFERENCE_WIDTH
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * OYNANIS DIKDORTGENI — TEK KAYNAK
+     * ------------------------------------------------------------------------
+     * Motor (`GameEngine.updateMapDimensions`) bu fonksiyonu cagirir; formul
+     * renderer'a ya da motora GOMULU DEGILDIR. Boylece "hicbir pad HUD'in
+     * altinda kalmiyor" iddiasi 11 harita x N ekran orani icin Robolectric'e
+     * ihtiyac duymadan, saf birim testiyle dogrulanabilir
+     * (`MapLayoutSafetyTest`).
+     *
+     * FIT, crop DEGIL: crop build pad'leri ekran disina atar ve bolumu
+     * oynanamaz kilar.
+     *
+     * @param hudTopInsetPx ust HUD seridinin OLCULEN yuksekligi (GameScreen
+     *   `onSizeChanged` ile verir). Sabit varsayilmaz.
+     */
+    fun computeFieldRect(
+        mapId: Int,
+        screenWidth: Float,
+        screenHeight: Float,
+        hudTopInsetPx: Float
+    ): MapFieldRect {
+        val s = mapSafeTopFrac(mapId)
+        val availableHeight = (screenHeight - hudTopInsetPx).coerceAtLeast(1f)
+        var fh = availableHeight / (1f - s)
+        var fw = fh * MAP_ASPECT_RATIO
+        if (fw > screenWidth) {
+            // Genislik sinirli (daha kare tuval / tablet) -> altta serit kalir.
+            fw = screenWidth
+            fh = screenWidth / MAP_ASPECT_RATIO
+        }
+        return MapFieldRect(
+            left = (screenWidth - fw) / 2f,
+            top = hudTopInsetPx - s * fh,
+            width = fw,
+            height = fh
+        )
+    }
 
     /** Namlu alevinin kule merkezinden namlu ucuna ofseti (referans tuvalde). */
     const val MUZZLE_OFFSET_REF_PX = 44f
@@ -1033,11 +1194,53 @@ object GameConfig {
      * Tedarik yalnizca bir kuleye yetiyor, dolayisiyla ikinci kol "ogret" degil
      * "cezalandir" oluyordu.
      *
-     * Bu yuzden ilk 8 bolum TEK KOL (ogretme dilimi), 9. bolumden itibaren
-     * catallanma devreye girer. Secim hâlâ seed'li ve deterministik: RNG tek
-     * basina bir yenilgi sebebi olamaz, ayni bolum her oynanista ayni dizidir.
+     * Bu yuzden ogretme dilimi TEK KOL kalir; catallanma sonra devreye girer.
+     * Secim hâlâ seed'li ve deterministik: RNG tek basina bir yenilgi sebebi
+     * olamaz, ayni bolum her oynanista ayni dizidir.
+     *
+     * -----------------------------------------------------------------------
+     * DUZELTME — ESIK 9'DAN 3'E INDI (cihaz geri bildirimi)
+     * -----------------------------------------------------------------------
+     * Kullanici: *"gelecekleri yol belli oluyor, bilerek mi boyle? bence tumu
+     * aktif olmali ki gelecekleri yol belli olmasin."*
+     *
+     * Kok neden pad RENKLERI degildi, esikti. Esik 9 iken bolum 1, 2 ve 4'te
+     * (harita 1, 2, 4 — hepsi gercek catal) haritada IKI yol cizili ama
+     * yalnizca biri kullaniliyordu. [OUT_OF_RANGE_PADS] olu koldaki pad'leri
+     * gizledigi icin **kalan yesil pad'ler kullanilan kolu ciziyordu**: oyuncu
+     * daha dalga baslamadan dusmanin hangi koldan gelecegini goruyordu.
+     * Yani haritanin yarisi dekoratifti ve gizleme bunu ele veriyordu.
+     *
+     * OLCUM (`ForkThresholdProbe` verisi, menzil = o bolumun en uzun kademe-1'i):
+     *
+     *   bolum | tek kol olu pad | IKI kol olu pad | iki kolu goren pad | tedarik
+     *   ------|-----------------|-----------------|--------------------|--------
+     *     1   | 1,3,5,7,9  (5)  | — (0)           | 10          (1)    |  80
+     *     2   | 3,4,7,8,10,12(6)| 3,10 (2)        | 2,9,11,13   (4)    |  90
+     *     4   | 1,4,6,7,9,11,12 | — (0)           | 16          (1)    | 215
+     *
+     * Yani catal acilinca gizleme neredeyse tamamen ORTADAN KALKIYOR (L1 ve
+     * L4'te hic olu pad kalmiyor) — sizinti kaynagi kuruyor.
+     *
+     * NEDEN 3, NEDEN 1 DEGIL: L1'de Tedarik 80 = **tek** Gatling ve iki kolu
+     * ayni anda goren tek pad var (id 10). Iki kolu birden acmak bolum 1'i
+     * "tek dogru cevabi bul" bulmacasina cevirirdi ve RNG dogrudan yenilgi
+     * sebebi olurdu — bu, duzeltilmeye calisilan hatanin ta kendisi. L2'de de
+     * Tedarik hâlâ tek kule (90).
+     *
+     * 3, **baslangic Tedariginin birden fazla kule aldigi ILK bolumdur**
+     * (L3 = 215 >= 2 x 60). Sayi elle secilmedi, [EARLY_STARTING_SUPPLY]
+     * tablosunun bittigi yerdir ve `BalanceConsistencyTest` bu kurali kilitler.
+     * Ogretme dilimi (L1-L2) tek kol kalir; ucuncu bolumden itibaren oyuncu
+     * iki cepheyi kurabilecek sermayeyle girer ve
+     * [COVERAGE_SCARCITY_SUPPLY_FACTOR] catallanan bolumlerde sermayeyi
+     * otomatik olarak 1,5 ile carpar.
+     *
+     * KAMPANYADA NEYI DEGISTIRIR: yalnizca **bolum 4**. Bolum 3, 5-8'in
+     * haritalarinda gercek catal yok (harita 3'un kanonik rotasi tektir),
+     * bolum 9+ zaten catalliydi.
      */
-    const val ALT_ROUTE_FIRST_LEVEL = 9
+    const val ALT_ROUTE_FIRST_LEVEL = 3
 
     /** Bu bolumde catallanma (ikinci kol) devrede mi? */
     fun usesAlternateRoutes(levelId: Int): Boolean = levelId >= ALT_ROUTE_FIRST_LEVEL
@@ -1070,9 +1273,17 @@ object GameConfig {
     private val OUT_OF_RANGE_PADS: Map<Int, List<Int>> = mapOf(
         1 to listOf(1, 3, 5, 7, 9),         // harita 01 · esik 150 · 10 -> 5 pad
         2 to listOf(3, 4, 7, 8, 10, 12),    // harita 02 · esik 150 · 13 -> 7 pad
-        3 to listOf(6, 10),                 // harita 03 · esik 175 · 12 -> 10 pad
-        4 to listOf(1, 4, 6, 7, 9, 11, 12), // harita 04 · esik 175 · 16 -> 9 pad
-        5 to listOf(3),                     // harita 05 · esik 270 · 12 -> 11 pad
+        // harita 03 · esik 175 · v4 rota merkezlemesi sonrasi pad 6 artik 173
+        // ref-px (onceden 176) — menzil ICINDE, dolayisiyla gizlenmesi mesru degil.
+        3 to listOf(10),                    // harita 03 · esik 175 · 12 -> 11 pad
+        // harita 04 · esik 175 · IKI KOL DA AKTIF (esik 3'e indi) -> olu pad YOK.
+        // Eski liste (1,4,6,7,9,11,12) B-kolunun pad'leriydi; o kol artik
+        // gercekten kullaniliyor, dolayisiyla gizlemenin tek mesru gerekcesi
+        // (menzil disi olmak) ortadan kalkti. 16 pad'in 16'si acik.
+        4 to emptyList(),
+        // harita 05 · v4 rota merkezlemesi pad 3'u 274 -> 262 ref-px'e getirdi
+        // (esik 270) — artik calisan bir pad, gizlenmesi oyuncudan secenek calar.
+        5 to emptyList(),                   // harita 05 · esik 270 · 12 -> 12 pad
         6 to listOf(4, 10),                 // harita 06 · esik 270 · 10 -> 8 pad
         7 to listOf(3, 6),                  // harita 07 · esik 270 · 11 -> 9 pad
         8 to listOf(6, 8, 11),              // harita 08 · esik 270 · 11 -> 8 pad
@@ -1234,17 +1445,35 @@ object GameConfig {
      * dalga agirligindan DUSULUR — SPI 2,00'de kalir, bolum hafifler.
      */
     fun startingSupplyFor(levelId: Int): Int {
+        val base = startingSupplyBaseFor(levelId)
+        val early = levelId <= EARLY_STARTING_SUPPLY.size
+        return if (!early && hasScarceCoverage(levelId)) {
+            Math.round(base * COVERAGE_SCARCITY_SUPPLY_FACTOR)
+        } else {
+            base
+        }
+    }
+
+    /**
+     * [startingSupplyFor]in KAPSAMA DUZELTMESI UYGULANMAMIS hali — yani "bu
+     * bolumun kadrosu kac eder" sorusunun saf cevabi.
+     *
+     * NEDEN AYRI: kampanya butcesinin bolum bolum ARTMASI beklenir, ama
+     * [COVERAGE_SCARCITY_SUPPLY_FACTOR] bir zorluk rampasi degil bir
+     * TELAFIDIR: catallanan ya da dar tahtali bolumde ayni kadroyu kurmak
+     * daha pahaliya gelir. Bu yuzden monotonluk TABAN uzerinde olculmelidir;
+     * aksi halde "bolum 4 catal oldu" gibi bir tasarim karari, ilgisiz bir
+     * monotonluk testini kirar ve karar sayilarla degil testin sinirlariyla
+     * verilmeye baslanir. (Tam olarak bu oldu: esik 9 -> 3 degisikliginde
+     * L4 323, L5 255 cikti.)
+     */
+    fun startingSupplyBaseFor(levelId: Int): Int {
         if (levelId <= EARLY_STARTING_SUPPLY.size) {
             return EARLY_STARTING_SUPPLY.getOrElse(levelId - 1) { INITIAL_GOLD }
         }
         val order = unlockOrderAt(levelId)
         val roster = DESIGNED_ROSTER_SIZE.getOrElse(levelId - 1) { 5 }
-        val base = (0 until roster).sumOf { TOWER_SPECS.getValue(order[it % order.size]).buildCost }
-        return if (hasScarceCoverage(levelId)) {
-            Math.round(base * COVERAGE_SCARCITY_SUPPLY_FACTOR)
-        } else {
-            base
-        }
+        return (0 until roster).sumOf { TOWER_SPECS.getValue(order[it % order.size]).buildCost }
     }
 
     /** Bu bolumde gorunur (uzerine kule kurulabilen) pad sayisi. */
@@ -1387,7 +1616,15 @@ object GameConfig {
         // diger geciseleri L43 (8 pad) ve L53 (9 pad) boss'suz oldugu icin
         // geciyor. Kraterlerden biri acildi: 9 acik pad (%10), K-5 (acik >= R+2
         // = 8) hâlâ saglaniyor.
-        33 to listOf(7),                  // harita 11 · 10 ->  9 (%10) · olu yok
+        // v4 TELAFISI (2026-08-18): gizlenen pad 7 -> 9. Rota merkezlenince
+        // (LevelGeometry v4) harita 11'in yay konumlari birkac ref-px kaydi ve
+        // L33 TEK gecerli oynanis bicimine dustu — CampaignSolvabilityAllLevelsTest
+        // buna "cozulebilir degil ezberlenebilir" der. Olcum: pad 7 bu haritada
+        // benzersiz sekilde guclu (kapatildiginda 1/7 davranis geciyor, acildiginda
+        // 6/7). Gizlenen pad 9 yapilinca 5/7 gecer — komsu bolumlerle ayni bant
+        // (L31 5/7, L32 6/7, L34 4/7) ve MONO_BEST hala BASARISIZ, yani "karisik
+        // kadro kur" dersi korunuyor. Gizli pad SAYISI degismedi (1).
+        33 to listOf(9),                  // harita 11 · 10 ->  9 (%10) · olu yok
         // ---- Act IV (col) ----
         34 to listOf(5, 8),               // harita 09 · 12 -> 10 (%17) · olu 5
         35 to listOf(6, 8, 11),           // harita 08 · 11 ->  8 (%27) · olu 6,8,11 (zorunlu kume)

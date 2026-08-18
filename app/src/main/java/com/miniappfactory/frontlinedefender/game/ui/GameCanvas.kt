@@ -40,6 +40,38 @@ private const val ENEMY_GATE_FADE_REF_PX = 60f
  */
 private const val COMBO_BURST_TEXT_REF_PX = 46f
 
+// ---------------------------------------------------------------------------
+// HAVA TAARRUZU KOSUSU — cizim sabitleri (bkz. EffectType.AIR_STRIKE_RUN).
+//
+// GameConfig'e KONULMADI: hicbiri denge degeri degil, tamamen cizim sayilari.
+// Ayni gerekce ENEMY_GATE_FADE_REF_PX'te de gecerli.
+// ---------------------------------------------------------------------------
+
+/** Ucus aracinin (odunc fuze sprite'i) referans genisligi. Mermiden ~2x buyuk. */
+private const val AIR_STRIKE_JET_REF_PX = 104f
+
+/**
+ * Duman izinin parcacik sayisi. Bunlar EFEKT NESNESI DEGIL — konumlari her
+ * karede ucagin gerisinde hesaplanir, listeye hicbir sey eklenmez. Tahsis
+ * sifir, efekt butcesinden yer kaplamaz.
+ */
+private const val AIR_STRIKE_TRAIL_PUFFS = 8
+
+/** Izin ucagin gerisinde kapladigi YOL orani (0..1). */
+private const val AIR_STRIKE_TRAIL_SPAN = 0.34f
+
+/** Duman parcaciklarinin referans genisligi. */
+private const val AIR_STRIKE_TRAIL_PUFF_REF_PX = 54f
+
+/** Ucus hattinin kalinligi, referans px. */
+private const val AIR_STRIKE_PATH_STROKE_REF_PX = 3.5f
+
+/** Hattin ve izin rengi — sicak isaret fisegi turuncusu. */
+private val AIR_STRIKE_PATH_COLOR = Color(0xFFFFB74D)
+
+/** Ekran flasi rengi. Beyaz DEGIL: patlama sicakligi (soluk kehribar). */
+private val AIR_STRIKE_FLASH_COLOR = Color(0xFFFFE0B2)
+
 /**
  * Faz 14 - zincir kademesinin RENGI: soguk altindan sicak kirmiziya.
  *
@@ -255,6 +287,20 @@ fun GameCanvas(
             gameEngine.visualEffects.forEach { fx ->
                 drawVisualEffect(fx, sprites, s)
             }
+        }
+
+        // 9. EKRAN FLASI — "buyuk olay" isareti (bugun yalniz hava taarruzu).
+        //
+        //    SARSINTI TRANSFORMUNUN DISINDA: flas tum ekrani kaplar, sarsintiyla
+        //    birlikte kaydirilsaydi kenarlarda letterbox rengiyle arasinda
+        //    titreyen bir serit acilirdi.
+        //
+        //    Deger motordan HER KARE okunur; `screenFlashAlpha` StateFlow degil,
+        //    yani flasin her karesi HUD'u recompose ETMEZ (kare gecersizligi
+        //    zaten yukaridaki `frameTick` okumasindan geliyor).
+        val flashAlpha = gameEngine.screenFlashAlpha
+        if (flashAlpha > 0f) {
+            drawRect(color = AIR_STRIKE_FLASH_COLOR, alpha = flashAlpha)
         }
     }
 }
@@ -637,6 +683,12 @@ private fun DrawScope.drawProjectile(proj: ProjectileEntity, sprites: GameSprite
 }
 
 private fun DrawScope.drawVisualEffect(fx: VisualEffect, sprites: GameSprites, s: Float) {
+    // GECIKMELI EFEKT: negatif yas "henuz baslamadi" demektir (bkz.
+    // VisualEffect.ageSeconds). Bu kontrol olmadan zincirin TUM halkalari ilk
+    // karede progress = 0'da, yani tam alfada birden belirirdi — gecikmenin
+    // tersi. Zincirleme geri bildirimin (hava taarruzu) tek dayanagi bu satir.
+    if (fx.ageSeconds < 0f) return
+
     val progress = (fx.ageSeconds / fx.maxAgeSeconds).coerceIn(0f, 1f)
     // easeOutCubic: efektler hizli acilir, yavas soner. Lineer kullanilmaz.
     val eased = 1f - (1f - progress) * (1f - progress) * (1f - progress)
@@ -728,6 +780,7 @@ private fun DrawScope.drawVisualEffect(fx: VisualEffect, sprites: GameSprites, s
             )
         }
         EffectType.DAMAGE_TEXT -> drawFloatingText(fx, progress, s, 244, 67, 54, 30f, 30f)
+        EffectType.AIR_STRIKE_RUN -> drawAirStrikeRun(fx, sprites, s, progress)
         EffectType.COMBO_BURST -> {
             // Kademe atlama - dalgada en fazla 4 kez cikar.
             val c = comboTierColor(fx.tier)
@@ -759,6 +812,85 @@ private fun DrawScope.drawVisualEffect(fx: VisualEffect, sprites: GameSprites, s
                 )
             }
         }
+    }
+}
+
+/**
+ * HAVA TAARRUZU KOSUSU — ekran capinda okunan tek olay.
+ *
+ * NEDEN VAR: cihazda kullanici *"hava destek istedim bir sey gelmedi sanki"*
+ * dedi. Guclendirici calisiyordu; gorunen tek sey dusman basina kucuk bir
+ * patlamaydi. Burasi olayin GENISLIGINI cizer: sahayi bastan basa kesen bir
+ * ucus hatti, hat boyunca ilerleyen arac ve arkasindaki duman izi.
+ *
+ * ALAN SOZLESMESI (motor tarafi: `GameEngine.runAirStrike`):
+ *   posX/posY = hattin giris noktasi, angleRad = dogrultu,
+ *   radiusPx  = hattin toplam uzunlugu, scale = gecis suresinin omre orani.
+ *
+ * KARE BUTCESI: tek efekt nesnesi, kare basina SIFIR tahsis. Iz parcaciklari
+ * burada hesaplanir; ayri `VisualEffect` uretmek 8 dusmanlik bir sahnede efekt
+ * tavanini tek basina doldururdu. Cizim maliyeti sabit: 1 cizgi +
+ * [AIR_STRIKE_TRAIL_PUFFS] sprite + 1 arac.
+ */
+private fun DrawScope.drawAirStrikeRun(
+    fx: VisualEffect,
+    sprites: GameSprites,
+    s: Float,
+    progress: Float
+) {
+    val length = fx.radiusPx
+    if (length <= 0f) return
+
+    val dirX = cos(fx.angleRad)
+    val dirY = sin(fx.angleRad)
+
+    // Gecis fazi omrun ilk `scale` kadari; sonrasi cikis kuyrugudur (arac
+    // sahayi terk etmistir, yalnizca iz soner).
+    val runFrac = fx.scale.coerceIn(0.05f, 1f)
+    // easeOutCubic DEGIL LINEER: aracin hizi sabit olmali, cunku her hedefin
+    // patlama ANI motorda X oranindan dogrusal turetiliyor. Egri kullanilsaydi
+    // arac ile bombasi birbirinden kayardi.
+    val travel = (progress / runFrac).coerceIn(0f, 1f)
+    val fade = (1f - progress).coerceIn(0f, 1f)
+
+    fun pointAt(u: Float): Offset =
+        Offset(fx.posX + dirX * length * u, fx.posY + dirY * length * u)
+
+    // 1. Ucus hatti: aracin GECTIGI kisim cizilir, onu goren oyuncu olayin
+    //    nereden nereye gittigini tek bakista okur.
+    val head = pointAt(travel)
+    drawLine(
+        color = AIR_STRIKE_PATH_COLOR,
+        start = pointAt(0f),
+        end = head,
+        strokeWidth = AIR_STRIKE_PATH_STROKE_REF_PX * s.coerceAtLeast(0.5f),
+        alpha = fade * 0.45f
+    )
+
+    // 2. Duman izi: aracin gerisinde, yaslandikca buyuyup solan puflar.
+    val puffRef = AIR_STRIKE_TRAIL_PUFF_REF_PX * s
+    for (i in 1..AIR_STRIKE_TRAIL_PUFFS) {
+        val back = i.toFloat() / AIR_STRIKE_TRAIL_PUFFS
+        val u = travel - AIR_STRIKE_TRAIL_SPAN * back
+        if (u <= 0f) continue
+        val p = pointAt(u)
+        drawSpriteAt(
+            sprites.smokePuff, p.x, p.y,
+            puffRef * (0.45f + 0.75f * back),
+            alpha = fade * 0.55f * (1f - back)
+        )
+    }
+
+    // 3. Arac. Sahayi terk ettikten sonra cizilmez — kuyrukta yalniz iz kalir.
+    if (travel < 1f) {
+        val deg = Math.toDegrees(fx.angleRad.toDouble()).toFloat() -
+            GameConfig.PROJECTILE_SPRITE_BASE_ANGLE_DEG
+        drawSpriteAt(
+            sprites.missile, head.x, head.y,
+            AIR_STRIKE_JET_REF_PX * s,
+            rotationDeg = deg,
+            alpha = 1f
+        )
     }
 }
 

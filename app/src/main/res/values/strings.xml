@@ -283,7 +283,12 @@
     <string name="booster_chip_price_coin" translatable="false">%1$d COIN</string>
     <string name="booster_chip_short" translatable="false">-%1$d</string>
     <string name="booster_chip_ad">AD</string>
-    <string name="booster_chip_cooldown">%1$ds</string>
+    <!-- Bekleme cipi. Ciplak sayi YETMEZ: ayni yuvada fiyat da ciplak sayi
+         olarak cikiyor (booster_chip_price_supply) ve oyuncu sayaci fiyat
+         saniyordu (cihaz geri bildirimi: "bu sayac ne yapiyor anlamadim").
+         Fiil sayiyi tek basina anlamlandirir; birim "sn" ATILDI cunku cip ic
+         genisligi 44 dp ve sayac zaten saniyede bir azaliyor. -->
+    <string name="booster_chip_cooldown">WAIT %1$d</string>
     <string name="booster_chip_confirm">CONFIRM</string>
     <string name="booster_chip_spent">USED</string>
     <string name="booster_chip_reserve">RESERVE</string>
