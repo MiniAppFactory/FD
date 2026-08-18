@@ -10,6 +10,20 @@
          yazilmasi izin denetimini (Play Data Safety) okunur kilar. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- Haptik geri bildirim (game/audio/HapticsManager.kt).
+
+         BURADA OLMASININ SEBEBI: HapticsManager main kaynak agacinda
+         Vibrator.vibrate/cancel cagiriyor ve izin bildirilmedigi icin
+         lintDebug MissingPermission ile HATA veriyordu (build kapisi).
+         Manifest bu is bolumunde ayarlar/inset koluna atanmisti, bu yuzden
+         satiri o kol ekledi; haptik davranisinin kendisine dokunulmadi.
+
+         Izin sinifi: NORMAL. Calisma zamaninda kullanicidan istenmez ve Play
+         Data Safety formunda veri toplama olarak bildirilmez; cihazda titresim
+         disinda hicbir yetenek acmaz. Haptik tamamen kaldirilirsa bu satir da
+         kaldirilmalidir (kullanilmayan izin birakilmaz). -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
     <application
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"

@@ -1,5 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.FrontlineDefender" parent="android:Theme.DeviceDefault.NoActionBar" />
+    <!--
+      Uygulama temasi.
+
+      windowBackground NEDEN EKLENDI: uygulama artik kenardan kenara ciziyor ve
+      icerik guvenli alana (safeDrawing) cekiliyor. O bosluklarda ve acilis
+      karesinde gorunen sey PENCERE ZEMINIDIR; DeviceDefault'un varsayilani
+      cihazin sistem temasina gore ACIK olabiliyor ve koyu bir oyunun etrafinda
+      beyaz serit / beyaz acilis flasi olusuyordu. Deger, Compose tarafindaki
+      arka planla (SleekDarkBg, ui/theme/Color.kt) BIREBIR ayni tutulur.
+
+      NOT: bu dosyadaki XML yorumlarinda ardisik tire kullanilmaz; gecersiz XML
+      uretir ve build'i kirar.
+    -->
+    <style name="Theme.FrontlineDefender" parent="android:Theme.DeviceDefault.NoActionBar">
+        <item name="android:windowBackground">#FF1B1C17</item>
+    </style>
+
 </resources>

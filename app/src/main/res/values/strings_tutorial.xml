@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ILK OTURUM OGRETICISI (game/ui/TutorialOverlay.kt) — varsayilan dil INGILIZCE.
+  Turkce karsiliklari res/values-tr/strings_tutorial.xml icindedir.
+
+  NEDEN AYRI DOSYA: Android res/values/ altindaki TUM xml dosyalarini tek bir
+  kaynak tablosunda birlestirir. strings.xml su anda birden fazla ajan
+  tarafindan ayni anda duzenleniyor; ayri dosya birlestirme catismasini
+  tamamen ortadan kaldirir.
+
+  METIN KURALI (docs/FUN_AUDIT.md 1. madde): ogretici METINSIZ oynatir.
+  Buradaki her satir TEK SATIR, TEK EYLEM ve emir kipidir. Paragraf yok;
+  okunmuyor ve 5 dile cevrilmesi gerekiyor. Bir satir uzarsa once EYLEM
+  kisaltilir, satir sayisi ARTIRILMAZ.
+
+  TASMA: satirlar HUD"un altindaki tek satirlik seride, "GEC" cipinin
+  solunda cizilir ve AutoShrinkText ile olcek kucultur (kirpma YOK).
+  En uzun karsilik olculdu: bkz. TutorialFlowTest.
+-->
+<resources xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Adim basliklari: her biri tek eylem, tek satir. -->
+    <string name="tutorial_step_select_pad">Tap the marked position</string>
+    <!--
+      PluralsCandidate bilincli olarak susturuldu: "Supply" bu oyunda SAYILAMAYAN
+      bir kaynak adi (docs/DECISIONS.md para birimi doktrini), tipki "Gold" gibi.
+      Hicbir dilde cogullanmaz; "60 Supplies" yanlis olurdu.
+    -->
+    <string name="tutorial_step_build_tower" tools:ignore="PluralsCandidate">Build a Gatling — %1$d Supply</string>
+    <string name="tutorial_step_show_range">It only hits inside the ring</string>
+    <string name="tutorial_step_start_wave">Start the wave when ready</string>
+    <string name="tutorial_step_supply">Each kill returns Supply</string>
+
+    <!-- Cikis. Her adimda AYNI yerde, ayni etiket. -->
+    <string name="tutorial_skip">SKIP</string>
+    <string name="tutorial_skip_desc">Skip the tutorial</string>
+
+
+</resources>

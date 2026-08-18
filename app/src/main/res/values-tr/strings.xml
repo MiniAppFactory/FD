@@ -26,6 +26,18 @@
     <string name="hud_speed_icon_desc">Oyun hızı</string>
     <string name="hud_pause_icon_desc">Oyunu duraklat</string>
 
+    <!-- ==== siradaki dalga onizlemesi ====
+         "GELIYOR" bilincli olarak kisa: etiket 52 dp'lik sabit yuvada duruyor
+         ve "SIRADAKI DALGA" oraya 9sp'de sigmaz. Sayilar ve rozetler zaten
+         "dalga" baglamini HUD'daki DALGA n/N rozetinden aliyor. -->
+    <string name="hud_next_wave">GELİYOR</string>
+    <string name="hud_wave_preview_boss_desc">Boss birimi</string>
+    <!-- Turkcede tekil/cogul ayrimi yok; iki kova da ayni metni tasir. -->
+    <plurals name="hud_wave_preview_more_desc">
+        <item quantity="one">%d düşman tipi daha</item>
+        <item quantity="other">%d düşman tipi daha</item>
+    </plurals>
+
     <!-- ==================== build ==================== -->
     <string name="build_cost">%1$d</string>
     <string name="build_close_desc">İnşa panelini kapat</string>
@@ -53,7 +65,7 @@
     <!-- ==================== inspector ====================
          Kisaltmalar bilincli: panel tek satir ve dort butonla ayni Row'da.
          "HASAR/ATIŞ/İMHA" tam kelime, sigmazsa olcek kuculur. -->
-    <string name="inspector_tower_title">%1$s (Kd.%2$d)</string>
+    <string name="inspector_tower_title">%1$s (Kd.%2$d/%3$d)</string>
     <string name="inspector_stats">HASAR %1$d  ·  ATIŞ %2$.2f sn  ·  İMHA %3$d</string>
     <string name="inspector_targeting_icon_desc">Hedefleme modu</string>
     <string name="inspector_target_first">İLK</string>
@@ -80,7 +92,10 @@
     <string name="dialog_star_desc">%1$d. yıldız</string>
     <string name="dialog_lives_remaining">Kalan üs canı: %1$d/%2$d</string>
     <string name="dialog_final_score">Nihai skor: %1$d</string>
-    <string name="dialog_replay">TEKRAR OYNA</string>
+    <string name="dialog_coins_earned">Ödeme: +%1$d coin</string>
+    <string name="dialog_star_hint">%1$d sızıntı daha az = 3 yıldız</string>
+    <string name="dialog_next_level">SONRAKİ BÖLÜM</string>
+    <string name="dialog_level_select">BÖLÜM SEÇ</string>
 
     <string name="dialog_defeat_title">ÜS DÜŞTÜ!</string>
     <string name="dialog_defeat_body">Düşman %1$d. dalgada savunma hattını yardı.</string>
@@ -127,6 +142,13 @@
     <string name="map_name_10">Nehir Kolları</string>
     <string name="map_name_11">Köy Sınırı</string>
 
+    <!-- biome_ (BiomeVariants.kt) — bolum secme ekraninda act rozeti. -->
+    <string name="biome_original">GÜNDÜZ</string>
+    <string name="biome_night">GECE</string>
+    <string name="biome_winter">KIŞ</string>
+    <string name="biome_desert">ÇÖL</string>
+    <string name="biome_autumn">SONBAHAR</string>
+
     <!-- Faz 9: reklam teklif metinleri (AdOffers.kt) -->
     <string name="ad_supply_bar_button">TEDARİK TALEP ET  (bugün %1$d hak)</string>
     <string name="ad_supply_bar_used">Tedarik hakkı doldu — gece yarısı yenilenir</string>
@@ -134,7 +156,7 @@
     <string name="ad_supply_full">Tedarik indi: +%1$d coin.</string>
     <string name="ad_supply_reduced">Karargâh elindekini gönderdi: +%1$d coin. Günlük hakkın harcanmadı.</string>
     <string name="ad_supply_unavailable">Tedarik hatları şu an meşgul. Günlük hakkın duruyor.</string>
-    <string name="ad_double_full">Çift ödeme onaylandı: bu harekâtın coin ödülü x%1$d.</string>
+    <string name="ad_double_full">Çift ödeme onaylandı: ödemenizin üstüne +%1$d coin.</string>
     <string name="ad_double_reduced">Reklam bulunamadı. Harekât ödülün zaten hesabında.</string>
     <string name="ad_double_claimed">Bu harekât için çift ödeme daha önce alındı.</string>
     <string name="ad_reinforce_failed">Takviye gönderilemedi. İlerlemen güvende.</string>
@@ -151,6 +173,11 @@
     <string name="ad_sheet_double_body">Kısa bir reklam izle, bu harekâtın coin ödülü ikiye katlanır. Taban ödülün her durumda hesabında.</string>
     <string name="ad_sheet_reinforce_title">TAKVİYE ÇAĞIR</string>
     <string name="ad_sheet_reinforce_body">Kısa bir reklam izle, üs canın %1$d olur ve savaş bulunduğun dalgadan devam eder.</string>
+
+    <!-- Faz 12: R4 savas-ici guclendirici rewarded teklifi. %1$s = guclendirici adi. -->
+    <string name="ad_sheet_booster_title">SAHA DESTEĞİ</string>
+    <string name="ad_sheet_booster_body">Kısa bir reklam izle, bu savaş için %1$s çağır. Zorunlu değil — savaş her durumda devam eder.</string>
+    <string name="ad_sheet_booster_remaining">bugün %1$d / %2$d destek hakkı</string>
 
     <!-- Faz 10: ses durumu etiketi (disli ikonu yanilticiydi) -->
     <string name="dialog_sound_on">SES AÇIK</string>
@@ -177,4 +204,40 @@
     <string name="shop_line_fortification_fx">Üs bütünlüğü %1$d</string>
     <string name="shop_line_salvage">Hurda</string>
     <string name="shop_line_salvage_fx">Satış geri ödemesi %%%1$d</string>
+
+    <!-- Faz 12: SAVAS ICI GUCLENDIRICILER. translatable="false" olan uc fiyat
+         anahtari (booster_chip_price_supply / _coin / booster_chip_short)
+         BURADA YOK — "COIN" DECISIONS.md geregi cevrilmiyor. -->
+    <string name="booster_emergency_supply_name">Acil Tedarik</string>
+    <string name="booster_air_support_name">Hava Desteği</string>
+    <string name="booster_base_repair_name">Üs Tamiri</string>
+
+    <string name="booster_chip_ad">REKLAM</string>
+    <string name="booster_chip_cooldown">%1$d sn</string>
+    <string name="booster_chip_confirm">ONAYLA</string>
+    <string name="booster_chip_spent">BİTTİ</string>
+    <string name="booster_chip_reserve">REZERV</string>
+
+    <string name="booster_msg_armed">Onaylamak için tekrar bas</string>
+    <string name="booster_msg_need_supply">%1$d Tedarik eksik</string>
+    <string name="booster_msg_need_coin">%1$d coin eksik</string>
+    <string name="booster_msg_reserve">Sıradaki harekât için ayrılmış</string>
+    <string name="booster_msg_cooldown">%1$d sn sonra hazır</string>
+    <string name="booster_msg_no_repair">Üs canı zaten tam</string>
+    <string name="booster_msg_no_targets">Sahada düşman yok</string>
+    <string name="booster_msg_spent">Bu savaşta hakkın doldu</string>
+    <string name="booster_msg_daily_ad">Günlük reklam hakkı doldu — gece yarısı yenilenir</string>
+    <string name="booster_msg_paid_first">Önce ücretli hakkını kullan</string>
+    <string name="booster_repair_star_note">Onarılan can yıldıza sayılmaz</string>
+
+    <string name="booster_desc_ready">%1$s. Bedeli %2$s. Hazır.</string>
+    <string name="booster_desc_ad">%1$s. Kısa bir reklamla bedava.</string>
+    <string name="booster_desc_cooldown">%1$s. %2$d saniye sonra hazır.</string>
+    <string name="booster_desc_blocked">%1$s. Kullanılamıyor: %2$s</string>
+    <string name="booster_desc_armed">%1$s hazırlandı. Onaylamak için tekrar bas.</string>
+
+    <!-- Reklam yolu sonuclari. -->
+    <string name="booster_ad_applied">%1$s devrede</string>
+    <string name="booster_ad_unavailable">Şu an reklam yok — hiçbir hakkın harcanmadı</string>
+    <string name="booster_ad_failed">%1$s uygulanamadı</string>
 </resources>

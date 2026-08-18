@@ -36,6 +36,7 @@ class SaveManager internal constructor(private val store: KeyValueStore) {
 
     init {
         migrateIfNeeded()
+        seedTutorialFlagForExistingSaves()
     }
 
     companion object {
@@ -75,6 +76,26 @@ class SaveManager internal constructor(private val store: KeyValueStore) {
         private const val KEY_REROLLS_USED = "eco_rerolls_used_today"
         private const val KEY_DAILY_PROGRESS = "eco_daily_progress"
         private const val KEY_WEEKLY_PROGRESS = "eco_weekly_progress"
+
+        // ---- Ilk oturum onboarding (game/ui/TutorialOverlay.kt) ---------------
+        private const val KEY_TUTORIAL_STATUS = "tutorial_status"
+
+        /** [tutorialStatus] alfabesi. Aralik disi deger [TUTORIAL_UNSEEN]e kirpilir. */
+        const val TUTORIAL_UNSEEN = 0
+        const val TUTORIAL_COMPLETED = 1
+        const val TUTORIAL_SKIPPED = 2
+
+        /** Ogreticinin kostugu tek bolum. */
+        private const val TUTORIAL_LEVEL = 1
+
+        // ---- Kilit acilma ipuclari (game/ui/TutorialOverlay.kt, UnlockHint) ----
+        //
+        // Her ipucu KENDI anahtarini tasir: `hint_seen_<id>`. Tek bir bit
+        // maskesi kullanilmadi cunku ipucu listesi buyuyecek ve maskede sira
+        // degistirmek eski kayitlarda YANLIS ipucunu "gorulmus" isaretlerdi.
+        // Ayrik anahtarlar sirasizdir; silinen bir ipucunun anahtari yalnizca
+        // olu veri birakir, yanlis davranis uretmez.
+        private const val KEY_HINT_PREFIX = "hint_seen_"
 
         private const val KEY_R1_FILLED_VIEWS = "eco_r1_filled_views_today"
         private const val KEY_R1_COINS_PAID = "eco_r1_coins_paid_today"
@@ -338,6 +359,128 @@ class SaveManager internal constructor(private val store: KeyValueStore) {
 
     fun resetWeeklyCounters() {
         store.putString(KEY_WEEKLY_PROGRESS, "")
+    }
+
+    // =================================================================================
+    // Ilk oturum onboarding — TutorialOverlay
+    // =================================================================================
+
+    /**
+     * Ogreticinin durumu: [TUTORIAL_UNSEEN] / [TUTORIAL_COMPLETED] / [TUTORIAL_SKIPPED].
+     *
+     * Diger alanlarla ayni savunma: cop veya aralik disi deger sessizce
+     * kirpilir, bozuk kayit oyuncuyu sonsuz ogreticiye HAPSETMEZ ve okuma
+     * istisna atmaz.
+     *
+     * "Atlandi" ile "tamamlandi" ayri tutuluyor cunku ikisi ayni sey DEGIL:
+     * ikisi de ogreticiyi bir daha gostermez ama ilk oturum tamamlama oranini
+     * (PRD KPI) yalnizca [TUTORIAL_COMPLETED] besler.
+     */
+    var tutorialStatus: Int
+        get() = store.getInt(KEY_TUTORIAL_STATUS, TUTORIAL_UNSEEN)
+            .coerceIn(TUTORIAL_UNSEEN, TUTORIAL_SKIPPED)
+        set(value) {
+            store.putInt(
+                KEY_TUTORIAL_STATUS,
+                value.coerceIn(TUTORIAL_UNSEEN, TUTORIAL_SKIPPED)
+            )
+        }
+
+    /** Ogretici bir daha gosterilmeli mi? Tek karar noktasi. */
+    val tutorialSeen: Boolean
+        get() = tutorialStatus != TUTORIAL_UNSEEN
+
+    fun markTutorialCompleted() {
+        tutorialStatus = TUTORIAL_COMPLETED
+    }
+
+    fun markTutorialSkipped() {
+        tutorialStatus = TUTORIAL_SKIPPED
+    }
+
+    /**
+     * Ogreticiyi TEKRAR gosterilebilir yapar (test / QA / cihaz dogrulamasi).
+     *
+     * Anahtari SILMEZ, acikca [TUTORIAL_UNSEEN] yazar. Silseydi bir sonraki
+     * [SaveManager] kurulumunda [seedTutorialFlagForExistingSaves] bolum 1
+     * yildizini gorup bayragi yeniden "tamamlandi"ya cevirirdi ve sifirlama
+     * hicbir sey yapmamis gibi gorunurdu.
+     */
+    fun resetTutorial() {
+        store.putInt(KEY_TUTORIAL_STATUS, TUTORIAL_UNSEEN)
+    }
+
+    /**
+     * Bayrak eklenmeden ONCE olusmus kayitlar icin bir kerelik tohumlama.
+     *
+     * Bolum 1 yildizini zaten almis bir oyuncu oyunun nasil oynandigini
+     * ogrenmistir; ona "mevziye dokun" demek gerileme olurdu. Yalnizca anahtar
+     * HIC YOKKEN calisir, yani [resetTutorial] ile bilincli sifirlamayi geri
+     * almaz ve temiz kurulumda hicbir sey yazmaz.
+     */
+    private fun seedTutorialFlagForExistingSaves() {
+        if (store.hasKey(KEY_TUTORIAL_STATUS)) return
+        if (getLevelStars(TUTORIAL_LEVEL) > 0) {
+            store.putInt(KEY_TUTORIAL_STATUS, TUTORIAL_COMPLETED)
+        }
+    }
+
+    // =================================================================================
+    // Kilit acilma ipuclari — game/ui/TutorialOverlay.kt (`UnlockHint`)
+    // =================================================================================
+    //
+    // TOHUMLAMA YOK — ogreticiden bilincli fark.
+    //
+    // Ogretici icin `seedTutorialFlagForExistingSaves` var: bolum 1'i gecmis
+    // oyuncu dongunun nasil isledigini ZATEN biliyor, ona "mevziye dokun"
+    // demek gerileme olurdu. Ipuclarinda tersi dogru: FUN_AUDIT'in merkezi
+    // tespiti, bolum 20'deki oyuncunun da kule ROLLERINI bilmedigidir (dersi
+    // veren hicbir sey yoktu). Dolayisiyla mevcut kayitlar da ipuclarini
+    // GORUR; ipuclari oncelik sirasina gore geldigi icin ilerlemis oyuncu
+    // once en degerli olani (zirh deleme) alir.
+
+    /**
+     * Bu ipucu daha once GOSTERILDI mi?
+     *
+     * [hintId] `game/ui` katmanindan gelen KARARLI bir metin kimliktir; enum
+     * TIPI bilincli olarak buraya sizmiyor — `data` katmani `ui` katmanina
+     * bagimli olamaz.
+     *
+     * Bos/bosluk kimlik "gosterildi" (`true`) doner: cagiran taraftaki bir hata
+     * en kotu ihtimalle bir ipucunu SUSTURUR, oyuncuyu her hazirlik fazinda
+     * ayni seridi gormeye MAHKUM ETMEZ.
+     */
+    fun isHintSeen(hintId: String): Boolean {
+        val key = hintKey(hintId) ?: return true
+        return store.getBoolean(key, false)
+    }
+
+    /** Ipucu bir daha gosterilmez. Ayni kimligi iki kez yazmak zararsizdir. */
+    fun markHintSeen(hintId: String) {
+        val key = hintKey(hintId) ?: return
+        store.putBoolean(key, true)
+    }
+
+    /**
+     * TUM ipuclarini yeniden gosterilebilir yapar (Ayarlar > "Ipuclarini
+     * sifirla", QA, cihaz dogrulamasi).
+     *
+     * Anahtarlari SILER — [resetTutorial]'in aksine bir deger yazmaz. Yapabilir,
+     * cunku ipuclarinin tohumlamasi yok (yukaridaki nota bak): silinen anahtar
+     * bir sonraki [SaveManager] kurulumunda geri gelmez, yani "sifirla"
+     * gercekten sifirlar.
+     *
+     * Onek taramasi ipucu listesini BILMEDEN calisir: yeni ipucu eklendiginde
+     * burasi degismez.
+     */
+    fun resetHints() {
+        store.keys().filter { it.startsWith(KEY_HINT_PREFIX) }.forEach { store.remove(it) }
+    }
+
+    /** Gecersiz kimlik icin `null`. Kimlik normalizasyonu YALNIZCA burada. */
+    private fun hintKey(hintId: String): String? {
+        val trimmed = hintId.trim()
+        return if (trimmed.isEmpty()) null else "$KEY_HINT_PREFIX$trimmed"
     }
 
     // =================================================================================

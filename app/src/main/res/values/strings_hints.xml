@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  KILIT ACILMA IPUCLARI (game/ui/TutorialOverlay.kt, UnlockHint)
+  Varsayilan dil INGILIZCE. Turkcesi res/values-tr/strings_hints.xml icinde.
+
+  NEDEN AYRI DOSYA: Android res/values/ altindaki butun xml dosyalarini tek
+  kaynak tablosunda birlestirir. strings.xml ve strings_tutorial.xml su anda
+  baska is kollarinin elinde; ayri dosya birlestirme catismasini tamamen
+  ortadan kaldirir.
+
+  ============================================================================
+  METIN KURALI: SAYIYI GOSTER, SIFAT KULLANMA
+  ============================================================================
+  docs/FUN_AUDIT.md merkezi tespiti: "4 kule gercekten 4 ayri rol ama oyuncu
+  bunlarin hicbirini ogrenemiyor." Cozum "Fuze zirha karsi guclu" demek DEGIL,
+  iki sayiyi yan yana koymaktir. Bu yuzden burada hicbir satirda guclu / zayif
+  / etkili gibi bir sifat YOK; her satir olculmus iki degeri karsilastirir.
+
+  SAYILAR BURADA YAZMAZ. Hepsi bicimlendirme argumanidir ve
+  GameConfig.TOWER_SPECS / ENEMY_SPECS'ten TURETILIR (HintFacts). Denge
+  degistiginde ipucu kendiliginden guncellenir; hicbir satir yalan soyleyemez.
+
+  KULE ve DUSMAN ADLARI da argumandir (tower_*_name / enemy_*_name), yani
+  satirlar bu dosyada CEVRILMEZ ama ekranda cevrilmis gorunur.
+
+  ============================================================================
+  TASMA BUTCESI
+  ============================================================================
+  Serit HUD'un altinda TEK SATIR ve "ANLADIM" cipiyle ayni satiri paylasir.
+  En dar desteklenen yatay ekran 640 dp kabul edildi:
+    640 (ekran) [eksi] 32 (satir padding) [eksi] 92 (ANLADIM cipi)
+        [eksi] 12 (bosluk) [eksi] 28 (serit ic padding)
+        [eksi] 54 (ZIRH / YENI etiketi) [eksi] 8 (etiket boslugu) = 414 dp
+  13 sp kalin Latin metinde ortalama karakter ~7,7 dp, 10 sp'de ~5,9 dp.
+  Butce 64 karakter: tam puntoda 493 dp (sigmaz) ama AutoShrinkText 10 sp'ye
+  kadar kucultuyor ve orada 378 dp. Yani en uzun satir bile KIRPILMAZ.
+  Butce TutorialStringsTest desenindeki UnlockHintStringsTest ile kilitli.
+-->
+<resources>
+
+    <!--
+      Etiket. Seridin sol ucundaki kisa rozet: ipucunun NEDEN ciktigini tek
+      kelimeyle soyler ve dalga onizleme seridindeki zirh rozetiyle ayni dili
+      konusur. Renk tek ayrim kanali olmasin diye ayrim METINDE.
+    -->
+    <string name="hint_tag_armor">ARMOUR</string>
+    <string name="hint_tag_new">NEW</string>
+
+    <!--
+      Zirh dersi. Ayni kule, iki hedef: oyuncu farki kendi okur.
+      1 kule adi · 2 zirhsiz dusman · 3 ona DPS · 4 zirhli dusman · 5 ona DPS
+    -->
+    <string name="hint_armor_intro">%1$s &#8212; %2$s %3$.1f DPS &#183; %4$s %5$.1f</string>
+
+    <!--
+      Rol dersi (Cannon ve Fuze). Ayni hedef, iki kule.
+      1 hedef · 2 eski kule · 3 onun DPS'i · 4 YENI kule · 5 onun DPS'i
+      Yeni kule bilincli olarak SONDA: goz son sayida durur.
+    -->
+    <string name="hint_tower_matchup">%1$s: %2$s %3$.1f DPS &#183; %4$s %5$.1f</string>
+
+    <!--
+      Frost'un dersi karsilastirma DEGIL cunku Frost hasar vermez; sayilar
+      bu yuzden kendi mekaniginden gelir.
+      1 kule adi · 2 DPS'i (neredeyse sifir) · 3 yavaslatma yuzdesi
+      4 menzilde kalma suresi carpani = 1 / (1 [eksi] yavaslatma)
+    -->
+    <string name="hint_frost_role">%1$s: %2$.1f DPS &#183; %3$d%% slow, %4$.1f&#215; time in range</string>
+
+    <!--
+      Kapatma. Her ipucunda AYNI yerde ve AYNI etiket (ogreticinin GEC cipiyle
+      ayni konum). "X" yerine onay kelimesi: oyuncu ipucunu reddetmiyor,
+      okudugunu bildiriyor.
+    -->
+    <string name="hint_dismiss">GOT IT</string>
+    <string name="hint_dismiss_desc">Dismiss this tip</string>
+
+</resources>

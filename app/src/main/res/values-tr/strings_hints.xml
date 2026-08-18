@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  KILIT ACILMA IPUCLARI [eksi] TURKCE.
+  Ton: askeri, kisa, sifatsiz (docs/LOCALIZATION.md sozlugu).
+
+  Sabit terimler: Supply [ok] Tedarik · Wave [ok] Dalga · DPS CEVRILMEZ
+  (Turkce oyun dilinde yerlesik). Kule ve dusman adlari ARGUMAN olarak gelir,
+  yani burada gecmez; karsiliklari values-tr/strings.xml icindedir.
+
+  ============================================================================
+  EK CEVIRI KURALI: TURKCE EK UYUMU
+  ============================================================================
+  Bicimlendirme argumani bir OZEL ADI tasidiginda ("Ağır Tank") ona ek
+  getirmek yasak: hâl eki sesli uyumuna gore degisir ("Ağır Tank'a" ama
+  "Zırhlı Araç'a" degil "Zırhlı Araca") ve tek bir sablon butun adlara
+  uyamaz. Bu yuzden butun satirlar ekSIZ kurgulandi; argumanlar iki nokta,
+  tire ve orta nokta ile ayrilir. Ayni sebeple yuzde isareti Turkce'de
+  sayinin ONUNE yazilir (%42) ve ek almaz.
+
+  ============================================================================
+  TASMA
+  ============================================================================
+  Turkce karsilik Ingilizceden ~%20-35 uzundur AMA burada satirin buyuk kismi
+  argumandir (sayilar ve adlar), yani buyume orani kucuk. Olculen en uzun
+  Turkce satir "Buz Alanı: 2,3 DPS · %42 yavaşlatır, menzilde 1,7× süre"
+  (53 karakter); en uzun Ingilizce satir 60 karakter. Ikisi de 64 karakterlik
+  butcenin altinda [eksi] bkz. UnlockHintStringsTest.
+
+  Ondalik ayraci Turkce'de VIRGULdur ve elle yazilmaz: sayilar %.1f ile
+  bicimlendigi icin Android cihazin diline gore "26,6" / "26.6" uretir.
+-->
+<resources>
+
+    <string name="hint_tag_armor">ZIRH</string>
+    <string name="hint_tag_new">YENİ</string>
+
+    <string name="hint_armor_intro">%1$s &#8212; %2$s %3$.1f DPS &#183; %4$s %5$.1f</string>
+
+    <string name="hint_tower_matchup">%1$s: %2$s %3$.1f DPS &#183; %4$s %5$.1f</string>
+
+    <string name="hint_frost_role">%1$s: %2$.1f DPS &#183; %%%3$d yavaşlatır, menzilde %4$.1f&#215; süre</string>
+
+    <string name="hint_dismiss">ANLADIM</string>
+    <string name="hint_dismiss_desc">İpucunu kapat</string>
+
+</resources>

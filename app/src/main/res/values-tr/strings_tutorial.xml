@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ILK OTURUM OGRETICISI — TURKCE. Ton: askeri, kisa, emir kipi
+  (docs/LOCALIZATION.md sozlugu).
+
+  Sabit terimler: Supply -> Tedarik · Wave -> Dalga · Build -> Kur ·
+  Skip -> Gec. Kule adlari CEVRILMEZ ("Gatling").
+
+  TASMA: Turkce metin Ingilizceden ~%20-35 uzun. En uzun karsilik
+  "Her olen dusman Tedarik verir" (29 karakter); Ingilizce en uzunu
+  "Start the wave when ready" (25 karakter). Serit AutoShrinkText
+  kullandigi icin kirpilma degil OLCEK kucultmesi olur.
+-->
+<resources>
+
+    <string name="tutorial_step_select_pad">İşaretli mevziye dokun</string>
+    <string name="tutorial_step_build_tower">Gatling kur — %1$d Tedarik</string>
+    <string name="tutorial_step_show_range">Yalnızca halka içini vurur</string>
+    <string name="tutorial_step_start_wave">Hazırsan dalgayı başlat</string>
+    <string name="tutorial_step_supply">Her ölen düşman Tedarik verir</string>
+
+    <string name="tutorial_skip">GEÇ</string>
+    <string name="tutorial_skip_desc">Eğitimi geç</string>
+
+
+</resources>
