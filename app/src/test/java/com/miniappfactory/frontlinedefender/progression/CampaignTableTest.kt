@@ -397,10 +397,14 @@ class CampaignTableTest {
             // cozulebilir degil ezberlenebilirdi. Haritada OLU pad yok, yani
             // gizlemelerin hepsi saf krater karariydi ve K-7'nin alt siniri da
             // yok. Krater kisiti bu iki bolumden kaldirildi.
-            29 to 12, 30 to 9, 31 to 9, 32 to 8, 33 to 9,
-            34 to 10, 35 to 8, 36 to 9, 37 to 8, 38 to 10, 39 to 13,
+            // HARITA 4 (L29 · L39 · L49) 12->10 · 13->11 · 14->12.
+            // Catalin iki yanindaki dorder pad, iki kolu birden tutan iki
+            // pad'e indirildi (16 -> 14 pad). Sayi dustu ama K-5 (acik >= R+2)
+            // korunuyor; asagidaki test bunu ayrica dogruluyor.
+            29 to 10, 30 to 9, 31 to 9, 32 to 8, 33 to 9,
+            34 to 10, 35 to 8, 36 to 9, 37 to 8, 38 to 10, 39 to 11,
             40 to 10, 41 to 10, 42 to 8, 43 to 8, 44 to 13,
-            45 to 8, 46 to 9, 47 to 8, 48 to 11, 49 to 14, 50 to 11,
+            45 to 8, 46 to 9, 47 to 8, 48 to 11, 49 to 12, 50 to 11,
             51 to 11, 52 to 9, 53 to 9, 54 to 15, 55 to 11
         )
         expected.forEach { (level, open) ->

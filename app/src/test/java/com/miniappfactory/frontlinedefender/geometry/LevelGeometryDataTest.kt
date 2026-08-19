@@ -108,8 +108,9 @@ class LevelGeometryDataTest {
 
     @Test
     fun totalBuildPadCountMatchesTheMeasuredGeometryReport() {
-        // GEOMETRY_REPORT.md: 11 harita, 134 build pad.
-        assertEquals(134, maps.sumOf { it.buildSpots.size })
+        // GEOMETRY_REPORT.md: 11 harita, 132 build pad (harita 04 catal pad'leri
+        // birlestirilince 134 -> 132; bkz. LevelGeometry.MAP_04).
+        assertEquals(132, maps.sumOf { it.buildSpots.size })
     }
 
     // ------------------------------------------------------------- waypoints
@@ -377,7 +378,11 @@ class LevelGeometryDataTest {
             1 to setOf(3, 7, 9),            // 444 / 346 / 295 ref-px
             2 to setOf(3, 4, 7, 8, 10, 12), // 372 / 409 / 582 / 383 / 553 / 272
             3 to setOf(10),                 // 327
-            4 to setOf(4, 7, 9, 12),        // 406 / 487 / 621 / 383
+            // harita 4: SADECE YENIDEN NUMARALANDI. Catal pad'leri birlesince
+            // (16 -> 14) eski {4, 7, 9, 12} yeni {5, 6, 8, 10} oldu; mesafeler
+            // ayni kaldi, yani hicbir pad olulesmedi ve hicbiri dirilmedi.
+            // Birlestirilen dort pad'in hicbiri bu listede degildi.
+            4 to setOf(5, 6, 8, 10),        // 407 / 486 / 614 / 378
             // harita 5: pad 3 v4 merkezlemesinden sonra 274 -> 262 ref-px, ARTIK OLU DEGIL.
             6 to setOf(4, 10),              // 324 / 355
             7 to setOf(3, 6),               // 311 / 347
@@ -427,7 +432,7 @@ class LevelGeometryDataTest {
             }
         }.sorted()
 
-        assertEquals(134, distances.size)
+        assertEquals(132, distances.size)
 
         val median = distances[distances.size / 2]
         assertEquals("medyan pad-yol mesafesi (DECISIONS P3: 119)", 120f, median, 3f)
@@ -438,7 +443,10 @@ class LevelGeometryDataTest {
         // Gercek olculum. DECISIONS P3'teki "106/134" yanlis; asil deger 79.
         // 106, "160 ref-px (MACHINE_GUN L1) icindeki pad sayisi = 105" ile
         // karistirilmis gorunuyor (134 - 28 uzak pad = 106).
-        assertEquals("130 ref-px icindeki pad sayisi", 82, within130)
+        // 82 -> 80: harita 04 catal pad birlestirmesi dort pad'i ikiye indirdi
+        // (16 -> 14) ve dorduncun de yola 130 ref-px'ten yakindi; yeni iki pad
+        // yolun ORTASINDA duruyor, yani ikisi de 130'un ICINDE. Net -2.
+        assertEquals("130 ref-px icindeki pad sayisi", 80, within130)
         assertEquals(
             // Faz 10: en kisa L1 menzili artik MACHINE_GUN (160 -> 150 ref-px);
             // SLOW 270'e cikti. Sayi ayni cunku esik degeri hâlâ 150.

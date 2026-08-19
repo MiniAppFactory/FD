@@ -327,23 +327,52 @@ object LevelGeometry {
             PointF(0.8870f, 0.5258f),
             PointF(0.9043f, 0.5277f),  // us rampasi
         ),
+                // ------------------------------------------------------------------
+        // CATAL PAD BIRLESTIRME (2026-08-19) — 16 pad -> 14
+        // ------------------------------------------------------------------
+        // OLCUM once sorunu gosterdi: eski pad 5 A-kolunun 300 ref-pxini
+        // kapsiyordu ve B-kolundan SIFIR; pad 6 tam tersi (0 / 310). Ayni
+        // sey sagda: pad 13 (316 / 0) ve pad 11 (0 / 324). Yani catalin her
+        // iki yaninda da oyuncu, iki koldan yalnizca BIRINI tutabilen iki
+        // ayri mevzi goruyordu — iki kol birden ates altina alinamiyordu ve
+        // acilis bolumlerinde kule butcesi buna yetmiyor.
+        //
+        // Her cift, iki kolu da menzilde tutan TEK pade indirildi:
+        //   pad  5 + pad  6  ->  yeni pad  3   (kapsama 242 / 244 ref-px)
+        //   pad 13 + pad 11  ->  yeni pad 12   (kapsama 244 / 240 ref-px)
+        //
+        // TAKAS ACIK: tek kol kapsamasi ~310dan ~242ye iniyor (%22 az), ama
+        // toplam kapsanan yol 310ten 486ya cikiyor cunku artik iki kol da
+        // tutuluyor. Catalin sordugu soru "hangi kolu savunayim" degil
+        // "kesisme noktasini bul" haline geliyor.
+        //
+        // KONUM SECIMI kapsamayi maksimize eder, orta noktayi DEGIL: olcut
+        // min(A-kapsama, B-kapsama) — yani zayif kol. Tam orta noktada sol
+        // pad A-koluna 150 ref-px, yani menzilin TAM SINIRINDA kalip o kolun
+        // tek bir noktasina degiyordu. Ikisi de kullanicinin isaretledigi
+        // bolgenin icinde.
+        //
+        // Mesafeler bu turda TEK YONTEMLE yeniden olculdu (rota 2 ref-px
+        // adimlarla orneklenip nokta-polyline mesafesi); eski yorumlardaki
+        // birkac px fark bundan geliyor, geometri degismedi.
+        //
+        // En kisa pad-pad mesafesi 177 ref-px; taban plakasi capi 138
+        // (FriendlyPlate.RADIUS_FRAC) -> komsu plakalar cakismiyor.
         buildSpots = listOf(
-            BuildSpot(id = 1, normX = 0.1712f, normY = 0.6093f),  // Z1  A-kolu 190 / B-kolu 120 ref-px
-            BuildSpot(id = 2, normX = 0.1812f, normY = 0.2352f),  // Z1  A-kolu 124 / B-kolu 260 ref-px
-            BuildSpot(id = 3, normX = 0.2579f, normY = 0.1385f),  // Z2  A-kolu 126 / B-kolu 401 ref-px
-            BuildSpot(id = 4, normX = 0.2613f, normY = 0.7908f),  // Z2  A-kolu 407 / B-kolu  99 ref-px
-            BuildSpot(id = 5, normX = 0.2781f, normY = 0.3497f),  // Z1  A-kolu  95 / B-kolu 222 ref-px
-            BuildSpot(id = 6, normX = 0.2882f, normY = 0.5840f),  // Z1  A-kolu 246 / B-kolu 104 ref-px
-            BuildSpot(id = 7, normX = 0.3741f, normY = 0.7475f),  // Z2  A-kolu 487 / B-kolu  97 ref-px
-            BuildSpot(id = 8, normX = 0.4689f, normY = 0.1121f),  // Z2  A-kolu 131 / B-kolu 615 ref-px
-            BuildSpot(id = 9, normX = 0.4941f, normY = 0.8435f),  // Z3  A-kolu 621 / B-kolu 124 ref-px
-            BuildSpot(id = 10, normX = 0.5969f, normY = 0.2343f),  // Z3  A-kolu 100 / B-kolu 457 ref-px
-            BuildSpot(id = 11, normX = 0.6864f, normY = 0.5992f),  // Z4  A-kolu 207 / B-kolu 109 ref-px
-            BuildSpot(id = 12, normX = 0.6901f, normY = 0.7930f),  // Z4  A-kolu 383 / B-kolu  89 ref-px
-            BuildSpot(id = 13, normX = 0.6964f, normY = 0.4256f),  // Z5  A-kolu  98 / B-kolu 175 ref-px
-            BuildSpot(id = 14, normX = 0.7091f, normY = 0.2271f),  // Z4  A-kolu 100 / B-kolu 359 ref-px
-            BuildSpot(id = 15, normX = 0.7958f, normY = 0.3124f),  // Z4  A-kolu 119 / B-kolu 236 ref-px
-            BuildSpot(id = 16, normX = 0.8099f, normY = 0.6102f),  // Z5  A-kolu 118 / B-kolu  86 ref-px
+            BuildSpot(id = 1, normX = 0.1712f, normY = 0.6093f),   // Z1  A 193 / B  95
+            BuildSpot(id = 2, normX = 0.1812f, normY = 0.2352f),   // Z1  A 121 / B 260
+            BuildSpot(id = 3, normX = 0.2255f, normY = 0.4530f),   // A  60 / B  67  <- IKI KOL (eski 5+6)
+            BuildSpot(id = 4, normX = 0.2579f, normY = 0.1385f),   // Z2  A 126 / B 400
+            BuildSpot(id = 5, normX = 0.2613f, normY = 0.7908f),   // Z2  A 407 / B 100
+            BuildSpot(id = 6, normX = 0.3741f, normY = 0.7475f),   // Z2  A 486 / B 102
+            BuildSpot(id = 7, normX = 0.4689f, normY = 0.1121f),   // Z2  A 132 / B 609
+            BuildSpot(id = 8, normX = 0.4941f, normY = 0.8435f),   // Z3  A 614 / B 123
+            BuildSpot(id = 9, normX = 0.5969f, normY = 0.2343f),   // Z3  A 103 / B 460
+            BuildSpot(id = 10, normX = 0.6901f, normY = 0.7930f),  // Z4  A 378 / B  90
+            BuildSpot(id = 11, normX = 0.7091f, normY = 0.2271f),  // Z4  A 101 / B 350
+            BuildSpot(id = 12, normX = 0.7394f, normY = 0.5052f),  // A  60 / B  60  <- IKI KOL (eski 13+11)
+            BuildSpot(id = 13, normX = 0.7958f, normY = 0.3124f),  // Z4  A 120 / B 214
+            BuildSpot(id = 14, normX = 0.8099f, normY = 0.6102f),  // Z5  A 104 / B 104  <- IKI KOL (zaten oyleydi)
         )
     )
 
