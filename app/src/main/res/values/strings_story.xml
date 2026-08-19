@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  KAMPANYA ANLATISI (docs/STORY.md · game/ui/ActIntroOverlay.kt)
+  Varsayilan dil INGILIZCE. Turkcesi res/values-tr/strings_story.xml icinde.
+
+  NEDEN AYRI DOSYA: strings.xml baska is kollarinin elinde; ayri dosya
+  birlestirme catismasini tamamen ortadan kaldirir (strings_hints.xml ile
+  ayni gerekce).
+
+  ============================================================================
+  TON KURALI: TELSIZ KONUSMASI, DESTAN DEGIL
+  ============================================================================
+  Mevcut arayuz dili askeri ve kisa ("BATTLEFIELD CLEAR", "BASE LOST",
+  "DEPLOY"). Anlati bu tonu KORUR. Uc yasak:
+    - SIFAT YOK. "guclu dusman" degil, "three tanks".
+    - DESTAN YOK. "kaderin ellerinde" gibi bir satir buraya girmez.
+    - UZUNLUK YOK. Bolum satiri <= 24 karakter, perde govdesi <= 220.
+
+  ============================================================================
+  KARAKTER BUTCELERI — hepsi StoryStringsTest ile KILITLI
+  ============================================================================
+  story_objectives ogesi   : 24 karakter
+    Kart ic genisligi 126 dp - 2x10 dp = 106 dp. Satir 9 sp kalin; kalin
+    Latin metinde ~5,3 dp/karakter -> 9 sp'de ~20, AutoShrinkText 7 sp'ye
+    indiginde ~25 karakter sigar. 24 = hicbir dilde KIRPILMA olusamaz.
+
+  story_act_N_body         : 220 karakter
+    Kart govdesi 420 dp genislikte, 12 sp, en fazla 6 satir.
+
+  story_act_N_title        : 22 karakter   (kart basligi, tek satir)
+  story_act_label_N        : 8 karakter    (bolum seridi ayraci, tek satir)
+  story_ack                : 12 karakter   (onay cipi)
+
+  ============================================================================
+  story_objectives SIRA SOZLESMESI
+  ============================================================================
+  Dizi TAM 55 oge tasir ve **indeks = levelId - 1**'dir. Sira kaymasi sessiz
+  bir hatadir (yanlis bolumde yanlis satir), bu yuzden hem oge SAYISI hem de
+  iki dilin ayni sayida oge tasidigi test ile kilitlendi.
+
+  Her satirin haritasi GameConfig.mapIdForLevel'den turetildi; perde
+  sinirlari 11'in katlarindadir (1-11, 12-22, 23-33, 34-44, 45-55).
+  Boss bolumleri (11, 16, 22, 33, 44, 48, 55) harita adini TEKRARLAMAZ,
+  dorugu ADLANDIRIR.
+-->
+<resources>
+
+    <!-- ==================================================================
+         PERDE SERIDI AYRACI (LevelSelectScreen.ActDivider)
+
+         DIKKAT: strings.xml icindeki level_act_1 / level_act_2 yalnizca IKI
+         perde tanidigi icin Act III-V hepsi "ACT II" olarak ciziliyordu
+         (55 bolumun 33'u yanlis etiketliydi). Bes etiketin tek kaynagi
+         artik burasidir; UiStrings.actLabelRes bunlari kullanir.
+         ================================================================== -->
+    <string name="story_act_label_1">ACT I</string>
+    <string name="story_act_label_2">ACT II</string>
+    <string name="story_act_label_3">ACT III</string>
+    <string name="story_act_label_4">ACT IV</string>
+    <string name="story_act_label_5">ACT V</string>
+
+    <!-- ==================================================================
+         PERDE ACILIS KARTI — baslik, bolum araligi, govde, onay
+         ================================================================== -->
+
+    <!-- Bolum araligi alt basligi: "LEVELS 12-22" -->
+    <string name="story_act_range">LEVELS %1$d–%2$d</string>
+
+    <!-- Onay cipi. Kart atlanabilir; scrim'e dokunmak da kapatir. -->
+    <string name="story_ack">ROGER</string>
+
+    <string name="story_act_1_title">THE LINE</string>
+    <string name="story_act_1_body">Line Command, all stations. An armored column crossed the border at first light. Eleven positions stand between it and the interior. Hold each one long enough to empty the next. We are trading ground for hours.</string>
+
+    <string name="story_act_2_title">COUNTER-ATTACK</string>
+    <string name="story_act_2_body">The column has a head, and you took one off at the village. Same eleven positions, reverse order, in the dark. Take back the ground we sold. Crater what you cannot keep.</string>
+
+    <string name="story_act_3_title">WINTER FRONT</string>
+    <string name="story_act_3_body">Winter is on the line. Three command tanks at the pass means the column was never one column. We stop chasing. From here on we hold, and we hold cold.</string>
+
+    <string name="story_act_4_title">DESERT LINE</string>
+    <string name="story_act_4_body">The southern supply road is cut. No convoy, no replacements. Everything you fire from here you already own. Make your ammunition last longer than theirs.</string>
+
+    <string name="story_act_5_title">LAST POSITION</string>
+    <string name="story_act_5_body">Line Command is off the air. No relief is coming and no new crews are coming. Whoever is still standing holds the last corridor. If it holds here, it holds.</string>
+
+    <!-- ==================================================================
+         BOLUM DURUM SATIRLARI — indeks = levelId - 1, TAM 55 oge
+         ================================================================== -->
+    <string-array name="story_objectives">
+        <!-- Perde I / L1-11 / TEMPERATE — toprak saatle takas edilir -->
+        <item>Hold the pass.</item>
+        <item>Cover the ford.</item>
+        <item>Deny the ravine.</item>
+        <item>Screen the lake road.</item>
+        <item>Buy the convoy time.</item>
+        <item>Bridges stay standing.</item>
+        <item>No cover. Hold anyway.</item>
+        <item>Slow them in the trees.</item>
+        <item>Hold the high ground.</item>
+        <item>Last bridge before us.</item>
+        <item>Kill the command tank.</item>
+        <!-- Perde II / L12-22 / NIGHT — ayni mevziler, ters sirada -->
+        <item>Take the village back.</item>
+        <item>Fork is ours by dawn.</item>
+        <item>Climb the slope again.</item>
+        <item>Clear the treeline.</item>
+        <item>Two heads, one night.</item>
+        <item>Take the crossing back.</item>
+        <item>Marsh in the dark.</item>
+        <item>Ring the lake again.</item>
+        <item>Ravine, second time.</item>
+        <item>Push to the falls.</item>
+        <item>Three tanks. One pass.</item>
+        <!-- Perde III / L23-33 / WINTER — kovalama biter, tutma baslar -->
+        <item>The fork is frozen.</item>
+        <item>Snow on the slope.</item>
+        <item>Forest gives no cover.</item>
+        <item>Whiteout on the plain.</item>
+        <item>Ice at the crossing.</item>
+        <item>The marsh froze solid.</item>
+        <item>Lake ice carries them.</item>
+        <item>Ravine, under snow.</item>
+        <item>The falls stopped.</item>
+        <item>Pass is a wind tunnel.</item>
+        <item>The village splits them.</item>
+        <!-- Perde IV / L34-44 / DESERT — ikmal koptu -->
+        <item>Supply road is cut.</item>
+        <item>Burn what you lose.</item>
+        <item>No water on the plain.</item>
+        <item>Ration every shell.</item>
+        <item>The marsh is dust now.</item>
+        <item>Lake bed is dry.</item>
+        <item>Hold the dry ravine.</item>
+        <item>The falls are gone.</item>
+        <item>Pass. No relief coming.</item>
+        <item>The village is empty.</item>
+        <item>Two heads at the fork.</item>
+        <!-- Perde V / L45-55 / AUTUMN — takviye yok, kadro sinirli -->
+        <item>Command has gone quiet.</item>
+        <item>Whoever is left holds.</item>
+        <item>No new crews.</item>
+        <item>Siege orders. Spend it.</item>
+        <item>Fall back to the ring.</item>
+        <item>Ravine, one last time.</item>
+        <item>Hold the falls.</item>
+        <item>Back where it started.</item>
+        <item>The village stays ours.</item>
+        <item>Fork holds. No orders.</item>
+        <item>The slope. Everything.</item>
+    </string-array>
+
+</resources>

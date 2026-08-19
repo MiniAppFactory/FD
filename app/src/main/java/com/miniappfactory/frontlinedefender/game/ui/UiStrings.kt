@@ -106,9 +106,21 @@ fun mapNameRes(mapId: Int): Int = when (mapId) {
     else -> R.string.map_name_01
 }
 
+/**
+ * Perde etiketi (KISIM I … KISIM V).
+ *
+ * ⛔ ESKI HALI IKI PERDE TANIYORDU (`if (act <= 1) level_act_1 else level_act_2`)
+ * ve kampanya 22'den 55 bolume cikinca **Act III, IV ve V hepsi "KISIM II"**
+ * olarak cizilmeye basladi — 55 bolumun 33'unde yanlis etiket. Bes etiketin
+ * tek kaynagi artik `strings_story.xml`; esleme `ActIntroOverlay.kt` icinde,
+ * perde acilis kartiyla AYNI dizeleri kullanir ki serit ile kart ayni kelimeyi
+ * soylesin.
+ *
+ * `strings.xml`deki `level_act_1` / `level_act_2` bilincli olarak YERINDE
+ * birakildi (o dosya bu turda kapaliydi); artik kullanilmiyorlar.
+ */
 @StringRes
-fun actLabelRes(act: Int): Int =
-    if (act <= 1) R.string.level_act_1 else R.string.level_act_2
+fun actLabelRes(act: Int): Int = storyActLabelRes(act)
 
 // ---------------------------------------------------------------------------
 // TASMA COZUMU

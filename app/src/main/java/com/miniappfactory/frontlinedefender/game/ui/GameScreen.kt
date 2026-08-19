@@ -558,7 +558,17 @@ fun GameScreen(
                             // ortuyordu. Sabit dp ofseti, kart konumu ekran
                             // boyutuna gore degistigi icin bu carpismayi
                             // kacinilmaz kiliyordu.
-                            onOpenArmory = { shopOpen = true }
+                            onOpenArmory = { shopOpen = true },
+                            // Faz 20 — PERDE ACILIS KARTI baglantisi.
+                            // Parametrenin varsayilani `null`, yani bu satir
+                            // olmadan ekran bugunkuyle birebir ayni davranir.
+                            // Kalicilik `SaveManager`in var olan dizeyle
+                            // anahtarlanan tek atislik bayrak API'si uzerinden
+                            // yuruyor (`act_intro_1..5`) — `SaveManager`
+                            // DEGISTIRILMEDI.
+                            actIntroStore = remember(saveManager) {
+                                SaveManagerActIntroStore(saveManager)
+                            }
                         )
                     }
                     // R1 seridi banner ile bolum kartlari ARASINDA: hicbir

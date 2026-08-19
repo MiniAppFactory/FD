@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  KAMPANYA ANLATISI [eksi] TURKCE.
+  Ton: askeri, kisa, sifatsiz, telsiz konusmasi (docs/LOCALIZATION.md sozlugu).
+
+  Sabit terimler: Supply [ok] Tedarik . Wave [ok] Dalga . Act [ok] Kisim
+  (strings.xml level_act_1 "KISIM I" ile ayni; ayrilmadi).
+
+  Kurgu adlari (docs/STORY.md 1):
+    Line Command   [ok] Hat Komutanligi
+    Iron Column    [ok] Demir Kol
+    command tank   [ok] komuta tanki  (GameConfig.EnemyType.COMMAND_TANK)
+
+  KESME ISARETI KULLANILMAZ. Android string kaynaginda ' kacisli yazilmak
+  zorundadir ve unutuldugunda aapt HATA verir; ozel ad tamlamasi gereken her
+  yerde cumle yeniden kuruldu ("Cayir Gecidi'ndeki" degil "gecitteki").
+
+  Karakter butceleri (StoryStringsTest ile kilitli, gerekce EN dosyasinda):
+    story_objectives ogesi  24 . story_act_N_body 220
+    story_act_N_title  22   . story_act_label_N 8   . story_ack 12
+  Turkce karsiliklar Ingilizceden %20-35 uzundur; asagidaki satirlarin hepsi
+  bu bilinerek KISA kuruldu, en uzunu 23 karakterdir.
+-->
+<resources>
+
+    <!-- Perde seridi ayraci. Bes etiketin tek kaynagi burasi (Act III-V daha
+         once "KISIM II" olarak yanlis ciziliyordu). -->
+    <string name="story_act_label_1">KISIM I</string>
+    <string name="story_act_label_2">KISIM II</string>
+    <string name="story_act_label_3">KISIM III</string>
+    <string name="story_act_label_4">KISIM IV</string>
+    <string name="story_act_label_5">KISIM V</string>
+
+    <string name="story_act_range">BÖLÜM %1$d–%2$d</string>
+    <string name="story_ack">ANLAŞILDI</string>
+
+    <string name="story_act_1_title">CEPHE HATTI</string>
+    <string name="story_act_1_body">Hat Komutanlığı, tüm istasyonlar. Şafakta zırhlı bir kol sınırı geçti. Onunla iç hat arasında on bir mevzi var. Her birini, bir sonrakini boşaltacak kadar tut. Toprağı saatle takas ediyoruz.</string>
+
+    <string name="story_act_2_title">KARŞI TAARRUZ</string>
+    <string name="story_act_2_body">Kolun bir başı var; köyde birini kopardın. Aynı on bir mevzi, ters sırayla, karanlıkta. Sattığımız toprağı geri al. Tutamayacağını kraterle.</string>
+
+    <string name="story_act_3_title">KIŞ CEPHESİ</string>
+    <string name="story_act_3_body">Kış hatta indi. Geçitteki üç komuta tankı, kolun hiç tek kol olmadığını gösterdi. Kovalamayı bırakıyoruz. Buradan sonrası tutmaktır, soğukta tutmaktır.</string>
+
+    <string name="story_act_4_title">ÇÖL HATTI</string>
+    <string name="story_act_4_body">Güney ikmal yolu kesildi. Kafile yok, ikmal yok. Buradan sonra ne atarsan zaten elindekidir. Cephanen onlarınkinden uzun dayansın.</string>
+
+    <string name="story_act_5_title">SON SİPER</string>
+    <string name="story_act_5_body">Hat Komutanlığı telsizden düştü. Ne takviye geliyor ne yeni kadro. Ayakta kalan son koridoru tutar. Burada tutarsa, tutmuş olur.</string>
+
+    <!-- Bolum durum satirlari — indeks = levelId - 1, TAM 55 oge.
+         Sira EN dosyasiyla BIREBIR ayni olmak zorunda. -->
+    <string-array name="story_objectives">
+        <!-- Kisim I / L1-11 -->
+        <item>Geçidi tut.</item>
+        <item>Sığ geçidi kapat.</item>
+        <item>Boğazı verme.</item>
+        <item>Göl yolunu perdele.</item>
+        <item>Kafileye zaman kazan.</item>
+        <item>Köprüler ayakta kalsın.</item>
+        <item>Siper yok. Yine de tut.</item>
+        <item>Ağaçlarda yavaşlat.</item>
+        <item>Yamacı elde tut.</item>
+        <item>Önümüzdeki son köprü.</item>
+        <item>Komuta tankını vur.</item>
+        <!-- Kisim II / L12-22 -->
+        <item>Köyü geri al.</item>
+        <item>Çatal sabaha bizim.</item>
+        <item>Yamaca yeniden tırman.</item>
+        <item>Ağaç hattını temizle.</item>
+        <item>İki komuta, tek gece.</item>
+        <item>Geçidi geri al.</item>
+        <item>Karanlıkta bataklık.</item>
+        <item>Gölü yeniden kuşat.</item>
+        <item>Boğaz, ikinci kez.</item>
+        <item>Şelaleye kadar it.</item>
+        <item>Üç tank. Tek geçit.</item>
+        <!-- Kisim III / L23-33 -->
+        <item>Çatal dondu.</item>
+        <item>Yamaçta kar var.</item>
+        <item>Orman siper vermiyor.</item>
+        <item>Ovada tipi var.</item>
+        <item>Geçit buz tuttu.</item>
+        <item>Bataklık dondu.</item>
+        <item>Göl buzu onları taşır.</item>
+        <item>Boğaz, kar altında.</item>
+        <item>Şelale durdu.</item>
+        <item>Geçit rüzgâr tüneli.</item>
+        <item>Köy onları böler.</item>
+        <!-- Kisim IV / L34-44 -->
+        <item>İkmal yolu kesildi.</item>
+        <item>Tutamadığını yak.</item>
+        <item>Ovada su yok.</item>
+        <item>Her mermiyi say.</item>
+        <item>Bataklık artık toz.</item>
+        <item>Göl yatağı kurudu.</item>
+        <item>Kuru boğazı tut.</item>
+        <item>Şelale yok oldu.</item>
+        <item>Geçit. Takviye yok.</item>
+        <item>Köy boşaltıldı.</item>
+        <item>Çatalda iki komuta.</item>
+        <!-- Kisim V / L45-55 -->
+        <item>Komuta sustu.</item>
+        <item>Kalan tutar.</item>
+        <item>Yeni kadro yok.</item>
+        <item>Kuşatma emri. Harca.</item>
+        <item>Halkaya çekil.</item>
+        <item>Boğaz, son kez.</item>
+        <item>Şelaleyi tut.</item>
+        <item>Başladığı yere döndük.</item>
+        <item>Köy bizde kalacak.</item>
+        <item>Çatalı tut. Emir yok.</item>
+        <item>Yamaç. Her şey.</item>
+    </string-array>
+
+</resources>

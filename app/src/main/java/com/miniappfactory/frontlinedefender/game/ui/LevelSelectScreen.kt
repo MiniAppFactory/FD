@@ -159,7 +159,21 @@ fun LevelSelectScreen(
      * Uc cip tek bir saga yasli grup olusturur, aralarinda bosluk kalmaz.
      */
     onOpenArmory: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /**
+     * Faz 20 — PERDE ACILIS KARTI (`docs/STORY.md` §4).
+     *
+     * `null` (varsayilan) = kart HIC cizilmez ve bu ekranin davranisi
+     * bugunkuyle birebir aynidir. Mevcut cagrilar ve testler degismeden
+     * derlenir; uretimde acmak icin cagriya tek adlandirilmis arguman
+     * eklenir:
+     *
+     *     actIntroStore = remember(saveManager) { SaveManagerActIntroStore(saveManager) }
+     *
+     * Kalicilik `SaveManager`in var olan ipucu bayragi API'si uzerinden
+     * yurur; `SaveManager` DEGISTIRILMEDI (gerekce `ActIntroOverlay.kt`).
+     */
+    actIntroStore: ActIntroStore? = null
 ) {
     // Bir sonraki oynanabilir bolum — ekran bunu vurgular.
     //
@@ -174,6 +188,31 @@ fun LevelSelectScreen(
     // R1 seridi erisilemez olur, boylece kazara sevk/reklam olmaz (Cephanelik
     // katmaninin ayni deseni).
     var missionsOpen by remember { mutableStateOf(false) }
+
+    // Perde acilis karti bekleyen bolum. null = kart yok.
+    //
+    // Bolum ID'si TUTULUR, sadece bir bayrak degil: kart onaylandiginda
+    // hangi bolume sevk edilecegi kartin acildigi andaki karardir. Boylece
+    // kart aciken arkadaki listede bir sey degisse bile yanlis bolum
+    // baslatilamaz.
+    var pendingIntroLevel by remember { mutableStateOf<Int?>(null) }
+
+    /**
+     * Sevk kapisi: perde acilisiysa ve kart daha once gorulmediyse ONCE kart,
+     * sonra savas. Diger her durumda dogrudan savas — yani bu kapi kampanya
+     * bolumlerinin 50'sinde hicbir sey yapmaz.
+     */
+    fun deploy(levelId: Int) {
+        val store = actIntroStore
+        if (store != null &&
+            ActIntro.isActOpener(levelId) &&
+            !store.isSeen(ActIntro.actOf(levelId))
+        ) {
+            pendingIntroLevel = levelId
+        } else {
+            onPlayLevel(levelId)
+        }
+    }
     val missionsAvailable = progress.todaysMissions.isNotEmpty() ||
         progress.weeklyMissions.isNotEmpty()
     val claimableMissions = progress.claimableMissionCount
@@ -338,9 +377,9 @@ fun LevelSelectScreen(
                         isNext = spec.levelId == nextLevel,
                         onClick = {
                             if (progress.isUnlocked(spec.levelId)) {
-                                onPlayLevel(spec.levelId)
+                                deploy(spec.levelId)
                             } else if (progress.tryUnlock(spec.levelId)) {
-                                onPlayLevel(spec.levelId)
+                                deploy(spec.levelId)
                             }
                         }
                     )
@@ -368,6 +407,25 @@ fun LevelSelectScreen(
             MissionsScreen(
                 progress = progress,
                 onClose = { missionsOpen = false }
+            )
+        }
+
+        // Perde acilis karti — gorev panelinin de USTUNDE. Yalnizca dokunma
+        // sonucu acildigi icin panelle ayni anda gorunemez; siralama yine de
+        // sabitlendi ki ikisi carpisirsa kart kazansin (oyuncu SEVK etmek
+        // uzereydi).
+        //
+        // Bayrak kart KAPANIRKEN yazilir, acilirken degil: acilis ile kapanis
+        // arasinda uygulama olduruluse oyuncu brifingi hic okumamis olur ve
+        // bir dahaki sefere tekrar gormelidir.
+        pendingIntroLevel?.let { levelId ->
+            ActIntroOverlay(
+                act = ActIntro.actOf(levelId),
+                onDismiss = {
+                    actIntroStore?.markSeen(ActIntro.actOf(levelId))
+                    pendingIntroLevel = null
+                    onPlayLevel(levelId)
+                }
             )
         }
     }
@@ -454,6 +512,30 @@ private fun LevelCard(
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth()
         )
+
+        // ANLATI — bolum durum satiri (`docs/STORY.md` §3).
+        //
+        // Bolum adinin hemen ALTINDA, tek satir, emir kipi ("Gecidi tut.").
+        // Bu, oyuncunun kampanyada NEDEN savastigini ogrendigi tek daimi
+        // yuzey; perde karti bes kez cikar, bu satir 55 kez.
+        //
+        // Butce 24 karakter (turetilis `strings_story.xml` basliginda,
+        // `StoryStringsTest` ile kilitli) ama yine de `AutoShrinkText`:
+        // kirpma bu kartta bilgi YOK EDER ("Komuta tankini v…" hangi emir
+        // oldugunu belirsizlestirir). Bos dize cizilmez — eksik bir ceviri
+        // yerlesimi bozmak yerine yalnizca satiri yok eder.
+        val objective = levelObjectiveOrEmpty(spec.levelId)
+        if (objective.isNotEmpty()) {
+            AutoShrinkText(
+                text = objective,
+                color = Color(0xCC9FBF84),
+                maxFontSize = 9.sp,
+                minFontSize = 7.sp,
+                maxLines = 1,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
 
         Text(
             text = pluralStringResource(
