@@ -228,6 +228,53 @@ internal object FriendlyPlate {
 private val PLATE_DECK_COLOR = Color(FriendlyPlate.DECK_ARGB)
 private val PLATE_RIM_COLOR = Color(FriendlyPlate.RIM_ARGB)
 
+/** Kontur pasinin olcegi — govdenin %10 disina tasar. */
+private const val JET_OUTLINE_SCALE = 1.10f
+
+/**
+ * Hava taarruzu ucaginin govdesi: BIRIM uzunlukta (yari-uzunluk = 1), burun +X.
+ *
+ * Dizide yalnizca UST yari var; alt yari cizilirken y isareti donduruluyor,
+ * boylece siluet tanim geregi simetrik ve elle iki kez guncellenmesi gereken
+ * bir tablo olusmuyor (bu depoda elle yazilan ikizler defalarca ayristi).
+ *
+ * Nokta sirasi: burun -> govde -> kanat ucu -> kanat firar kenari -> govde ->
+ * yatay dumen -> kuyruk.
+ */
+private val JET_HULL = floatArrayOf(
+    1.00f, 0.00f,
+    0.42f, 0.11f,
+    0.02f, 0.58f,
+    -0.26f, 0.52f,
+    -0.18f, 0.14f,
+    -0.74f, 0.30f,
+    -0.96f, 0.24f,
+    -0.92f, 0.07f,
+    -1.00f, 0.00f
+)
+
+/**
+ * Yol BIR KEZ kuruluyor, her karede degil. Cizim `withTransform` icinde
+ * olceklendigi icin birim yol her boyutta yeniden kullanilabiliyor — kare
+ * basina Path tahsisi yok.
+ */
+private val JET_UNIT_PATH: Path = Path().apply {
+    moveTo(JET_HULL[0], JET_HULL[1])
+    var i = 2
+    while (i < JET_HULL.size) {
+        lineTo(JET_HULL[i], JET_HULL[i + 1])
+        i += 2
+    }
+    // Ayna: ayni noktalar ters yonde, y isareti donuk. Kuyruk (y=0) ve burun
+    // (y=0) iki kez cizilmesin diye bastan bir nokta iceri girilir.
+    i = JET_HULL.size - 4
+    while (i >= 0) {
+        lineTo(JET_HULL[i], -JET_HULL[i + 1])
+        i -= 2
+    }
+    close()
+}
+
 // ---------------------------------------------------------------------------
 // NAMLU ALEVI / TRACER KONTRASTI  (VISUAL_AUDIT P0-5)
 //
@@ -1277,14 +1324,47 @@ private fun DrawScope.drawAirStrikeRun(
 
     // 3. Arac. Sahayi terk ettikten sonra cizilmez — kuyrukta yalniz iz kalir.
     if (travel < 1f) {
-        val deg = Math.toDegrees(fx.angleRad.toDouble()).toFloat() -
-            GameConfig.PROJECTILE_SPRITE_BASE_ANGLE_DEG
-        drawSpriteAt(
-            sprites.missile, head.x, head.y,
-            AIR_STRIKE_JET_REF_PX * s,
-            rotationDeg = deg,
-            alpha = 1f
-        )
+        val deg = Math.toDegrees(fx.angleRad.toDouble()).toFloat()
+        drawStrikeJet(head.x, head.y, AIR_STRIKE_JET_REF_PX * s, deg)
+    }
+}
+
+/**
+ * HAVA TAARRUZU UCAGI — prosedurel siluet.
+ *
+ * ⛔ ESKIDEN `sprites.missile` 104 ref-px'e GERILEREK ciziliyordu. Kullanici
+ * bunu iki kez bildirdi: "hava destegi ikonu hala eksik, fuze sprite'iyla
+ * calisiyor". Gercekten de ekranda gorunen sey bir ucak degil, dev bir fuzeydi
+ * — ve booster'in adi HAVA DESTEGI oldugu icin oyuncu ne cagirdigini ekranda
+ * goremiyordu.
+ *
+ * YENI ASSET URETILMEDI. Siluet dort kanattan olusan bir delta jet olarak
+ * cizim tarafinda uretiliyor; boylece hicbir cozunurluk kovasina webp eklemek
+ * gerekmiyor (APK'ya 0 bayt) ve olcek her ekranda kesin kalir.
+ *
+ * RENK P0-1 ILE AYNI OLCULMUS CIFT: koyu lacivert kontur (205,5 derece) +
+ * camgobegi govde (186,9 derece). Bu tesadufi degil — hava taarruzu OYUNCUNUN
+ * kendi varligi ve ekranda dusman haki tonundan ayrismasi gereken sey tam
+ * olarak bu. Ayni cift bes biyomun hepsinde esigi geciyor (bkz.
+ * FriendlyPlateContrastTest): parlak zeminlerde koyu kontur, koyu zeminlerde
+ * camgobegi govde tasiyor.
+ */
+private fun DrawScope.drawStrikeJet(cx: Float, cy: Float, lengthPx: Float, deg: Float) {
+    val half = lengthPx * 0.5f
+    withTransform({
+        translate(cx, cy)
+        rotate(deg, Offset.Zero)
+        scale(half, half, Offset.Zero)
+    }) {
+        // Kontur, ayri bir Stroke NESNESI degil: ayni yolun buyutulmus dolgusu.
+        // Stroke(...) cagri basina nesne uretir ve bu kod taarruz suresince her
+        // kare calisir — FX halesinde kullanilan hilenin aynisi.
+        scale(JET_OUTLINE_SCALE, JET_OUTLINE_SCALE, Offset.Zero) {
+            drawPath(JET_UNIT_PATH, PLATE_DECK_COLOR)
+        }
+        drawPath(JET_UNIT_PATH, PLATE_RIM_COLOR)
+        // Kokpit: burnun neresi oldugunu soyler, yoksa siluet iki yone de ucabilir.
+        drawCircle(PLATE_DECK_COLOR, radius = 0.11f, center = Offset(0.45f, 0f))
     }
 }
 
