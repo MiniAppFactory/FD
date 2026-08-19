@@ -1,5 +1,6 @@
 package com.miniappfactory.frontlinedefender.game.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -320,6 +321,41 @@ fun GameScreen(
     var reinforcementOfferOpen by remember { mutableStateOf(false) }
     var supplyDropOfferOpen by remember { mutableStateOf(false) }
     var pendingExit by remember { mutableStateOf<PendingBattleExit?>(null) }
+
+    // ⛔ GERI TUSU OYUNDAN CIKARIYORDU.
+    //
+    // Savasin ortasinda telefonun geri tusuna basmak uygulamayi kapatip ana
+    // ekrana atiyordu — hicbir uyari yok, ilerleme kaydedilmemis. Sebep basit:
+    // `MissionsScreen`, `SettingsScreen` ve `UpgradeShopScreen` kendi
+    // `BackHandler`larini tasiyordu ama SAVAS EKRANI hicbirini tasimiyordu,
+    // yani geri tusu sistemin varsayilanina (Activity'yi kapat) dusuyordu.
+    //
+    // Android'de geri tusu "bir adim geri" demektir; oyunun her ekraninda bir
+    // karsiligi olmali:
+    //  · Savas (hazirlik/dalga) -> DURAKLAT. Oyuncunun aradigi sey zaten bu;
+    //    duraklatma menusu cikma/bastan alma/ana menuyu de icinde tasiyor.
+    //  · Duraklatma acikken -> DEVAM ET. Geri tusu modali kapatir, ikinci bir
+    //    "cikmak istiyor musun" katmani acmaz.
+    //  · Zafer/yenilgi -> BOLUM SECIME don. Modalin BOLUM SEC butonuyla ayni
+    //    yer; sonuc ekraninda geri tusuyla oyundan atilmak sasirtici.
+    //  · Bolum secimi -> ANA MENU.
+    //
+    // ANA MENUDE KAPALI (`enabled = false`): oyunun kok ekranindan geri tusu
+    // GERCEKTEN cikmali. Aksi halde oyuncu uygulamadan hic cikamazdi ve bu,
+    // duzeltmenin kendisinden daha kotu bir hata olurdu.
+    //
+    // Ust ustelik acilan ekranlar (gorevler, ayarlar, cephanelik) kendi
+    // `BackHandler`larini SONRA kaydeder ve dispatcher son kaydedileni once
+    // calistirir; yani bu handler onlarin ustune binmez.
+    BackHandler(enabled = gameState != GameState.MAIN_MENU) {
+        when (gameState) {
+            GameState.PREPARATION, GameState.WAVE_RUNNING, GameState.PAUSED ->
+                gameEngine.togglePause()
+            GameState.VICTORY, GameState.DEFEAT -> gameEngine.returnToLevelSelect()
+            GameState.LEVEL_SELECT -> gameEngine.returnToMainMenu()
+            GameState.MAIN_MENU -> Unit
+        }
+    }
 
     // Savas yasam dongusu -> frekans politikasinin sayaclari.
     LaunchedEffect(gameState) {

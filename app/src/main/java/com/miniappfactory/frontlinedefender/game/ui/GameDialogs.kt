@@ -589,32 +589,64 @@ fun PauseMenuModal(
     var hapticsEnabled by remember { mutableStateOf(haptics.isHapticsEnabled) }
     var settingsOpen by remember { mutableStateOf(false) }
 
-    Box(
+    // ⛔ BU MODAL, ZAFER MODALIYLA AYNI YAPISAL HATAYI TASIYORDU.
+    //
+    // Yukseklik sinirlanmamis, icerik kaydirilamaz ve bosluklar sabitti. Test
+    // cihazinda (Galaxy S8, yatay 740x360 dp) dorduncu buton — ANA MENU —
+    // ekranin altinda YARIM kaliyordu: oyuncu ana menuye donemiyordu.
+    //
+    // Zafer modalinde ayni hata duzeltilirken bu modal GOZDEN KACTI; ikisi
+    // ayni cati altinda olmadigi icin duzeltme kendiliginden buraya gelmedi.
+    // Simdi ikisi de ayni uc kurali uyguluyor:
+    //  1) Yukseklik ekrana KILITLENIR (`heightIn`), icerik kaydirilir.
+    //  2) Dar ekranda bosluklar ve dolgu kucululur (`compact`).
+    //  3) Baslik sabit kalir, butonlar kaydirma alanindadir.
+    //
+    // BUTON SIRASI DEGISTIRILMEDI. Zafer modalinde birincil butonlar kaydirma
+    // alaninin disinda tutulmustu; burada ayni seyi yapmak DEVAM ET'i listenin
+    // basina veya sonuna tasimak demekti ve duraklatma menusu oyuncunun kas
+    // hafizasiyla kullandigi bir ekran. Compact modda dort buton 360 dp'ye
+    // zaten sigiyor (olcum: ~280 dp), yani kaydirma bir emniyet agi; sirayi
+    // bozmaya deger bir kazanc yok.
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xAA000000)),
         contentAlignment = Alignment.Center
     ) {
+        val compact = maxHeight < 420.dp
+        val gap = if (compact) 8.dp else 14.dp
         Surface(
             shape = RoundedCornerShape(20.dp),
             color = SleekDarkBg,
             border = androidx.compose.foundation.BorderStroke(1.5.dp, SleekBorderLight),
             modifier = Modifier
                 .widthIn(max = 360.dp)
-                .padding(20.dp)
+                .heightIn(max = maxHeight - 24.dp)
+                .padding(if (compact) 8.dp else 20.dp)
         ) {
             Column(
-                modifier = Modifier.padding(20.dp),
+                modifier = Modifier.padding(if (compact) 14.dp else 20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                verticalArrangement = Arrangement.spacedBy(gap)
             ) {
                 Text(
                     text = stringResource(R.string.dialog_paused_title),
                     color = SleekTextAccent,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 22.sp,
+                    fontSize = if (compact) 18.sp else 22.sp,
                     textAlign = TextAlign.Center
                 )
+
+                Column(
+                    modifier = Modifier
+                        // `fill = false`: butonlar sigiyorsa modal onlarin
+                        // boyunda kalir, ekrani gereksiz yere doldurmaz.
+                        .weight(1f, fill = false)
+                        .verticalScroll(rememberScrollState()),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(gap)
+                ) {
 
                 // AYARLAR
                 //
@@ -693,6 +725,7 @@ fun PauseMenuModal(
                         fontWeight = FontWeight.Bold,
                         maxLines = 1
                     )
+                }
                 }
             }
         }
