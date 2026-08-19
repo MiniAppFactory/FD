@@ -1,5 +1,6 @@
 package com.miniappfactory.frontlinedefender.game.ui
 
+import androidx.annotation.VisibleForTesting
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.fillMaxSize
@@ -155,6 +156,125 @@ private val enemyHitFlashFilter = ColorFilter.tint(Color.White, BlendMode.SrcIn)
 private val CALLOUT_PLATE_COLOR = Color(0xE60B0E08)
 private val CALLOUT_BORDER_COLOR = Color(0xFFFFD54F)
 private val CALLOUT_LINK_COLOR = Color(0xB3FFD54F)
+
+// ---------------------------------------------------------------------------
+// DOST TABAN PLAKASI  (VISUAL_AUDIT P0-1)
+//
+// OLCUM: kule sprite'larinin renkli piksel ton ortalamalari 37,8 / 50,6 / 57,4
+// derece; dusman ton bandi 35,8-60,2 derece. Yani DORT KULENIN UCU dusman ton
+// bandinin TAM ICINDE. Aciklik da ayirmiyor (kule 0,33-0,43 / dusman
+// 0,29-0,43). Bir TD oyununda oyuncunun ekrandan okumasi gereken en temel sey
+// "hangisi benim" ve su an iki taraf da ayni haki askeri arac.
+//
+// COZUM: kule sprite'ini yeniden cizmek yerine ALTINA soguk mavi bir taban
+// plakasi. Dort sprite'i yeniden uretmekten cok ucuz ve ILERIDE EKLENECEK
+// KULELER OTOMATIK KAPSANIR - plaka sprite'tan bagimsiz cizilir.
+//
+// PLAKA BIR VisualEffect DEGIL: kule ciziminin parcasi. Efekt havuzundan yer
+// kaplasaydi agir bir dalgada MAX_VISUAL_EFFECTS tavaninda kule plakalari ile
+// patlamalar birbirini kovardi.
+//
+// IKI BANT, TEK SEBEP: tek renk bes biyomu birden tasiyamaz. Koyu lacivert
+// gudde KIS/COL gibi PARLAK zeminlerde, parlak camgobegi bant GECE/SONBAHAR
+// gibi KOYU zeminlerde esigi gecer (olcum: FriendlyPlateContrastTest).
+// ---------------------------------------------------------------------------
+@VisibleForTesting
+internal object FriendlyPlate {
+    /**
+     * Plakanin dis yaricapi, kule sprite genisliginin orani olarak.
+     *
+     * 0,615 rastgele degil, UC KISITIN kesisimi:
+     *  · Sprite'in opak yaricapi yonlere gore 41-75 ref-px (olculdu: alfa>200).
+     *    Ortalama ~60, yani 0,615 * 112 = 68,9 plaka yonlerin ~%78'inde
+     *    sprite'in DISINDA kalir - yaka gercekten gorunur.
+     *  · Ayni haritadaki iki build spot'un EN KISA mesafesi 147 ref-px
+     *    (MAP_05). 2 * 68,9 = 137,8 < 147 -> iki komsu plaka HIC CAKISMAZ.
+     *  · Kademe-3 taban yayi 0,50 yaricapta -> plaka guvertesinin USTUNDE
+     *    kalir, camgobegi yay koyu lacivert uzerinde okunur (once haritanin
+     *    degisken zemini uzerindeydi).
+     */
+    const val RADIUS_FRAC = 0.615f
+
+    /** Dis koyu kontur bandinin kalinligi, referans px. */
+    const val EDGE_REF_PX = 3.0f
+
+    /** Parlak camgobegi bandin kalinligi, referans px. */
+    const val RIM_REF_PX = 6.5f
+
+    /**
+     * Secim halkasinin yaricap orani. ESKIDEN 0,62 IDI ve plakanin tam
+     * ustunden geciyordu; altin halka ile plakanin dis konturu tek bir bulanik
+     * seride donusurdu. 0,685'e alindi: halka artik plakayi CEVRELIYOR (68,9
+     * plaka / 76,7 halka, 7,8 ref-px bosluk) ve "secili olan bu platform"
+     * okunur. Denge degeri degil, saf cizim sabiti.
+     */
+    const val SELECTION_RADIUS_FRAC = 0.685f
+
+    /**
+     * Guverte / dis kontur: koyu lacivert. Ton 205,5 derece (180-220 kabul
+     * araliginda), bagil parlaklik 0,0145. Dusman ton bandindan (35,8-60,2)
+     * 145 derece uzak.
+     */
+    const val DECK_ARGB = 0xFF0B2233L
+
+    /**
+     * Parlak bant: soguk camgobegi. Ton 186,9 derece, bagil parlaklik 0,5207.
+     * Kademe-3 pip rengi (0xFF4FC3F7, 198,6 derece) ile ayni aileden ama
+     * FARKLI YARICAPTA ve pip/yay her zaman koyu guverte uzerinde duruyor.
+     */
+    const val RIM_ARGB = 0xFF4DD0E1L
+}
+
+private val PLATE_DECK_COLOR = Color(FriendlyPlate.DECK_ARGB)
+private val PLATE_RIM_COLOR = Color(FriendlyPlate.RIM_ARGB)
+
+// ---------------------------------------------------------------------------
+// NAMLU ALEVI / TRACER KONTRASTI  (VISUAL_AUDIT P0-5)
+//
+// OLCUM: fx_muzzle_flash BES biyomun BESINDE, fx_tracer besin DORDUNDE WCAG
+// 3,0 esiginin altinda (en iyi 2,53 / en kotu 1,92). Ikisinin de koyu dis
+// cizgisi YOK; turuncu-sari parlama cim ve toprakla ayni parlaklik bandina
+// dusuyor. Bunlar "kulem ates ediyor mu" sorusunun gorsel cevabi.
+//
+// YENI ASSET URETILMEDI: ayni bitmap uc gecisle ciziliyor.
+//   1) KOYU HALE - sprite buyutulmus ve neredeyse siyaha boyanmis halde
+//      arkada. Parlak biyomlarda (KIS/COL/SONBAHAR/ORIJINAL) esigi tek
+//      basina gecer.
+//   2) SPRITE'IN KENDISI - renk kimligi degismez.
+//   3) SICAK CEKIRDEK - tek `drawCircle`, ak-sicak. GECE'de koyu hale
+//      zeminden ayrisamaz (2,48); esigi cekirdek tasir (7,02).
+//
+// Ikisi BIRLIKTE her biyomda en az bir kanalin 3,0'i gectigini garanti eder
+// (olcum: FriendlyPlateContrastTest).
+//
+// KARE BUTCESI: renk filtreleri PAYLASILAN sabitler (bkz. enemyHitFlashFilter
+// ile ayni gerekce) - degerleri hic degismiyor, degisen tek sey `alpha` ve o
+// zaten drawImage'e ayri parametre olarak gidiyor. Cekirdek `drawCircle`
+// oldugu icin ucuncu bir bitmap gecisi DEGIL.
+// ---------------------------------------------------------------------------
+@VisibleForTesting
+internal object FxOutline {
+    /** Koyu halenin sprite'a gore olcegi. */
+    const val HALO_SCALE = 1.18f
+
+    /** Halenin sprite alfasina carpani - kontur olacak kadar koyu, golge kadar yumusak. */
+    const val HALO_ALPHA_MUL = 0.85f
+
+    /** Sicak cekirdegin yaricapi, sprite genisliginin orani. */
+    const val CORE_RADIUS_FRAC = 0.17f
+
+    /** Neredeyse siyah kontur. Bagil parlaklik 0,0045. */
+    const val HALO_ARGB = 0xFF0A0B0CL
+
+    /**
+     * Ak-sicak cekirdek. Bagil parlaklik 0,9255. SAF BEYAZ DEGIL: namlu alevi
+     * sicak bir olay, soguk beyaz onu enerji efekti gibi gosterirdi.
+     */
+    const val CORE_ARGB = 0xFFFFF6E0L
+}
+
+private val FX_HALO_FILTER = ColorFilter.tint(Color(FxOutline.HALO_ARGB), BlendMode.SrcIn)
+private val FX_CORE_COLOR = Color(FxOutline.CORE_ARGB)
 
 /** easeOutBack - hafif overshoot. Vurgu anlarinda kullanilir (lineer DEGIL). */
 private fun easeOutBack(t: Float): Float {
@@ -666,12 +786,39 @@ private fun DrawScope.drawTower(
     val spec = GameConfig.TOWER_SPRITES[tower.type] ?: return
     val image = sprites.towers[tower.type] ?: return
 
-    // Secim halkasi kulenin ALTINDA
+    // ------------------------------------------------------------------------
+    // 1. DOST TABAN PLAKASI - her seyin altinda (bkz. FriendlyPlate).
+    //
+    // Kulenin oturma noktasi (tower.posX/posY) merkezlidir; GERI TEPME ILE
+    // BIRLIKTE OYNAMAZ. Plaka zemine civilenmis bir platform, kulenin bir
+    // parcasi degil - geri tepmede kayarsa "kule sabit, plaka kayiyor" gibi
+    // bir ayrilma hissi olurdu.
+    //
+    // Uc dolgu dairesi, SIFIR TAHSIS: `Offset`/`Color` deger sinifi, `Fill`
+    // varsayilan tekil nesne. Stroke KULLANILMADI - `Stroke(...)` cagri basina
+    // nesne uretir ve bu kod kule basina HER KARE calisir.
+    // ------------------------------------------------------------------------
+    val plateCenter = Offset(tower.posX, tower.posY)
+    val plateR = spec.widthRefPx * s * FriendlyPlate.RADIUS_FRAC
+    val plateEdge = FriendlyPlate.EDGE_REF_PX * s
+    val plateRim = FriendlyPlate.RIM_REF_PX * s
+    // Dis koyu kontur (parlak biyomlarda tasiyici kanal)
+    drawCircle(color = PLATE_DECK_COLOR, radius = plateR, center = plateCenter)
+    // Parlak camgobegi bant (koyu biyomlarda tasiyici kanal)
+    drawCircle(color = PLATE_RIM_COLOR, radius = plateR - plateEdge, center = plateCenter)
+    // Guverte: kademe centikleri ve kademe-3 yayi bunun uzerine duser
+    drawCircle(
+        color = PLATE_DECK_COLOR,
+        radius = (plateR - plateEdge - plateRim).coerceAtLeast(0f),
+        center = plateCenter
+    )
+
+    // 2. Secim halkasi - PLAKANIN DISINDA (bkz. SELECTION_RADIUS_FRAC KDoc'u).
     if (isSelected) {
         drawCircle(
             color = Color(0xFFFFD54F),
-            radius = spec.widthRefPx * s * 0.62f,
-            center = Offset(tower.posX, tower.posY),
+            radius = spec.widthRefPx * s * FriendlyPlate.SELECTION_RADIUS_FRAC,
+            center = plateCenter,
             style = Stroke(width = 3f * s.coerceAtLeast(0.5f))
         )
     }
@@ -872,7 +1019,56 @@ private fun DrawScope.drawProjectile(proj: ProjectileEntity, sprites: GameSprite
         refWidth * s
     }
 
-    drawSpriteAt(image, proj.posX, proj.posY, widthPx, headingDeg)
+    // P0-5: tracer bes biyomun DORDUNDE esigin altindaydi (1,92-2,50) ve
+    // koyu konturu yok. "Kulem ates ediyor mu" sorusunun yarisini bu sprite
+    // cevapliyor - koyu hale + sicak cekirdek ile cizilir. Diger mermi
+    // tipleri (top mermisi, fuze, buz darbesi) olcumde zaten konturlariyla
+    // esigi geciyor, onlara DOKUNULMAZ.
+    if (proj.type == ProjectileType.BULLET) {
+        drawFxWithOutline(image, proj.posX, proj.posY, widthPx, headingDeg, alpha = 1f)
+    } else {
+        drawSpriteAt(image, proj.posX, proj.posY, widthPx, headingDeg)
+    }
+}
+
+/**
+ * KOYU HALE + SICAK CEKIRDEK ile cizim (VISUAL_AUDIT P0-5).
+ *
+ * Namlu alevi ve tracer'in tek sorunu KONTUR YOKLUGU: ikisi de gradyanli
+ * turuncu-sari parlama ve hicbir biyomda WCAG 3,0'i gecemiyorlar. Burada ayni
+ * bitmap uc gecisle cizilir - koyu hale (parlak zeminler icin), sprite'in
+ * kendisi (renk kimligi), sicak cekirdek (koyu zeminler icin).
+ *
+ * KARE BUTCESI: bir bitmap gecisi EKLENIR (hale) + bir `drawCircle`. Filtre
+ * paylasilan sabit, yeni nesne uretilmez. Cagiran taraf sayisi zaten
+ * sinirlidir: namlu alevi MAX_VISUAL_EFFECTS tavaninda, tracer ise ucusta
+ * olan mermi sayisiyla.
+ */
+private fun DrawScope.drawFxWithOutline(
+    image: ImageBitmap,
+    cx: Float,
+    cy: Float,
+    width: Float,
+    rotationDeg: Float,
+    alpha: Float
+) {
+    if (alpha <= 0f) return
+    drawSpriteAt(
+        image = image,
+        cx = cx,
+        cy = cy,
+        width = width * FxOutline.HALO_SCALE,
+        rotationDeg = rotationDeg,
+        alpha = alpha * FxOutline.HALO_ALPHA_MUL,
+        colorFilter = FX_HALO_FILTER
+    )
+    drawSpriteAt(image = image, cx = cx, cy = cy, width = width, rotationDeg = rotationDeg, alpha = alpha)
+    drawCircle(
+        color = FX_CORE_COLOR,
+        radius = width * FxOutline.CORE_RADIUS_FRAC,
+        center = Offset(cx, cy),
+        alpha = alpha
+    )
 }
 
 private fun DrawScope.drawVisualEffect(fx: VisualEffect, sprites: GameSprites, s: Float) {
@@ -891,10 +1087,15 @@ private fun DrawScope.drawVisualEffect(fx: VisualEffect, sprites: GameSprites, s
         EffectType.MUZZLE_FLASH -> {
             val deg = Math.toDegrees(fx.angleRad.toDouble()).toFloat() -
                 GameConfig.PROJECTILE_SPRITE_BASE_ANGLE_DEG
-            drawSpriteAt(
-                sprites.muzzleFlash, fx.posX, fx.posY,
-                GameConfig.FX_MUZZLE_FLASH_REF_PX * s * fx.scale * (0.75f + eased * 0.45f),
-                rotationDeg = deg, alpha = fade
+            // P0-5: alev BES biyomun BESINDE de esigin altindaydi (en iyi
+            // 2,53). Koyu hale + sicak cekirdek ile cizilir.
+            drawFxWithOutline(
+                image = sprites.muzzleFlash,
+                cx = fx.posX,
+                cy = fx.posY,
+                width = GameConfig.FX_MUZZLE_FLASH_REF_PX * s * fx.scale * (0.75f + eased * 0.45f),
+                rotationDeg = deg,
+                alpha = fade
             )
         }
         EffectType.CANNON_EXPLOSION -> {
