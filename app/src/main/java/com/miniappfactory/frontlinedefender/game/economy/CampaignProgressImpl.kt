@@ -707,6 +707,14 @@ class CampaignProgressImpl(
         refreshCalendar()
     }
 
+    /**
+     * Kampanyada kazanilmayi bekleyen yildiz sayisi. Haftalik "Elit Operator"
+     * gorevinin ARZI budur ve 0'a dustugunde gorev tamamlanamaz hale gelir
+     * (bkz. [reconcileWeekly]).
+     */
+    private val remainingNewStars: Int
+        get() = (EconomyConfig.TOTAL_CAMPAIGN_STARS - wallet.totalStars()).coerceAtLeast(0)
+
     fun refreshCalendar(): ResetDecision {
         val decision = evaluateReset(missionState, clock.sample())
         missionState = decision.newState
@@ -721,8 +729,15 @@ class CampaignProgressImpl(
         }
         if (decision.weeklyReset) {
             saveManager.resetWeeklyCounters()
-            missionState = missionState.copy(weekly = MissionPools.weekly())
+            missionState = missionState.copy(weekly = MissionPools.weekly(remainingNewStars))
         }
+        // ARZ TUKENMESI IKAMESI (ECONOMY_AUDIT_2 madde 5). Hafta donusunun DISINDA
+        // durulmasinin sebebi: arz hafta ORTASINDA biter (oyuncu son yildizini Sali
+        // gunu alir) ve kayittan yuklenen liste ikame kuralindan once yazilmis
+        // olabilir. `reconcileWeekly` tamamlanmis/odulu alinmis gorevi ellemez.
+        missionState = missionState.copy(
+            weekly = reconcileWeekly(missionState.weekly, remainingNewStars),
+        )
         if (decision.clockSuspect) {
             analytics(
                 "clock_suspect_triggered",

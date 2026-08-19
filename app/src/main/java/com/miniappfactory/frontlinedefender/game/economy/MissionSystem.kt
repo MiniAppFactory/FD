@@ -171,21 +171,101 @@ object MissionPools {
         MissionSlot.SKILL -> SKILL
     }
 
-    /** GDD E.2 — iki haftalik gorev, 500 + 600 = 1.100. Sabit, rastgele degil. */
-    fun weekly(): List<WeeklyMission> = listOf(
+    /**
+     * GDD E.2 — iki haftalik gorev, 500 + 600 = 1.100. Sabit, rastgele degil.
+     *
+     * ---------------------------------------------------------------------------
+     * ARZ TUKENMESI (ECONOMY_AUDIT_2 madde 5) — "Elit Operator" 165/165'te OLU
+     * ---------------------------------------------------------------------------
+     * `w_elite_operator` YENI yildiz ister. Yildiz best-of'tur ve asla dusmez,
+     * dolayisiyla kampanyanin toplam arzi SABITTIR: 55 x 3 = 165. Bu tavana
+     * ulasan oyuncu icin gorev **sonsuza kadar tamamlanamaz** hale gelir; panelde
+     * 0/15'te donan bir satir kalir ve haftalik butcenin %55'i (600 / 1.100)
+     * erisilemez olur. Bir onceki gecis sayaci "ilk temizleme" yerine "yildiz
+     * ARTISI" saymaya cevirerek arzi 165'e kadar uzatti ama TAVANI kaldirmadi;
+     * bu, o raporda "kalan acik" olarak birakilan maddedir.
+     *
+     * ## Cozum: ikame, enflasyon DEGIL
+     * Arz yetmiyorsa ayni slot ayni odulle ([EconomyConfig.WEEKLY_ELITE_REWARD])
+     * **tamamlanabilir** bir goreve donusur: `w_elite_reserve`. Haftalik butce
+     * 1.100'de kalir — tek bir coin eklenmez, yalnizca erisilemez olan erisilebilir
+     * yapilir. Odul MIKTARI degismedigi icin bu bir GDD karari degil, GDD E.2'nin
+     * zaten vaat ettigi butcenin teslim edilmesidir.
+     *
+     * ## Neden [MissionType.WEEKLY_LEVELS_COMPLETED] ile ayni tip
+     * Yeni bir `MissionType` yeni bir string kaynagi ve UI dali demek; ekonomi
+     * katmani `res` ve `game.ui` paketlerine dokunmaz. Ayni tipin ikinci bir ornegi
+     * mevcut etiketle dogru okunur ("bu hafta N bolum tamamla") ve [advanceWeekly]
+     * tipe gore ilerledigi icin ekstra baglanti gerektirmez.
+     *
+     * **Bilincli yan etki:** iki gorev ayni sayacla ilerler. Bu bir hata degil
+     * tasarimdir — ikame gorev, uzun sefer gorevinin DEVAMIDIR:
+     * [EconomyConfig.WEEKLY_ELITE_RESERVE_TARGET] = 24, yani 12'lik uzun seferin
+     * iki kati. Oyuncu 1.100'un tamamini almak icin haftada 24 bolum oynamak
+     * zorunda; kampanyayi bitirmis oyuncunun onceki haftalik yuku (12 bolum +
+     * 15 yildiz) ile ayni buyuklukte kalir, ondan HAFIF degildir.
+     *
+     * @param remainingNewStars kampanyada kazanilmayi bekleyen yildiz sayisi
+     *   (165 - kazanilmis). Varsayilan [Int.MAX_VALUE], yani cagiran bilmiyorsa
+     *   bugunku davranis birebir korunur.
+     */
+    fun weekly(remainingNewStars: Int = Int.MAX_VALUE): List<WeeklyMission> = listOf(
         WeeklyMission(
             id = "w_long_patrol",
             type = MissionType.WEEKLY_LEVELS_COMPLETED,
             target = EconomyConfig.WEEKLY_LONG_PATROL_TARGET,
             reward = EconomyConfig.WEEKLY_LONG_PATROL_REWARD,
         ),
-        WeeklyMission(
-            id = "w_elite_operator",
-            type = MissionType.WEEKLY_STARS_EARNED,
-            target = EconomyConfig.WEEKLY_ELITE_TARGET,
-            reward = EconomyConfig.WEEKLY_ELITE_REWARD,
-        ),
+        if (remainingNewStars >= EconomyConfig.WEEKLY_ELITE_TARGET) {
+            WeeklyMission(
+                id = "w_elite_operator",
+                type = MissionType.WEEKLY_STARS_EARNED,
+                target = EconomyConfig.WEEKLY_ELITE_TARGET,
+                reward = EconomyConfig.WEEKLY_ELITE_REWARD,
+            )
+        } else {
+            WeeklyMission(
+                id = "w_elite_reserve",
+                type = MissionType.WEEKLY_LEVELS_COMPLETED,
+                target = EconomyConfig.WEEKLY_ELITE_RESERVE_TARGET,
+                reward = EconomyConfig.WEEKLY_ELITE_REWARD,
+            )
+        },
     )
+}
+
+/**
+ * Elde duran haftalik listeyi kalan yildiz arziyla uzlastirir.
+ *
+ * Haftalik liste yalnizca hafta donusunde uretilir; arz ise hafta ORTASINDA
+ * tukenebilir (oyuncu son yildizini Sali gunu alir). Ayrica kayittan yuklenen
+ * liste, ikame kurali eklenmeden once yazilmis olabilir. Bu fonksiyon her iki
+ * durumu da tek yerde kapatir ve `refreshMissions` yolundan her acilista kosar.
+ *
+ * KURALLAR
+ * - Yalnizca **erisilemez** hale gelmis gorev degistirilir: hedefe ulasmasi icin
+ *   gereken yildiz (`target - progress`) kalan arzdan buyukse.
+ * - Tamamlanmis ya da odulu alinmis gorev **asla** degistirilmez; yoksa
+ *   "tamamla -> ikame -> tekrar tamamla" ile ayni hafta iki kez 600 alinir.
+ * - Ilerleme TASINMAZ. Ikame gorev 0'dan baslar: sayaclar farkli birimlerdedir
+ *   (yildiz vs bolum) ve tasimak 600 coin'i bedava vermek olurdu.
+ * - Ters yon de calisir: arz yeniden acilirsa (yeni bolum paketi) ikame gorev,
+ *   ilerlemesi yoksa asil goreve geri doner.
+ */
+fun reconcileWeekly(weekly: List<WeeklyMission>, remainingNewStars: Int): List<WeeklyMission> {
+    val fresh = MissionPools.weekly(remainingNewStars)
+    return weekly.map { mission ->
+        when {
+            mission.claimed || mission.isComplete -> mission
+            mission.type == MissionType.WEEKLY_STARS_EARNED &&
+                mission.target - mission.progress > remainingNewStars ->
+                fresh.first { it.reward == mission.reward }
+            mission.id == "w_elite_reserve" && mission.progress == 0 &&
+                remainingNewStars >= EconomyConfig.WEEKLY_ELITE_TARGET ->
+                fresh.first { it.reward == mission.reward }
+            else -> mission
+        }
+    }
 }
 
 // =====================================================================================
