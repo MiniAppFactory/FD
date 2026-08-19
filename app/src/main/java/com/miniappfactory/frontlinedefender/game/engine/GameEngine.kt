@@ -166,13 +166,26 @@ internal object GameFeel {
     /**
      * Ucagin sahayi bastan basa gecme suresi. Patlamalar bu pencereye yayilir.
      *
-     * NEDEN 0,42 sn: hasar TEK KAREDE uygulanir (simulasyon degismedi), yalniz
-     * gorsel zincir yayilir. Pencere buyudukce en uzaktaki dusmanin can barinin
-     * dusmesi ile ustundeki patlama arasindaki fark buyur ve olay "gecikmis"
-     * hissedilir. 0,42 sn hem bir SIRA olarak okunur (~7 kare arayla inen
-     * bombalar) hem de o farki tek bir "kosu" izlenimi icinde tutar.
+     * ⚠ 0,42 -> 1,10 sn (2026-08-19). Kullanici "hava destegi daha yavas
+     * gececekti" dedi ve hakliydi: 0,42 sn'de ucak butun sahayi ~25 karede
+     * geciyordu, yani oyuncu satin aldigi seyi GOREMIYORDU ("hava destek
+     * istedim bisey gelmedi sanki" sikayeti tam olarak buydu).
+     *
+     * ESKI GEREKCE NEDEN 0,42'DE TUTUYORDU: hasar TEK KAREDE uygulaniyordu.
+     * Pencere buyudukce, can barlarinin dusmesi ile ustlerindeki patlamalarin
+     * inmesi arasindaki fark buyuyordu — dahasi olen dusman ANINDA siliniyordu,
+     * yani uzun bir pencerede ucak BOSALMIS sahanin ustunden gecerdi.
+     *
+     * O YUZDEN SABIT TEK BASINA BUYUTULMEDI: hasar da ucusa yayildi (bkz.
+     * [GameEngine.runAirStrike] ve `agePendingStrikes`). Her dusman kendi
+     * bombasi indiginde hasari aliyor, yani gorsel ile simulasyon ARTIK AYNI
+     * ANDA. Pencerenin buyumesi bu sayede bir hataya degil, gercek bir
+     * bombardiman kosusuna donusuyor.
+     *
+     * 1,10 sn ~66 kare: ucak sahayi gozle takip edilebilir bir hizda geciyor,
+     * bombalar sirayla iniyor ve olay bir "kosu" olarak okunmaya devam ediyor.
      */
-    const val AIR_STRIKE_RUN_SECONDS = 0.42f
+    const val AIR_STRIKE_RUN_SECONDS = 1.10f
 
     /** Ucagin sahadan cikisi + duman izinin sonme kuyrugu. */
     const val AIR_STRIKE_TAIL_SECONDS = 0.30f
@@ -773,6 +786,29 @@ class GameEngine(
     private class PendingSound(var delaySeconds: Float, val sound: AudioManager.SoundEffect)
 
     private val pendingSounds = mutableListOf<PendingSound>()
+
+    /**
+     * BEKLEYEN HAVA TAARRUZU HASARI — bombasi henuz inmemis hedef.
+     *
+     * Ucus penceresi 0,42'den 1,10 sn'ye cikinca hasari tek karede uygulamak
+     * artik mumkun degildi: dusmanlar ucak daha sahanin basindayken oluyor ve
+     * SILINIYORDU, yani ucak bos zeminin ustunden gecip bombalarini olulerin
+     * hayaletine atiyordu. Hasar da ucusa yayildi; her hedef, ucak KENDI
+     * uzerinden gecerken vuruluyor.
+     *
+     * Zaman tabani simulasyon `dt`si, yani 2x hizda zincir de iki kat hizli
+     * akar ve duraklamada bekler — `pendingSounds` ile ayni kural.
+     *
+     * Tahsis: savas basina en fazla iki taarruz x sahadaki dusman sayisi, ve
+     * liste bombalar inince kendini bosaltir.
+     */
+    private class PendingStrike(
+        var delaySeconds: Float,
+        val enemy: EnemyEntity,
+        val damage: Float
+    )
+
+    private val pendingStrikes = mutableListOf<PendingStrike>()
 
     init {
         loadLevel(GameConfig.levelSpec(1))
@@ -1451,8 +1487,14 @@ class GameEngine(
             val delay = alongRun * runSeconds
 
             val damage = airSupportDamage(enemy.maxHp, fraction)
-            enemy.hp -= damage
-            enemy.hitFlashTimerSeconds = HIT_FLASH_DURATION_SECONDS
+            // HASAR ARTIK BOMBAYLA BIRLIKTE INIYOR (bkz. PendingStrike).
+            // Sifir gecikmeli hedef — ucagin giris noktasindaki dusman — hemen
+            // vurulur; kuyruk yalnizca gercekten bekleyenler icin buyur.
+            if (delay <= 0f) {
+                applyStrikeDamage(enemy, damage)
+            } else {
+                pendingStrikes.add(PendingStrike(delay, enemy, damage))
+            }
 
             // GECIKME TELAFISI (yoksa "bomba yanina dustu" gorunur).
             // `VisualEffect` konumu SABIT, ama hedef gecikme boyunca yuruyor:
@@ -1490,9 +1532,6 @@ class GameEngine(
                 )
             }
 
-            // Var olan olum yolu: odul, skor, kayit sayaci, ses ve efekt
-            // guclendiriciyle olen dusmanda da AYNEN calisir.
-            if (enemy.isDead) onEnemyKilled(enemy)
         }
 
         // ---------------------------------------------------------------------
@@ -1558,6 +1597,77 @@ class GameEngine(
             screenFlashRemaining = 0f
             screenFlashDuration = 0f
         }
+    }
+
+    /**
+     * Tek bir hava taarruzu vurusu. Olum yolu ([onEnemyKilled]) degismedi:
+     * odul, skor, kayit sayaci ve ses guclendiriciyle olen dusmanda da AYNEN
+     * calisir.
+     *
+     * ⚠ `enemies` LISTESINI DEGISTIRIR. Dusman listesi uzerinde donen bir
+     * dongunun ICINDEN cagrilmamalidir; tek istisna, cagirandan once
+     * `enemyIterator.remove()` yapilmis olmasidir (o durumda icerideki
+     * `enemies.remove` bir seye dokunmaz).
+     */
+    private fun applyStrikeDamage(enemy: EnemyEntity, damage: Float) {
+        if (enemy.isDead) return
+        enemy.hp -= damage
+        enemy.hitFlashTimerSeconds = HIT_FLASH_DURATION_SECONDS
+        if (enemy.isDead) onEnemyKilled(enemy)
+    }
+
+    /**
+     * Bombalari indir. [agePendingSounds] ile ayni desen ve ayni sebeple geriye
+     * dogru dolasir.
+     *
+     * KARE SIRASI ONEMLI: bu, dusmanlar HAREKET ETMEDEN once kosar. Aksi halde
+     * bombasi bu karede inecek bir dusman once bir adim atar, usse varir ve can
+     * goturur — oyuncunun zaten odedigi hasari yemeden.
+     */
+    private fun agePendingStrikes(dt: Float) {
+        if (pendingStrikes.isEmpty()) return
+        var i = pendingStrikes.size - 1
+        while (i >= 0) {
+            val strike = pendingStrikes[i]
+            strike.delaySeconds -= dt
+            // Baska bir kule bu arada oldurmusse bomba bosa duser: hedef zaten
+            // yok. Kuyruktan dusurmek sart, yoksa olu dusmana referans savas
+            // boyunca elde kalirdi.
+            if (strike.enemy.isDead) {
+                pendingStrikes.removeAt(i)
+            } else if (strike.delaySeconds <= 0f) {
+                applyStrikeDamage(strike.enemy, strike.damage)
+                pendingStrikes.removeAt(i)
+            }
+            i--
+        }
+    }
+
+    /**
+     * Usse VARAN bir dusmanin bekleyen bombasini ANINDA indirir.
+     *
+     * Ucak soldan saga gectigi ve us sagda oldugu icin usse en yakin dusmanlar
+     * en GEC vurulanlardir — yani "bombasini beklerken kacan dusman" senaryosu
+     * tam olarak buradan dogar. Bu kapi olmasa, oyuncu bedelini odedigi hasari
+     * goremeden can kaybederdi.
+     *
+     * @return dusman bu hasarla oldu mu. `true` ise can KAYBEDILMEZ; dusman
+     *   usse varmadan, kapisinda imha edilmis sayilir.
+     */
+    private fun flushPendingStrikeFor(enemy: EnemyEntity): Boolean {
+        var owed = 0f
+        var i = pendingStrikes.size - 1
+        while (i >= 0) {
+            if (pendingStrikes[i].enemy === enemy) {
+                owed += pendingStrikes[i].damage
+                pendingStrikes.removeAt(i)
+            }
+            i--
+        }
+        if (owed <= 0f) return false
+        enemy.hp -= owed
+        enemy.hitFlashTimerSeconds = HIT_FLASH_DURATION_SECONDS
+        return enemy.isDead
     }
 
     /**
@@ -1675,6 +1785,11 @@ class GameEngine(
 
         ageCosmetics(dt)
 
+        // Bombalar dusmanlar HAREKET ETMEDEN once iner (bkz. agePendingStrikes
+        // KDoc'u): aksi halde bu karede vurulacak bir dusman once bir adim atip
+        // usse varabilir ve oyuncunun zaten odedigi hasari yemeden can goturur.
+        agePendingStrikes(dt)
+
         // Preparation phase
         if (_gameState.value == GameState.PREPARATION) {
             _preparationTimer.value -= dt
@@ -1732,6 +1847,19 @@ class GameEngine(
 
                     // Check if reached final base
                     if (enemy.currentWayPointIndex >= route.size - 1) {
+                        // ODENMIS AMA INMEMIS BOMBA: usse varan dusman once onu
+                        // yer. Ucak soldan saga gectigi ve us sagda oldugu icin
+                        // usse en yakin dusmanlar en GEC vurulanlardir, yani bu
+                        // durum tam olarak burada dogar. Kapi olmasaydi oyuncu
+                        // bedelini odedigi hasari goremeden can kaybederdi.
+                        if (flushPendingStrikeFor(enemy)) {
+                            // `enemies.remove` cagrilmadan once iteratorden
+                            // dusurulur; onEnemyKilled icindeki liste silme
+                            // boylece bir seye dokunmaz ve dongu gecerli kalir.
+                            enemyIterator.remove()
+                            onEnemyKilled(enemy)
+                            continue
+                        }
                         _lives.value -= GameConfig.BASE_REACHED_PENALTY_LIVES
                         // Faz 3: us hasari = agir patlama + sarsinti. Eskiden
                         // "dusman isabeti" sesi caliyordu, oyuncu can kaybini
@@ -2380,6 +2508,10 @@ class GameEngine(
         screenFlashRemaining = 0f
         screenFlashDuration = 0f
         pendingSounds.clear()
+        // Bekleyen bombalar da dusurulur. Temizlenmezse bir onceki savastan
+        // kalan hasar, yeni bolumun ilk karesinde ARTIK VAR OLMAYAN bir dusman
+        // referansi uzerinden inerdi; ustelik liste savas boyunca sizardi.
+        pendingStrikes.clear()
     }
 
     /**

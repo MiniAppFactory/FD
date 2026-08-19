@@ -124,6 +124,77 @@ class AirStrikeFeedbackTest {
         return added
     }
 
+    /**
+     * Zincirin EN GEC halkasi bitene kadar gereken kare sayisi (60 FPS).
+     *
+     * Elle yazilan kare sayilari bu dosyada iki kez bayatladi; sayi artik
+     * penceresini ureten sabitlerden turetiliyor. Iki kare pay, kayan nokta
+     * yuvarlamasi icin.
+     */
+    private fun chainFrames(): Int {
+        val window = GameFeel.AIR_STRIKE_RUN_SECONDS +
+            GameFeel.AIR_STRIKE_DAMAGE_TEXT_LAG_SECONDS
+        return (window * 60f).toInt() + 2
+    }
+
+    /**
+     * ADALET KAPISI — odenmis ama inmemis bomba can goturemez.
+     *
+     * Ucus penceresi 1,10 sn'ye cikinca yeni bir carpisma dogdu: ucak soldan
+     * saga geciyor, us de SAGDA. Yani usse en yakin dusmanlar bombalarini EN
+     * GEC alanlar. Kapi olmasaydi oyuncu, bedelini odedigi hasar inmeden once
+     * o dusmanin usse girdigini gorur ve can kaybederdi — hem de tam olarak
+     * onu durdurmak icin harcadigi guclendirici yuzunden.
+     *
+     * Sahne bu carpismayi bilerek en uc noktasinda kuruyor: hedef rotanin SON
+     * kavsaginda, tam hizla, ve bombasi penceredeki en gec halka.
+     */
+    @Test
+    fun anEnemyReachingTheBaseWithAnUndeliveredBombDoesNotStealALife() {
+        engine.startNextWaveNow()
+        val route = engine.scaledRoutes.first()
+        val livesBefore = engine.lives.value
+
+        engine.enemies.clear()
+        engine.visualEffects.clear()
+
+        // maxHp 100 / hp 30: taarruz 45 hasar verir, yani bu dusmani OLDURUR.
+        // Olmeseydi test adalet kapisini degil, sadece hayatta kalmayi olcerdi.
+        val doomed = EnemyEntity(
+            type = GameConfig.EnemyType.INFANTRY,
+            posX = route[route.size - 2].x,
+            posY = route[route.size - 2].y,
+            currentWayPointIndex = route.size - 2,
+            hp = 30f,
+            maxHp = 100f,
+            baseSpeed = 4000f,   // sonraki karede usse varacak kadar hizli
+            armor = 0f,
+            rewardGold = 5,
+            radius = 16f
+        )
+        engine.enemies.add(doomed)
+
+        assertTrue(engine.applyBoosterActivation(airStrike()))
+        repeat(chainFrames()) { engine.tick(1f / 60f) }
+
+        assertEquals(
+            "Bekleyen bombasi olan dusman usse girip can goturdu — oyuncu " +
+                "odedigi hasari goremeden ceza yedi",
+            livesBefore,
+            engine.lives.value
+        )
+        // SADECE O DUSMAN sorulur: dalga bu arada yeni dusmanlar doguruyor,
+        // `enemies.isEmpty()` demek testi baskasinin davranisina baglardi.
+        //
+        // Bu iddia testin DUYARLILIGINI da kanitliyor: hedef gercekten usse
+        // vardi (listeden dustu). Yerinde kalsaydi can kaybi zaten olmazdi ve
+        // yukaridaki esitlik dogru sonucu yanlis sebeple verirdi.
+        assertTrue(
+            "Hedef usse varmadi — sahne kurulmamis, test adalet kapisini olcmuyor",
+            engine.enemies.none { it === doomed }
+        )
+    }
+
     private fun effectsOf(type: EffectType): List<VisualEffect> =
         engine.visualEffects.filter { it.type == type }
 
@@ -158,6 +229,21 @@ class AirStrikeFeedbackTest {
         val expected = airSupportDamage(maxHp, EconomyConfig.AIR_SUPPORT_DAMAGE_FRACTION)
 
         assertTrue(engine.applyBoosterActivation(airStrike()))
+
+        // ⚠ SOZLESME DEGISTI (2026-08-19): hasar artik TEK KAREDE degil,
+        // BOMBAYLA BIRLIKTE iniyor. Eskiden bu test aktivasyondan hemen sonra
+        // hasari olcuyordu; kosu penceresi 0,42'den 1,10 sn'ye cikarken hasari
+        // t=0'da birakmak, ucagin BOSALMIS sahanin ustunden gecmesi demekti
+        // (olen dusman aninda siliniyor).
+        //
+        // Once "henuz vurulmadi"yi kanitliyoruz — yoksa asagidaki olcum, hasar
+        // gene t=0'da uygulansa da gecerdi ve test degisikligi dogrulamazdi.
+        assertTrue(
+            "Ucagin ilerisindeki hedefler bombalari inmeden vurulmamali",
+            enemies.drop(1).all { it.hp == maxHp }
+        )
+
+        repeat(chainFrames()) { engine.tick(1f / 60f) }
 
         enemies.forEach { enemy ->
             assertEquals(
@@ -352,8 +438,10 @@ class AirStrikeFeedbackTest {
         val pending = effectsOf(EffectType.CANNON_EXPLOSION).count { it.ageSeconds < 0f }
         assertTrue("Zincirin bir kismi beklemede olmali", pending > 0)
 
-        // Kosu penceresi kadar simulasyon: tum halkalar acilmis olmali.
-        repeat(40) { engine.tick(1f / 60f) }
+        // ⚠ ESKIDEN `repeat(40)` (0,67 sn) YAZIYORDU ve kosu penceresi 0,42'den
+        // 1,10 sn'ye cikinca sessizce yetmez oldu. Kare sayisi artik SABITTEN
+        // turetiliyor; pencere bir daha degistiginde test onunla tasinir.
+        repeat(chainFrames()) { engine.tick(1f / 60f) }
         assertTrue(
             "Kosu bittikten sonra bekleyen halka kalmamali",
             engine.visualEffects.none { it.ageSeconds < 0f }
@@ -563,7 +651,7 @@ class AirStrikeFeedbackTest {
         assertEquals("Duraklamada zincir donmali", before, during)
 
         engine.togglePause()
-        repeat(40) { engine.tick(1f / 60f) }
+        repeat(chainFrames()) { engine.tick(1f / 60f) }
         assertTrue(
             "Devam edince zincir kaldigi yerden akmali",
             engine.visualEffects.none { it.ageSeconds < 0f }

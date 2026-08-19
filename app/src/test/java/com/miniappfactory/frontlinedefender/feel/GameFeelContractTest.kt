@@ -127,17 +127,32 @@ class GameFeelContractTest {
     // --------------------------------------------------- hava taarruzu penceresi
 
     /**
-     * Zincir penceresi bir SOZLESME: hasar tek karede uygulanir, yalnizca
-     * GORSEL yayilir. Pencere buyudukce en uzaktaki hedefin can barinin
-     * dusmesi ile ustundeki patlama arasindaki fark buyur ve olay "gecikmis
-     * kontrol" olarak okunur — teknik olarak dogru, hissen bozuk.
+     * ⚠ UST SINIR 0,6 -> 1,5 sn (2026-08-19), CUNKU SEBEBI ORTADAN KALKTI.
+     *
+     * Eski gerekce aynen suydu: "hasar tek karede uygulanir, yalnizca GORSEL
+     * yayilir; pencere buyudukce can barinin dusmesi ile patlamanin inmesi
+     * ayrisir". Dogru bir gerekceydi — ama dayandigi PREMIS artik yok: hasar da
+     * ucusa yayildi, her hedef kendi bombasi indiginde vuruluyor
+     * (`GameEngine.agePendingStrikes`). Ayrisma diye bir sey kalmadi.
+     *
+     * Bu ayrimi yazili birakiyorum cunku bu depoda "test hatanin kendisini
+     * savunuyor" sinifi defalarca cikti ve disaridan bu degisiklik ona benzer.
+     * Fark: sinir gevsetilmedi, sinirin OLCTUGU SEY degisti. Onceki premiste
+     * 0,6 dogru sayiydi; premis dusunce sinirin de dusmesi gerekirdi.
+     *
+     * UST SINIR YINE DE VAR ve baska bir seyi koruyor: oyuncu bedelini oder
+     * odemez sonucu gormeli. 1,5 sn'yi asan bir kosu, satin alma ile sonuc
+     * arasina oyuncunun bekledigi bir bosluk koyar.
+     *
+     * ALT SINIR DEGISMEDI: birkac kareden kisa bir pencere SIRA olusturmaz,
+     * tek puf gorunur — kullanicinin "bir sey gelmedi sanki" dedigi durum.
      */
     @Test
-    fun airStrikeChainWindowIsShortEnoughToReadAsOneEvent() {
+    fun airStrikeChainWindowReadsAsOneRunWithoutMakingThePlayerWait() {
         assertTrue(
-            "Zincir penceresi (${GameFeel.AIR_STRIKE_RUN_SECONDS} sn) 0,6 sn'yi gecerse " +
-                "hasar ile patlama gorunur sekilde ayrisir",
-            GameFeel.AIR_STRIKE_RUN_SECONDS <= 0.6f
+            "Zincir penceresi (${GameFeel.AIR_STRIKE_RUN_SECONDS} sn) 1,5 sn'yi gecerse " +
+                "oyuncu odedigi seyin sonucunu beklemeye baslar",
+            GameFeel.AIR_STRIKE_RUN_SECONDS <= 1.5f
         )
         assertTrue(
             "Pencere en az birkac kare olmali, yoksa SIRA olusmaz ve tek puf gorunur",
