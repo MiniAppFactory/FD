@@ -2,6 +2,7 @@ package com.miniappfactory.frontlinedefender.tutorial
 
 import com.miniappfactory.frontlinedefender.game.engine.GameState
 import com.miniappfactory.frontlinedefender.game.model.GameConfig
+import com.miniappfactory.frontlinedefender.game.model.WaveDefinitions
 import com.miniappfactory.frontlinedefender.game.ui.HintCopy
 import com.miniappfactory.frontlinedefender.game.ui.HintFlow
 import com.miniappfactory.frontlinedefender.game.ui.HintSignals
@@ -45,7 +46,17 @@ class UnlockHintFlowTest {
         gameState: GameState = GameState.PREPARATION,
         waveIndex: Int = 0,
         tutorialArmed: Boolean = false,
-        levelEnemies: Set<GameConfig.EnemyType> = emptySet(),
+        // VARSAYILAN, KAMPANYANIN GERCEK TABLOSU — bos kume DEGIL.
+        //
+        // Eskiden `emptySet()` idi ve bu, gercek bir bolumde asla olusmayan
+        // bir durumdu: her bolumde en az bir dusman tipi vardir. Fikstur
+        // gercek disi oldugu icin "ipucu, o bolumde CIKAN bir dusmani
+        // anlatmali" kurali test edilemez haldeydi ve kural kodda da yoktu
+        // (bkz. HintTeachesPresentEnemyTest).
+        levelEnemies: Set<GameConfig.EnemyType> =
+            WaveDefinitions.wavesFor(levelId)
+                .flatMap { wave -> wave.spawns.map { it.enemyType } }
+                .toSet(),
         incomingArmored: Set<GameConfig.EnemyType> = emptySet()
     ) = HintSignals(
         gameState = gameState,
@@ -74,6 +85,24 @@ class UnlockHintFlowTest {
     private fun unlockLevel(hint: UnlockHint): Int =
         unlockLevel(requireNotNull(hint.unlockTower) { "$hint bir kule kilidine bagli degil" })
 
+    /**
+     * Bir kule ipucunun GERCEKTEN gosterilebildigi ilk bolum.
+     *
+     * Kilidin acildigi bolum ILE AYNI OLMAK ZORUNDA DEGIL: kule L3te acilabilir
+     * ama dersin ornek dusmani L5e kadar sahaya cikmayabilir. Ipucu o zamana
+     * kadar ERTELENIR (bkz. HintTeachesPresentEnemyTest); goruldu yazilmadigi
+     * icin ders kaybolmaz.
+     *
+     * Zamanlama ve durum-makinesi testleri bu bolumu kullanir: onlarin olctugu
+     * sey ipucunun ICERIGI degil, gorunme suresi ve duraklatma davranisidir.
+     * Ipucunun hic cikmadigi bir bolumde kurulurlarsa olctukleri seyi
+     * olcemezler.
+     */
+    private fun firstShowableLevel(hint: UnlockHint): Int =
+        (1..GameConfig.CAMPAIGN_LEVEL_COUNT).first { level ->
+            HintFlow.isTriggered(hint, signals(levelId = level))
+        }
+
     private val towerHints = UnlockHint.values().filter { it.unlockTower != null }
 
     // =======================================================================
@@ -90,9 +119,17 @@ class UnlockHintFlowTest {
         for (hint in towerHints) {
             val level = unlockLevel(hint)
 
+            // ⚠ SOZLESME 2026-08-19'DA DARALTILDI. Eskiden burada "ipucu
+            // kilidin acildigi bolumde TETIKLENMELI" yaziyordu ve bu, ipucunun
+            // oyuncunun o bolumde hic gormedigi bir dusmani anlatmasina izin
+            // veriyordu (L3'te Top acilir, ders Kalkanli Er'i anlatirdi, o
+            // dusman ilk kez L9'da cikar). Yeni kural: kilit acilmasi GEREK
+            // ama YETER degil — dersin ornegi de sahada olmali.
+            val showable = firstShowableLevel(hint)
             assertTrue(
-                "$hint kilidin acildigi bolumde ($level) tetiklenmeli",
-                HintFlow.isTriggered(hint, signals(levelId = level))
+                "$hint kilit acilmadan ONCE gosterilemez: gosterilebildigi ilk " +
+                    "bolum $showable, kilit bolumu $level",
+                showable >= level
             )
             if (level > 1) {
                 assertFalse(
@@ -101,8 +138,8 @@ class UnlockHintFlowTest {
                 )
             }
             assertTrue(
-                "$hint kilit acildiktan SONRAKI bolumlerde de gecerli kalmali",
-                HintFlow.isTriggered(hint, signals(levelId = level + 5))
+                "$hint gosterilebildigi bolumden SONRA da gecerli kalmali",
+                HintFlow.isTriggered(hint, signals(levelId = showable))
             )
         }
     }
@@ -149,7 +186,7 @@ class UnlockHintFlowTest {
 
     @Test
     fun aHintIsRetiredAfterItsVisibleWindow() {
-        val level = unlockLevel(UnlockHint.CANNON_ROLE)
+        val level = firstShowableLevel(UnlockHint.CANNON_ROLE)
         val at = signals(levelId = level)
 
         var state = HintFlow.update(HintFlow.start(emptySet()), at, FRAME)
@@ -165,7 +202,7 @@ class UnlockHintFlowTest {
 
     @Test
     fun aSeenHintNeverComesBack() {
-        val level = unlockLevel(UnlockHint.CANNON_ROLE)
+        val level = firstShowableLevel(UnlockHint.CANNON_ROLE)
         val seen = HintFlow.PRIORITY.toSet() - UnlockHint.CANNON_ROLE
         val state = HintState(seen = seen + UnlockHint.CANNON_ROLE)
 
@@ -187,7 +224,7 @@ class UnlockHintFlowTest {
      */
     @Test
     fun theArmourWarningOutranksEveryUnlockHint() {
-        val level = unlockLevel(UnlockHint.MISSILE_ROLE)
+        val level = firstShowableLevel(UnlockHint.MISSILE_ROLE)
         val everythingEligible = signals(
             levelId = level,
             incomingArmored = setOf(GameConfig.EnemyType.TANK)
@@ -203,7 +240,7 @@ class UnlockHintFlowTest {
     /** Denetimin en buyuk sayisal farki once ogretilir. */
     @Test
     fun theMissileLessonOutranksCannonAndFrost() {
-        val level = unlockLevel(UnlockHint.MISSILE_ROLE)
+        val level = firstShowableLevel(UnlockHint.MISSILE_ROLE)
         val state = HintFlow.start(setOf(UnlockHint.ARMOR_INTRO))
 
         assertEquals(
@@ -219,7 +256,7 @@ class UnlockHintFlowTest {
 
     @Test
     fun onlyOneHintPerPreparationPhase() {
-        val level = unlockLevel(UnlockHint.MISSILE_ROLE)
+        val level = firstShowableLevel(UnlockHint.MISSILE_ROLE)
         val wave = signals(levelId = level, waveIndex = 3)
 
         // Ilk ipucu cikar, suresi dolar, kalici yazilir.
@@ -247,7 +284,7 @@ class UnlockHintFlowTest {
 
     @Test
     fun theTutorialSuppressesEveryHint() {
-        val level = unlockLevel(UnlockHint.CANNON_ROLE)
+        val level = firstShowableLevel(UnlockHint.CANNON_ROLE)
         for (hint in UnlockHint.values()) {
             assertNull(
                 "ilk oturum ogreticisi kosarken hicbir ipucu cikmamali ($hint)",
@@ -276,7 +313,7 @@ class UnlockHintFlowTest {
 
     @Test
     fun startingTheWaveHidesTheStripImmediately() {
-        val level = unlockLevel(UnlockHint.CANNON_ROLE)
+        val level = firstShowableLevel(UnlockHint.CANNON_ROLE)
         val prep = signals(levelId = level)
 
         var state = HintFlow.update(HintFlow.start(emptySet()), prep, FRAME)
@@ -289,7 +326,7 @@ class UnlockHintFlowTest {
 
     @Test
     fun pauseFreezesTheVisibleWindow() {
-        val level = unlockLevel(UnlockHint.CANNON_ROLE)
+        val level = firstShowableLevel(UnlockHint.CANNON_ROLE)
         val prep = signals(levelId = level)
 
         var state = HintFlow.update(HintFlow.start(emptySet()), prep, FRAME)
@@ -311,7 +348,7 @@ class UnlockHintFlowTest {
 
     @Test
     fun aHintReadForTooShortIsNotBurned() {
-        val level = unlockLevel(UnlockHint.CANNON_ROLE)
+        val level = firstShowableLevel(UnlockHint.CANNON_ROLE)
         val prep = signals(levelId = level)
 
         var state = HintFlow.update(HintFlow.start(emptySet()), prep, FRAME)
@@ -328,7 +365,7 @@ class UnlockHintFlowTest {
 
     @Test
     fun dismissingBurnsTheHintEvenInstantly() {
-        val level = unlockLevel(UnlockHint.CANNON_ROLE)
+        val level = firstShowableLevel(UnlockHint.CANNON_ROLE)
         val prep = signals(levelId = level)
 
         val shown = HintFlow.update(HintFlow.start(emptySet()), prep, FRAME)
@@ -349,7 +386,7 @@ class UnlockHintFlowTest {
 
     @Test
     fun negativeFrameTimeIsIgnored() {
-        val level = unlockLevel(UnlockHint.CANNON_ROLE)
+        val level = firstShowableLevel(UnlockHint.CANNON_ROLE)
         val prep = signals(levelId = level)
 
         var state = HintFlow.update(HintFlow.start(emptySet()), prep, FRAME)
@@ -371,7 +408,7 @@ class UnlockHintFlowTest {
      */
     @Test
     fun theExampleEnemyIsOneThePlayerActuallyMeets() {
-        val level = unlockLevel(UnlockHint.MISSILE_ROLE)
+        val level = firstShowableLevel(UnlockHint.MISSILE_ROLE)
         val present = setOf(
             GameConfig.EnemyType.INFANTRY,
             GameConfig.EnemyType.ARMORED_VEHICLE
@@ -390,7 +427,7 @@ class UnlockHintFlowTest {
     /** Bolumde hicbir aday yoksa ipucu yine de anlamli bir hedefe duser. */
     @Test
     fun theExampleEnemyFallsBackInsteadOfVanishing() {
-        val level = unlockLevel(UnlockHint.MISSILE_ROLE)
+        val level = firstShowableLevel(UnlockHint.MISSILE_ROLE)
         val copy = HintFlow.copyFor(UnlockHint.MISSILE_ROLE, signals(levelId = level))
         assertNotNull("bolum verisi bos olsa bile rol dersi verilebilmeli", copy)
     }

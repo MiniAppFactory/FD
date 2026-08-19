@@ -1125,10 +1125,34 @@ object HintFlow {
     fun isOverlayVisible(gameState: GameState): Boolean =
         gameState == GameState.PREPARATION
 
-    /** Bu ipucunun KOSULU sagladi mi? Bolum numarasi degil, kilit olayi. */
+    /**
+     * Bu ipucunun anlatacagi ornek dusman BU BOLUMDE sahaya cikiyor mu?
+     *
+     * Kule acilmasi tek basina yeterli bir kosul DEGIL: kule L3'te acilabilir
+     * ama dersin ornegi L5'e kadar gelmeyebilir. Bu ayrimin olmamasi,
+     * oyuncunun gordugu ilk ipucunun hic karsilasmadigi bir birimi anlatmasina
+     * yol aciyordu (bkz. [pick]).
+     */
+    private fun hasTeachableExample(hint: UnlockHint, signals: HintSignals): Boolean =
+        when (hint) {
+            UnlockHint.MISSILE_ROLE -> MISSILE_TARGETS.any { it in signals.levelEnemyTypes }
+            UnlockHint.CANNON_ROLE -> CANNON_TARGETS.any { it in signals.levelEnemyTypes }
+            // Digerleri ornegini zirhsiz tabandan alir (piyade her bolumde var)
+            // ya da zaten sahadaki zirhliyi kosul kosar.
+            else -> true
+        }
+
+    /**
+     * Bu ipucunun KOSULU sagladi mi? Bolum numarasi degil, kilit olayi.
+     *
+     * Iki kosul birlikte: kule ACILMIS olacak VE dersin ornegi bu bolumde
+     * gercekten cikacak. Ikincisi olmadan ipucu "gorulduye" yazilir ve dogru
+     * an geldiginde bir daha hic cikmazdi.
+     */
     fun isTriggered(hint: UnlockHint, signals: HintSignals): Boolean {
         val tower = hint.unlockTower ?: return signals.incomingArmoredTypes.isNotEmpty()
-        return GameConfig.isTowerUnlocked(tower, signals.levelId)
+        return GameConfig.isTowerUnlocked(tower, signals.levelId) &&
+            hasTeachableExample(hint, signals)
     }
 
     /** Ortam ipucu gostermeye musait mi? (faz + ogretici cakismasi) */
@@ -1229,12 +1253,27 @@ object HintFlow {
     private fun softSample(signals: HintSignals): GameConfig.EnemyType =
         SOFT_TARGETS.firstOrNull { it in signals.levelEnemyTypes } ?: SOFT_TARGETS.first()
 
-    /** Aday listesinden bu bolumde GERCEKTEN cikan ilk tip; yoksa listenin ilki. */
+    /**
+     * Aday listesinden bu bolumde GERCEKTEN cikan ilk tip.
+     *
+     * ⛔ ESKIDEN `?: candidates.first()` ILE LISTENIN ILKINE DUSUYORDU ve bu,
+     * dosyanin kendi sozlesmesini ("oyuncunun HIC gormedigi bir dusmanla ders
+     * vermek ogretmez, kafa karistirir") ihlal ediyordu. Somut sonuc: L3'te Top
+     * acilir, `CANNON_TARGETS`'in ilki Kalkanli Er'dir, ama L3'un butun
+     * dalgalari yalnizca piyade + hizli er — Kalkanli Er ilk kez L9'da cikar.
+     * Yani oyuncunun hayatindaki ILK baglamsal ipucu, alti bolum sonra
+     * gorecegi bir birimi anlatiyordu.
+     *
+     * Artik `null` donuyor; ipucu o bolumde CIZILMEZ ama GORULDU DE
+     * SAYILMAZ — [isTriggered] ornegin varligini kosul kostugu icin ayni ipucu
+     * ornek sahaya ilk ciktiginda kendiliginden gelir. Yani ders kaybolmuyor,
+     * ERTELENIYOR.
+     */
     private fun pick(
         candidates: List<GameConfig.EnemyType>,
         signals: HintSignals
-    ): GameConfig.EnemyType =
-        candidates.firstOrNull { it in signals.levelEnemyTypes } ?: candidates.first()
+    ): GameConfig.EnemyType? =
+        candidates.firstOrNull { it in signals.levelEnemyTypes }
 
     /**
      * Ipucunun ekranda gosterecegi TUM veri. Metnin kendisi degil: sayilar,
@@ -1284,14 +1323,19 @@ object HintFlow {
         }
     }
 
-    /** Ayni hedef, iki kule: eski (Gatling) ve yeni acilan. */
+    /**
+     * Ayni hedef, iki kule: eski (Gatling) ve yeni acilan.
+     *
+     * Ornek dusman bu bolumde cikmiyorsa `null` doner — sinifin geri kalaninda
+     * oldugu gibi, "yarim bir ders vermektense hic vermemek dogru".
+     */
     private fun matchup(
         hint: UnlockHint,
         newTower: GameConfig.TowerType,
         candidates: List<GameConfig.EnemyType>,
         signals: HintSignals
-    ): HintCopy {
-        val enemy = pick(candidates, signals)
+    ): HintCopy? {
+        val enemy = pick(candidates, signals) ?: return null
         val oldTower = GameConfig.TowerType.MACHINE_GUN
         return HintCopy.TowerMatchup(
             hint = hint,
