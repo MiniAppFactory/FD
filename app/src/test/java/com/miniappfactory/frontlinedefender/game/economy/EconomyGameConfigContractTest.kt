@@ -91,12 +91,21 @@ class EconomyGameConfigContractTest {
 
     @Test
     fun fortificationCeilingStaysWithinDesignedRange() {
-        // GDD F: 20 -> 30. Motor `LevelSpec.maxBaseLives` uzerinden calisiyor, meta
-        // bunu buyuttugu icin yildiz esiklerinin yuzde olmasi zorunluydu (B.3).
-        assertEquals(30, MetaUpgrades(fortification = 5).maxBaseHealth)
+        // GDD F: 20 -> 30 idi; ECONOMY_AUDIT_2 P0 ile hat 9 rank'a cikti, 20 -> 38.
+        // Motor `LevelSpec.maxBaseLives` uzerinden calisiyor, meta bunu buyuttugu
+        // icin yildiz esiklerinin yuzde olmasi zorunluydu (B.3).
+        val top = UpgradeLine.FORTIFICATION.maxRank
+        assertEquals(38, MetaUpgrades(fortification = top).maxBaseHealth)
+        assertEquals(
+            "her rank +2 can — tavan hattin uzunlugundan turemeli, elle yazilmamali",
+            GameConfig.INITIAL_BASE_LIVES + 2 * top,
+            MetaUpgrades(fortification = top).maxBaseHealth,
+        )
+        // **SERT TAVAN.** 40 canda tam meta L11'i (4 sizinti) 3 yildiza cevirir;
+        // EconomySimulationTest.maxedMetaDoesNotMakePeakLevelsThreeStarTrivial.
         assertTrue(
-            "meta us cani tavani bolum tabanini asmali ama 30'u gecmemeli",
-            MetaUpgrades(fortification = 5).maxBaseHealth == GameConfig.INITIAL_BASE_LIVES + 10,
+            "meta us cani tavani 38'i GECEMEZ (zorluk egrisi kilidi)",
+            MetaUpgrades(fortification = top).maxBaseHealth <= 38,
         )
     }
 }

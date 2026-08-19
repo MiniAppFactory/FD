@@ -182,20 +182,79 @@ class MetaUpgradeImpactTest {
         }
     }
 
-    /** Agacin toplam gucu ve fiyati GDD F ile ayni kalmali (granularite degisti, guc degil). */
+    /**
+     * Agacin SALDIRI gucu GDD F ile ayni kalmali. ECONOMY_AUDIT_2 P0 agaci
+     * 13.900 -> 19.600'e buyuttu ama bunu **yalnizca** zorluk egrisinin disindaki
+     * iki eksende yapti (Us Tahkimi tolerans, Hurda Degeri iade). Hasar, menzil
+     * ve baslangic sermayesi tavanlari birebir DEGISMEDI.
+     */
     @Test
-    fun regranulationKeptTheTreeTotalsIntact() {
+    fun treeGrewOnlyOnTheAxesOutsideTheDifficultyLock() {
         val maxed = maxedTree()
         assertEquals(EconomyConfig.TREE_TOTAL_COST, maxed.spentCoins())
         assertEquals(EconomyConfig.TREE_TOTAL_RANKS, maxed.totalRanks())
+        assertEquals(19_600, maxed.spentCoins())
+        assertEquals(23, maxed.totalRanks())
+
+        // --- DOKUNULMAYANLAR ---
         assertEquals("hasar +%24", 1.24, maxed.damageMultiplier, 1e-9)
         assertEquals("menzil +%15", 1.15, maxed.rangeMultiplier, 1e-9)
         assertEquals(300, maxed.startingSupply)
-        assertEquals(30, maxed.maxBaseHealth)
         assertEquals("etkin verim 1,426 — zorluk egrisi kilidi bunun uzerine kurulu",
             1.4260, maxed.effectiveThroughput, 1e-4)
         assertEquals(4_000, UpgradeLine.FIREPOWER.totalCost())
         assertEquals(2_750, UpgradeLine.OPTICS.totalCost())
+        assertEquals(2_700, UpgradeLine.STARTING_SUPPLY.totalCost())
+
+        // --- BUYUYENLER ---
+        assertEquals("maks us cani 30 -> 38", 38, maxed.maxBaseHealth)
+        assertEquals("satis iadesi %90 -> %95", 0.95, maxed.salvageRatio, 1e-9)
+        assertEquals(7_650, UpgradeLine.FORTIFICATION.totalCost())
+        assertEquals(2_500, UpgradeLine.SALVAGE.totalCost())
+        assertEquals(
+            "agacin buyumesinin TAMAMI bu iki hattan gelmeli",
+            19_600 - 13_900,
+            (7_650 - 2_750) + (2_500 - 1_700),
+        )
+    }
+
+    /**
+     * **FIYAT/ETKI EGRISI YUKSELMEDI — AGAC BUYURKEN DE.** (Hard Rule)
+     *
+     * Agaci 19.600'e cikaran sey bir zam degil, iki hattin var olan aritmetik
+     * merdiveninin DEVAMIDIR: her iki hat da rank basina +150 coin adimiyla
+     * ilerliyordu ve yeni rank'lar tam olarak o adimi surduruyor. Hicbir MEVCUT
+     * rank'in fiyati veya etkisi degismedi, yani ayni gucu almanin bedeli hicbir
+     * noktada artmadi. Bu test, ilerideki bir "biraz zam yapalim" adimini
+     * kirmizi yakar.
+     */
+    @Test
+    fun treeExtensionContinuedTheExistingPriceLadder() {
+        for (line in listOf(UpgradeLine.FORTIFICATION, UpgradeLine.SALVAGE)) {
+            val step = line.costOfRank(2) - line.costOfRank(1)
+            assertEquals("$line adimi 150 olmali", 150, step)
+            for (rank in 2..line.maxRank) {
+                assertEquals(
+                    "$line r$rank fiyati merdivenden sapiyor — bu bir ZAM olur",
+                    step, line.costOfRank(rank) - line.costOfRank(rank - 1),
+                )
+            }
+        }
+        // Eklemeden ONCEKI rank'larin fiyatlari birebir korundu.
+        assertEquals(listOf(250, 400, 550, 700, 850), (1..5).map { UpgradeLine.FORTIFICATION.costOfRank(it) })
+        assertEquals(listOf(200, 350, 500, 650), (1..4).map { UpgradeLine.SALVAGE.costOfRank(it) })
+        // Ve odenen coin basina alinan etki hicbir rank'ta duSMEDI:
+        // Tahkimat 150 coin/can-cifti, Hurda 150 coin/%5 — sabit.
+        for (rank in 1..UpgradeLine.FORTIFICATION.maxRank) {
+            val gained = only(UpgradeLine.FORTIFICATION, rank).maxBaseHealth -
+                only(UpgradeLine.FORTIFICATION, rank - 1).maxBaseHealth
+            assertEquals("Tahkimat r$rank adim etkisi degismemeli", 2, gained)
+        }
+        for (rank in 1..UpgradeLine.SALVAGE.maxRank) {
+            val gained = only(UpgradeLine.SALVAGE, rank).salvageRatio -
+                only(UpgradeLine.SALVAGE, rank - 1).salvageRatio
+            assertEquals("Hurda r$rank adim etkisi degismemeli", 0.05, gained, 1e-9)
+        }
     }
 
     /**
@@ -449,10 +508,13 @@ class MetaUpgradeImpactTest {
             assertTrue("Tahkimat r$rank tolerans buyutmuyor", survivable > prev)
             prev = survivable
         }
+        // ECONOMY_AUDIT_2 P0: hat 5 -> 9 rank. Tolerans 19 -> 37 (+%95).
         assertEquals(
-            "tam Tahkimat, tolere edilen sizintiyi %50 buyutmeli (19 -> 29)",
-            29, only(UpgradeLine.FORTIFICATION, UpgradeLine.FORTIFICATION.maxRank).maxBaseHealth - 1,
+            "tam Tahkimat, tolere edilen sizintiyi ~iki katina cikarmali (19 -> 37)",
+            37, only(UpgradeLine.FORTIFICATION, UpgradeLine.FORTIFICATION.maxRank).maxBaseHealth - 1,
         )
+        // Hicbir bolum bunu GEREKTIRMEZ: CampaignSolvabilityAllLevelsTest 55/55'i
+        // meta 0 ile gecer. Tolerans bir kolaylik, bir kosul degildir.
     }
 
     /** Hurda Degeri kule satisiyla olculur; ust sinir 1,0'in ALTINDA kalmali. */

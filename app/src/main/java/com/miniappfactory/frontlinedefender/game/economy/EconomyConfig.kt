@@ -123,8 +123,14 @@ object EconomyConfig {
      * GDD D.2 kaynak tablosunda YOK. Eklenmesinin gerekcesi: bir bolumu erken 1
      * yildizla gecen oyuncu, sonradan 3 yildiz yapsa bile arasindaki coin farkini
      * asla goremezse "erken oynamak cezalandirildi" hissi olusur ve tekrar oynama
-     * degersizlesir. Fark **bir kez** odenir; kampanya boyunca ust sinir
-     * 16.020 - 10.010 = 6.010 coin (tek seferlik, sinirsiz farming DEGIL).
+     * degersizlesir. Fark **bir kez** odenir (tek seferlik, sinirsiz farming DEGIL).
+     *
+     * **Ust sinir 55 bolum icin yeniden olculdu (ECONOMY_AUDIT_2 6.4).** Eski
+     * yorum "16.020 - 10.010 = 6.010 coin" diyordu; bu 22 bolumun sayisiydi ve
+     * kampanya uzatilirken guncellenmedi. 55 bolumde gercek tavan
+     * **83.600 - 52.250 = 31.350 coin**tir. Bu NET-YENI gelir degildir: 1 yildiz
+     * bandindaki oyuncuyu 3 yildiz bandina tasir, iki bandin uzerine BINMEZ
+     * (`EconomySimulationTest.starImprovementCeilingForWholeCampaignIsBounded`).
      *
      * Kapatmak icin tek satir: `= false`.
      */
@@ -223,13 +229,65 @@ object EconomyConfig {
     val FIREPOWER_COSTS: IntArray = intArrayOf(400, 800, 1200, 1600)                    // 4.000
     val OPTICS_COSTS: IntArray = intArrayOf(550, 900, 1300)                             // 2.750
     val STARTING_SUPPLY_COSTS: IntArray = intArrayOf(900, 1800)                         // 2.700
-    val FORTIFICATION_COSTS: IntArray = intArrayOf(250, 400, 550, 700, 850)             // 2.750
-    val SALVAGE_COSTS: IntArray = intArrayOf(200, 350, 500, 650)                        // 1.700
+    val FORTIFICATION_COSTS: IntArray =
+        intArrayOf(250, 400, 550, 700, 850, 1000, 1150, 1300, 1450)                     // 7.650
+    val SALVAGE_COSTS: IntArray = intArrayOf(200, 350, 500, 650, 800)                   // 2.500
 
-    const val TREE_TOTAL_COST: Int = 13_900
+    /**
+     * **AGAC TOPLAMI — 13.900 -> 19.600 (ECONOMY_AUDIT_2 P0'in kapatilmasi).**
+     *
+     * ## Kapatilan hata: sink, kampanya uzatilirken olcuye alinmadi
+     * 22 -> 55 bolum genislemesinde kaynak x5,2, kilit x7,4 buyudu, **agac x1,0
+     * kaldi**. 22 bolumde bu sayilar gercekten kitti (bakiye 6.870, agac 13.900);
+     * 55 bolumde en KOTU oyuncu bile kampanyayi ve agaci odedikten sonra
+     * +15.245 coin ile bitiriyordu ve agac 3 yildizli oyuncuda **L22'de**
+     * tukeniyordu — sonraki 33 bolum hicbir sey satin alamayan bir para oduyor.
+     *
+     * ## Neden fazla YAPISALDIR (ayar hatasi degil)
+     * Soft-lock guvenlik kurali `R(L) >= 2,0 x D(L+1)` (GDD C.3) toplamda
+     * `toplamR ~ 2,26 x toplamD` demektir: kilit egrisi ne kadar sikilirsa
+     * sikilsin kampanya gelirinin **yarisi bedavadir**. 55 bolumde bu yari
+     * 29.145 coin. Yani tek seferlik agac, uzunlukla buyuyen bir kaynagi ancak
+     * KENDISI de uzunlukla buyurse emebilir. 13.900, 22 bolumluk kampanyanin
+     * sayisiydi ve orada dogruydu.
+     *
+     * ## Neden 19.600 ve neden BU iki hat
+     * Agaci buyutmenin tek yolu rank eklemektir, rank eklemek de oyuncuyu
+     * guclendirir — ve uc eksende TAVAN vardir:
+     * - **Ates Gucu / Menzil:** [MetaUpgrades.effectiveThroughput] = hasar x
+     *   menzil = 1,426 zorluk egrisinin kilididir; tek bir rank daha L11 ve L22'yi
+     *   tam metayla 3 yildiza cevirir
+     *   (`EconomySimulationTest.maxedMetaDoesNotMakePeakLevelsThreeStarTrivial`).
+     *   **Genisletilemez.**
+     * - **Hurda Degeri:** 0,70 + 5 x %5 = **0,95**; bir rank daha 1,00 eder ve
+     *   "kur-sat" dongusu para basmaya baslar. Tavan +1 rank.
+     * - **Us Tahkimi:** yildiz yalnizca sizinti sayisina baktigi icin
+     *   ([starHealthFromLeaks], `MetaNeutralStarTest`) bu hat yildiz SATIN ALMAZ,
+     *   yalnizca dayaniklilik marji satar; [MetaUpgrades.effectiveThroughput]
+     *   disindadir. Emici hat budur. Ust siniri **38 can**: 40'ta L11 tam metayla
+     *   3 yildiz olur.
+     *
+     * Sonuc: Tahkimat 5 -> 9 rank (20 -> 38 can), Hurda 4 -> 5 rank (%70 -> %95).
+     * Agac 13.900 -> **19.600**, rank 18 -> 23. Ates Gucu, Menzil ve Baslangic
+     * Tedariki'ne **dokunulmadi**.
+     *
+     * ## Fiyat/etki egrisi YUKSELMEDI (Hard Rule)
+     * Iki hattin da etki adimi ve fiyat adimi degismedi: Tahkimat +2 can / +150
+     * coin, Hurda +%5 iade / +150 coin. Yeni rank'lar var olan aritmetik dizinin
+     * DEVAMIDIR; hicbir mevcut rank'in fiyati veya etkisi degismedi, yani ayni
+     * gucu almanin bedeli hicbir noktada artmadi.
+     * `MetaUpgradeImpactTest.treeExtensionContinuedTheExistingPriceLadder` kilitler.
+     *
+     * ## Olculen sonuc (`CoinLedgerTest`)
+     * Kampanya sonu fazla: 1 yildiz 15.245 -> **9.545**, 2 yildiz 30.945 ->
+     * **25.245**, 3 yildiz 50.995 -> **45.295**. Agacin tamamlanma bolumu
+     * ([RANK_GATE_CLEARED_LEVEL] ile birlikte) 3 yildiz L22 -> **L50**,
+     * 1 yildiz L37 -> **L50**.
+     */
+    const val TREE_TOTAL_COST: Int = 19_600
 
-    /** 4 + 3 + 2 + 5 + 4. Granularite duzeltmelerinden once 28, sonra 22 idi. */
-    const val TREE_TOTAL_RANKS: Int = 18
+    /** 4 + 3 + 2 + 9 + 5. Granularite duzeltmelerinden once 28, sonra 22, sonra 18 idi. */
+    const val TREE_TOTAL_RANKS: Int = 23
 
     /**
      * **HISSEDILIRLIK ESIGI — rank basina en kucuk anlamli adim.**
@@ -303,25 +361,72 @@ object EconomyConfig {
     const val BASE_SALVAGE_RATIO: Double = 0.70
 
     /**
-     * BAYRAK F-1 (ECONOMY_SPEC 7) — **KAMPANYA ILERLEMESI KAPISI. VARSAYILAN KAPALI.**
+     * BAYRAK F-1 (ECONOMY_SPEC 7) — **KAMPANYA ILERLEMESI KAPISI. ACIK.**
      *
-     * Fiyatlar degismez (13.900 sabit); yalnizca *ne zaman* satin alinabildigi
-     * kampanya ilerlemesine baglanir. Gerekce: tam maksli meta, LEVEL_DESIGN E.3'un
-     * beklenen can kaybi (ELL) sayilarini ~%30 kucultur ve orta oyunun beklenen
-     * yildizini 2'den 3'e cikarir (ECONOMY_SPEC 6.2 tablosu).
+     * Fiyatlar degismez ([TREE_TOTAL_COST] sabittir); yalnizca *ne zaman* satin
+     * alinabildigi kampanya ilerlemesine baglanir.
      *
-     * **Varsayilan `false`, cunku bu GDD F'te olmayan bir kisittir ve oyuncuyu
-     * kisitlayan bir mekanik PO/Game Director karari olmadan varsayilan olamaz.**
-     * Ayrica gelir egrisi kapisiz halde de agacin kampanya ortasinda bitmesine
-     * izin vermiyor (ECONOMY_SPEC 2.6). Acmak icin tek satir: `= true`;
-     * davranis zaten testli.
+     * ## Neden acildi (ECONOMY_AUDIT_2 P0'in PACING yarisi)
+     * Fazlanin iki belirtisi vardi ve ikisi ayri sorundur:
+     * 1. **Miktar** — kampanya sonunda harcanamayan coin. Bunu agacin buyumesi
+     *    kapatir (bkz. [TREE_TOTAL_COST]).
+     * 2. **Zamanlama** — agac 3 yildizli oyuncuda **L22'de**, 1 yildizlida
+     *    L37'de TAMAMEN bitiyordu. Agaci buyutmek bunu tek basina cozmez: 19.600
+     *    coin'lik agac bile 3 yildizli oyuncuda ~L27'de biterdi, cunku o oyuncu
+     *    parayi orta oyunda zaten kazaniyor. Harcamayi kampanyaya YAYAN sey
+     *    kapilardir.
+     *
+     * ## Kapisiz vs kapili olcum (`CoinLedgerTest.treeCompletionLevel`)
+     *     BAND       KAPISIZ (agac 19.600)   KAPILI
+     *     1 yildiz          L45                L50
+     *     3 yildiz          L27                L50
+     *
+     * ## Neden oyuncuyu HAKSIZ kisitlamiyor
+     * - Her hattin **ilk iki ranki kapisizdir**: yeni oyuncunun ilk satin alma
+     *   karari hic gecikmez, erken oyunu **para** paceler (L10'da 1 yildiz
+     *   bakiyesi 2.290, kapisiz tavan 6.550 — yani kapi degil cuzdan sinirliyor).
+     * - Hicbir bolum meta yukseltme GEREKTIRMEZ: `CampaignSolvabilityAllLevelsTest`
+     *   55/55'i meta 0 ile gecer. Kapi bir GUCLENME takvimidir, bir duvar degil.
+     * - Kapi asla ulasilamaz olamaz: en yuksek kapi L50 < 55
+     *   (`everyGateIsSatisfiableWithinTheCampaign`).
      */
-    const val META_RANK_GATES_ENABLED: Boolean = false
+    const val META_RANK_GATES_ENABLED: Boolean = true
 
-    /** Rank -> o rank'i acmak icin TEMIZLENMIS olmasi gereken bolum (0 = kapi yok). */
+    /**
+     * Rank -> o rank'i acmak icin TEMIZLENMIS olmasi gereken bolum (0 = kapi yok).
+     *
+     * ## Eski tablo neden atildi
+     * `[0, 0, 5, 9, 13, 16, 19, 21]` **22 bolumluk kampanya ve 28 rank'lik agac**
+     * icin yazilmisti. Bugun kampanya 55 bolum; eski tablonun en yuksek kapisi
+     * L21 idi, yani bayrak acilsa bile agac yine kampanyanin %38'inde acilmis
+     * olurdu — kapilar hicbir sey yaymazdi.
+     *
+     * ## Yeni tablo nasil turetildi
+     * Dizinin uzunlugu **en derin hattin rank sayisidir** (Us Tahkimi, 9). Agacin
+     * rank katmani basina bedeli ve o katmanda kac hattin secenek sundugu:
+     *
+     *     KATMAN  SECENEK  BEDEL   KAPI   NEDEN
+     *     r1         5     2.300     -    ilk karar gecikmez
+     *     r2         5     4.250     -    ilk karar gecikmez
+     *     r3         4     3.550    L10   Act I sonu; 1y bakiyesi 2.290 -> para paceler
+     *     r4         3     2.950    L20   Act II ortasi
+     *     r5         2     1.650    L30   Act III
+     *     r6         1     1.000    L37   Act IV
+     *     r7         1     1.150    L42
+     *     r8         1     1.300    L46
+     *     r9         1     1.450    L50   son satin alma, kampanya sonuna 5 bolum
+     *
+     * Cok secenekli katmanlar one, tek secenekli katmanlar (yalnizca Us Tahkimi)
+     * sona kondu: boylece gec kampanyada her ~4-5 bolumde bir satin alma dusuyor
+     * ve L50'ye kadar dukkan bos kalmiyor.
+     *
+     * `purchasableTreeCeiling(0)` = 6.550, agacin **%33'u** — kapilar erken oyunda
+     * gercekten kit (`rankGateCeilingIsMonotonicAndScarceEarly` <%50 ister).
+     */
     val RANK_GATE_CLEARED_LEVEL: IntArray = intArrayOf(
-        /* rank 1 */ 0, /* rank 2 */ 0, /* rank 3 */ 5, /* rank 4 */ 9,
-        /* rank 5 */ 13, /* rank 6 */ 16, /* rank 7 */ 19, /* rank 8 */ 21,
+        /* rank 1 */ 0, /* rank 2 */ 0, /* rank 3 */ 10, /* rank 4 */ 20,
+        /* rank 5 */ 30, /* rank 6 */ 37, /* rank 7 */ 42, /* rank 8 */ 46,
+        /* rank 9 */ 50,
     )
 
     // =================================================================================
@@ -350,6 +455,24 @@ object EconomyConfig {
     /** "Elit Operator": bu hafta 15 YENI yildiz kazan. */
     const val WEEKLY_ELITE_TARGET: Int = 15
     const val WEEKLY_ELITE_REWARD: Int = 600
+
+    /**
+     * "Elit Operator"in ARZ TUKENDIGINDE gectigi ikame hedefi: bu hafta 24 bolum
+     * tamamla. Gerekce ve kurallar `MissionPools.weekly` dosya icinde.
+     *
+     * Odul DEGISMEZ ([WEEKLY_ELITE_REWARD]), yani [WEEKLY_BUDGET] 1.100'de kalir —
+     * bu bir enflasyon degil, zaten vaat edilmis butcenin teslimidir.
+     * 24 = 2 x [WEEKLY_LONG_PATROL_TARGET]: ikame gorev uzun seferin devamidir ve
+     * ondan daha hafif olamaz.
+     */
+    const val WEEKLY_ELITE_RESERVE_TARGET: Int = 24
+
+    /**
+     * Kampanyanin TOPLAM yildiz arzi. Yildiz best-of'tur ve asla dusmez, yani bu
+     * bir tavandir: haftalik "yeni yildiz" gorevinin omur boyu uretebilecegi
+     * toplam ilerleme tam olarak bu kadardir.
+     */
+    const val TOTAL_CAMPAIGN_STARS: Int = CAMPAIGN_LEVELS * 3
 
     const val WEEKLY_MISSION_COUNT: Int = 2
     const val WEEKLY_BUDGET: Int = 1_100

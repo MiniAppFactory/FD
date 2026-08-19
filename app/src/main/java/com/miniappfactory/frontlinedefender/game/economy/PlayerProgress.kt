@@ -32,17 +32,40 @@ enum class UpgradeLine(val maxRank: Int) {
      */
     STARTING_SUPPLY(2),
 
-    /** Us Tahkimi — maks us cani +2/rank, 20 -> 30. */
-    FORTIFICATION(5),
+    /**
+     * Us Tahkimi — maks us cani **+2/rank, 20 -> 38 (9 rank)**.
+     *
+     * Hat 5 -> 9 rank'a cikarildi (ECONOMY_AUDIT_2 P0). Gerekce
+     * [EconomyConfig.TREE_TOTAL_COST] KDoc'unda: agac 55 bolumluk kampanyanin
+     * gelirini emecek kadar buyumek zorundaydi ve rank eklenebilen **tek** hat
+     * budur — Ates Gucu/Menzil zorluk tavanina (1,426 etkin verim), Hurda Degeri
+     * %100 iade tavanina dayali. Tahkimat yildiz satin ALMAZ (yildiz yalnizca
+     * sizinti sayisina bakar, bkz. [starHealthFromLeaks]); sattigi sey
+     * dayaniklilik marjidir, yani hattin buyumesi zorluk egrisini kaydirmaz.
+     *
+     * **38 bir tavandir, keyfi degil:** 40 canda tam meta L11'i (ELL 5,5 -> 4
+     * sizinti) 3 yildiza cevirirdi
+     * (`EconomySimulationTest.maxedMetaDoesNotMakePeakLevelsThreeStarTrivial`).
+     *
+     * Fiyat adimi degismedi (+150/rank): 250, 400, 550, 700, 850, 1000, 1150,
+     * 1300, 1450 — yeni rank'lar var olan dizinin devamidir, zam degildir.
+     */
+    FORTIFICATION(9),
 
     /**
-     * Hurda Degeri — kule satis iadesi +%5/rank, **%70 -> %90**.
+     * Hurda Degeri — kule satis iadesi +%5/rank, **%70 -> %95 (5 rank)**.
      *
      * Rank 0 = %70, yani oyunun her zaman verdigi iade
      * ([EconomyConfig.BASE_SALVAGE_RATIO] gerekcesine bak: taban bir zamanlar
      * 0,50'ye indirilmisti ve hat "sahip oldugunu geri satin al"a donmustu).
+     *
+     * Hat 4 -> 5 rank'a cikarildi (ECONOMY_AUDIT_2 P0). **5 rank matematiksel
+     * tavandir:** 0,70 + 6 x 0,05 = 1,00 olurdu ve "kur-sat" dongusu para
+     * basmaya baslardi. 0,95 hâlâ her satista %5 kaybettirir
+     * (`EntityDerivedStatsTest` butun kademeleri ve butun rank'lari tarar).
+     * Fiyat adimi degismedi (+150/rank): 200, 350, 500, 650, 800.
      */
-    SALVAGE(4),
+    SALVAGE(5),
     ;
 
     /** Bu hattaki `rank` (1 tabanli) icin fiyat. */
@@ -118,12 +141,12 @@ data class MetaUpgrades(
         get() = EconomyConfig.BASE_STARTING_SUPPLY +
             EconomyConfig.STARTING_SUPPLY_PER_RANK * startingSupplyRank
 
-    /** Maks us cani. Rank 5 -> 30. Yildiz esikleri YUZDE oldugu icin guvenli (GDD B.3). */
+    /** Maks us cani. Maks rank (9) -> 38. Yildiz sizintiya baktigi icin guvenli (GDD B.3). */
     val maxBaseHealth: Int
         get() = EconomyConfig.BASE_MAX_HEALTH +
             EconomyConfig.FORTIFICATION_HEALTH_PER_RANK * fortification
 
-    /** Kule satis iade orani. Rank 0 -> 0,70 (oyunun tabani), rank 4 -> 0,90. */
+    /** Kule satis iade orani. Rank 0 -> 0,70 (oyunun tabani), maks rank (5) -> 0,95 (<1,0). */
     val salvageRatio: Double
         get() = EconomyConfig.BASE_SALVAGE_RATIO + EconomyConfig.SALVAGE_PER_RANK * salvage
 

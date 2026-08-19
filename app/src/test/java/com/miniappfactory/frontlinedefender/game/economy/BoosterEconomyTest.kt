@@ -953,9 +953,10 @@ class BoosterEconomyTest {
         assertEquals(200, cheapestNextRankPrice(MetaUpgrades(firepower = 1)))
         assertNotEquals(null, cheapestNextRankPrice(MetaUpgrades(firepower = 4)))
 
-        val maxed = MetaUpgrades(
-            firepower = 4, optics = 3, startingSupplyRank = 2, fortification = 5, salvage = 4,
-        )
+        // Hat tavanlari elle yazilmamali; ECONOMY_AUDIT_2 P0 Tahkimat'i 5 -> 9,
+        // Hurda'yi 4 -> 5 rank'a cikardi ve bu test sessizce anlamini yitirmisti.
+        var maxed = MetaUpgrades()
+        for (line in UpgradeLine.entries) maxed = maxed.withRank(line, line.maxRank)
         assertTrue(maxed.isMaxed())
         assertEquals(null, cheapestNextRankPrice(maxed))
     }

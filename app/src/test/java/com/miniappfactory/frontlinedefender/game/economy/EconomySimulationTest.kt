@@ -53,14 +53,14 @@ class EconomySimulationTest {
     }
 
     @Test
-    fun metaTreeTotalIs13900WithEighteenRanks() {
+    fun metaTreeTotalIs19600WithTwentyThreeRanks() {
         val total = UpgradeLine.entries.sumOf { it.totalCost() }
-        assertEquals("GDD F: agac toplami 13.900", EconomyConfig.TREE_TOTAL_COST, total)
+        assertEquals("agac toplami 19.600", EconomyConfig.TREE_TOTAL_COST, total)
         assertEquals(EconomyConfig.TREE_TOTAL_RANKS, UpgradeLine.entries.sumOf { it.maxRank })
-        // Granularite duzeltmeleri: 28 -> 22 -> 18 rank (son adim Baslangic
-        // Tedariki 6 x +25 -> 2 x +75). Agac toplami ve hat toplamlari
-        // DEGISMEDI; ayni para daha az ve daha buyuk adima bolundu.
-        assertEquals(18, UpgradeLine.entries.sumOf { it.maxRank })
+        // Granularite duzeltmeleri: 28 -> 22 -> 18 rank. ECONOMY_AUDIT_2 P0 ile
+        // agac 55 bolumluk kampanyaya olceklendi: 18 -> 23 rank, 13.900 -> 19.600.
+        // Gerekce EconomyConfig.TREE_TOTAL_COST KDoc'unda.
+        assertEquals(23, UpgradeLine.entries.sumOf { it.maxRank })
     }
 
     @Test
@@ -68,26 +68,33 @@ class EconomySimulationTest {
         assertEquals(4_000, UpgradeLine.FIREPOWER.totalCost())
         assertEquals(2_750, UpgradeLine.OPTICS.totalCost())
         assertEquals(2_700, UpgradeLine.STARTING_SUPPLY.totalCost())
-        assertEquals(2_750, UpgradeLine.FORTIFICATION.totalCost())
-        assertEquals(1_700, UpgradeLine.SALVAGE.totalCost())
+        // ECONOMY_AUDIT_2 P0: agaci buyuten IKI hat. Ates Gucu / Menzil /
+        // Baslangic Tedariki birebir korundu.
+        assertEquals(7_650, UpgradeLine.FORTIFICATION.totalCost())
+        assertEquals(2_500, UpgradeLine.SALVAGE.totalCost())
     }
 
     @Test
     fun maxedTreeEffectsMatchGddH6() {
         val maxed = MetaUpgrades(
-            firepower = 4, optics = 3, startingSupplyRank = 2, fortification = 5, salvage = 4
+            firepower = 4, optics = 3, startingSupplyRank = 2, fortification = 9, salvage = 5
         )
+        // SALDIRI eksenleri GDD H.6'daki gibi DEGISMEDI — agac buyurken
+        // effectiveThroughput (1,426) zorluk kilidi korundu.
         assertEquals("hasar +%24", 1.24, maxed.damageMultiplier, 1e-9)
         assertEquals("menzil +%15", 1.15, maxed.rangeMultiplier, 1e-9)
         assertEquals("baslangic Tedariki 300", 300, maxed.startingSupply)
-        assertEquals("maks us cani 30", 30, maxed.maxBaseHealth)
-        // Hurda Degeri: rank 0 = %70 (oyunun her zamanki tabani), maks = %90.
+        // ECONOMY_AUDIT_2 P0: 30 -> 38 (5 -> 9 rank). Yildiz sizintiya baktigi icin
+        // bu hat yildiz satin almaz; sattigi sey dayaniklilik marjidir.
+        assertEquals("maks us cani 38", 38, maxed.maxBaseHealth)
+        // Hurda Degeri: rank 0 = %70 (oyunun her zamanki tabani), maks = %95.
         // Eskiden taban 0,50 idi ve maks yalnizca %70'e, yani BASLANGIC NOKTASINA
         // donuyordu — bkz. EconomyConfig.BASE_SALVAGE_RATIO gerekcesi.
-        assertEquals("satis iadesi %90", 0.90, maxed.salvageRatio, 1e-9)
+        assertEquals("satis iadesi %95", 0.95, maxed.salvageRatio, 1e-9)
         assertEquals("rank 0 iadesi %70", 0.70, MetaUpgrades().salvageRatio, 1e-9)
+        assertTrue("iade 1,0'a ULASAMAZ — kur-sat dongusu para basamaz", maxed.salvageRatio < 1.0)
         assertEquals(EconomyConfig.TREE_TOTAL_COST, maxed.spentCoins())
-        assertEquals(18, maxed.totalRanks())
+        assertEquals(23, maxed.totalRanks())
         assertTrue(maxed.isMaxed())
     }
 
@@ -182,6 +189,13 @@ class EconomySimulationTest {
         // GDD H.2: maks 30 iken 27 can -> %90 -> 3 yildiz, 26 can -> %86,7 -> 2 yildiz.
         val maxed = MetaUpgrades(fortification = 5)
         assertEquals(30, maxed.maxBaseHealth)
+        // Hat 9 rank'a cikti (ECONOMY_AUDIT_2 P0); oran kurali her tavanda ayni
+        // calisir ve tavan buyudukce 3 yildiz DAHA UCUZLAMAZ.
+        assertEquals(38, MetaUpgrades(fortification = 9).maxBaseHealth)
+        assertEquals("35/38 = %92 -> 3 yildiz", 3, starsFor(35, 38))
+        assertEquals("34/38 = %89 -> 2 yildiz", 2, starsFor(34, 38))
+        // Ayni YUZDE her tavanda ayni yildizi verir; mutlak sizinti sayisi degil.
+        assertEquals(starsFor(18, 20), starsFor(27, 30))
         assertEquals(3, starsFor(27, maxed.maxBaseHealth))
         assertEquals(2, starsFor(26, maxed.maxBaseHealth))
         // AYNI YUZDE, farkli maks can -> ayni yildiz. Yuzde tabanli olmanin kaniti.
@@ -288,8 +302,16 @@ class EconomySimulationTest {
 
     @Test
     fun maxedLineCannotBePurchasedAgain() {
-        val wallet = walletAt(99_999, (1..22).toSet(), (1..22).toSet())
-        assertEquals(PurchaseDecision.MaxRank, purchaseAllowed(wallet, MetaUpgrades(salvage = 4), UpgradeLine.SALVAGE))
+        // Kampanya bitmis oyuncu: kapilarin hepsi acik, hat maksta.
+        val all = (1..EconomyConfig.CAMPAIGN_LEVELS).toSet()
+        val wallet = walletAt(99_999, all, all)
+        for (line in UpgradeLine.entries) {
+            assertEquals(
+                "$line maksta yeniden satin alinabiliyor",
+                PurchaseDecision.MaxRank,
+                purchaseAllowed(wallet, MetaUpgrades().withRank(line, line.maxRank), line),
+            )
+        }
     }
 
     @Test
@@ -1074,35 +1096,50 @@ class EconomySimulationTest {
     }
 
     // =================================================================================
-    // 11. Meta rank kapilari (BAYRAK F-1) — VARSAYILAN KAPALI
+    // 11. Meta rank kapilari (BAYRAK F-1) — ACIK (ECONOMY_AUDIT_2 P0)
     // =================================================================================
 
+    /**
+     * Kapilar **acildi** ve tablo 55 bolume yeniden turetildi. Gerekce
+     * [EconomyConfig.META_RANK_GATES_ENABLED] KDoc'unda: agaci buyutmek fazlanin
+     * MIKTARINI kapatir, ZAMANLAMASINI kapatmaz — 19.600'luk agac bile 3 yildizli
+     * oyuncuda ~L27'de biterdi. Harcamayi kampanyaya yayan sey kapilardir.
+     */
     @Test
-    fun rankGatesAreDisabledByDefault() {
-        assertFalse(
-            "BAYRAK F-1: kapilar PO karari olmadan varsayilan olarak acilamaz",
+    fun rankGatesAreEnabledAndTheTableIsSizedForTheWholeCampaign() {
+        assertTrue(
+            "BAYRAK F-1 acik olmali — agac aksi halde kampanyanin yarisinda biter",
             EconomyConfig.META_RANK_GATES_ENABLED,
         )
-        assertEquals(0, rankGateClearedLevel(8))
-        assertEquals(EconomyConfig.TREE_TOTAL_COST, purchasableTreeCeiling(0))
-        // Kapisiz halde bile yeni oyuncu agaci ilk gun ALAMAZ: para yetmez.
-        val newPlayer = walletAt(1_000, (1..6).toSet(), (1..3).toSet())
-        assertTrue(purchaseAllowed(newPlayer, MetaUpgrades(firepower = 1), UpgradeLine.FIREPOWER) is PurchaseDecision.Allowed)
+        // Tablo, en DERIN hattin rank sayisi kadar olmali; kisa kalirsa son
+        // rank'lar sessizce kapisiz olur, uzun kalirsa girdiler OLU olur.
+        // Eski tablo tam olarak bu yuzden bayatlamisti (8 girdi / 5 rank).
+        assertEquals(
+            "kapi tablosu en derin hattin uzunlugunda olmali",
+            UpgradeLine.entries.maxOf { it.maxRank },
+            EconomyConfig.RANK_GATE_CLEARED_LEVEL.size,
+        )
+        assertEquals(50, rankGateClearedLevel(UpgradeLine.FORTIFICATION.maxRank))
     }
 
     @Test
-    fun rankGatesWhenEnabledNeverBlockTreeCompletionBeforeCampaignEnd() {
+    fun rankGatesNeverBlockTreeCompletionBeforeCampaignEnd() {
+        val last = EconomyConfig.RANK_GATE_CLEARED_LEVEL.max()
+        assertTrue("son kapi kampanya icinde olmali", last < EconomyConfig.CAMPAIGN_LEVELS)
         assertEquals(
-            "L21 temizlenince agacin tamami satin alinabilir olmali",
-            EconomyConfig.TREE_TOTAL_COST, purchasableTreeCeiling(21, gatesEnabled = true),
+            "son kapi temizlenince agacin tamami satin alinabilir olmali",
+            EconomyConfig.TREE_TOTAL_COST, purchasableTreeCeiling(last, gatesEnabled = true),
         )
-        assertEquals(EconomyConfig.TREE_TOTAL_COST, purchasableTreeCeiling(22, gatesEnabled = true))
+        assertTrue(
+            "son kapidan ONCE agac tamamlanamamali (yayma bunun icin var)",
+            purchasableTreeCeiling(last - 1, gatesEnabled = true) < EconomyConfig.TREE_TOTAL_COST,
+        )
     }
 
     @Test
     fun rankGateCeilingIsMonotonicAndScarceEarly() {
         var prev = -1
-        for (cleared in 0..22) {
+        for (cleared in 0..EconomyConfig.CAMPAIGN_LEVELS) {
             val ceiling = purchasableTreeCeiling(cleared, gatesEnabled = true)
             assertTrue("tavan geriye gidemez (cleared=$cleared)", ceiling >= prev)
             prev = ceiling
@@ -1112,24 +1149,48 @@ class EconomySimulationTest {
             purchasableTreeCeiling(0, gatesEnabled = true) < EconomyConfig.TREE_TOTAL_COST / 2,
         )
         assertTrue(purchasableTreeCeiling(0, gatesEnabled = true) > 0)
+        // Gec kampanyada dukkan BOS KALMAMALI: her pencerede tavan gercekten
+        // buyumeli, yoksa "kapi" bir bekleme ekranina doner.
+        for (window in listOf(10 to 20, 20 to 30, 30 to 42, 42 to 50)) {
+            val (a, b) = window
+            assertTrue(
+                "L$a -> L$b arasinda yeni hicbir rank acilmiyor",
+                purchasableTreeCeiling(b, gatesEnabled = true) >
+                    purchasableTreeCeiling(a, gatesEnabled = true),
+            )
+        }
     }
 
     @Test
     fun rankGateBlocksHighRankButNeverTheFirstTwoRanks() {
         val richButNew = walletAt(99_999, (1..7).toSet(), (1..2).toSet())
-        assertTrue(purchaseAllowed(richButNew, MetaUpgrades(), UpgradeLine.FIREPOWER, gatesEnabled = true) is PurchaseDecision.Allowed)
+        // Ilk IKI rank her hatta kapisiz: yeni oyuncunun ilk satin alma karari
+        // gecikmez, erken oyunu cuzdan paceler (L10'da 1 yildiz bakiyesi 2.290).
+        assertEquals(0, rankGateClearedLevel(1, true))
+        assertEquals(0, rankGateClearedLevel(2, true))
+        for (line in UpgradeLine.entries) {
+            assertTrue(
+                "$line ilk ranki kapili olamaz",
+                purchaseAllowed(richButNew, MetaUpgrades(), line, gatesEnabled = true)
+                    is PurchaseDecision.Allowed,
+            )
+        }
         assertTrue(purchaseAllowed(richButNew, MetaUpgrades(firepower = 1), UpgradeLine.FIREPOWER, gatesEnabled = true) is PurchaseDecision.Allowed)
         val gated = purchaseAllowed(richButNew, MetaUpgrades(firepower = 2), UpgradeLine.FIREPOWER, gatesEnabled = true)
         assertTrue(gated is PurchaseDecision.RankGated)
-        assertEquals(5, (gated as PurchaseDecision.RankGated).requiredClearedLevel)
+        assertEquals(10, (gated as PurchaseDecision.RankGated).requiredClearedLevel)
     }
 
     @Test
-    fun everyGateIsSatisfiableWithinTheTwentyTwoLevelCampaign() {
+    fun everyGateIsSatisfiableWithinTheCampaign() {
         EconomyConfig.RANK_GATE_CLEARED_LEVEL.forEach {
             assertTrue("kapi $it kampanya disina tasamaz", it <= EconomyConfig.CAMPAIGN_LEVELS)
         }
-        for (rank in 2..8) {
+        // OLU GIRDI YASAGI: tabloda, hicbir hattin ulasamayacagi bir rank icin
+        // kapi bulunamaz. Eski tablonun son UC girdisi tam olarak boyleydi.
+        val deepest = UpgradeLine.entries.maxOf { it.maxRank }
+        assertEquals(deepest, EconomyConfig.RANK_GATE_CLEARED_LEVEL.size)
+        for (rank in 2..deepest) {
             assertTrue(
                 "kapilar rank ile artmali",
                 rankGateClearedLevel(rank, true) >= rankGateClearedLevel(rank - 1, true),
@@ -1145,7 +1206,11 @@ class EconomySimulationTest {
     fun maxedMetaDoesNotMakePeakLevelsThreeStarTrivial() {
         // LEVEL_DESIGN E.3: L22 ELL = 9,0 sizma (20 can uzerinden).
         // Tam maksli meta: etkin verim 1,426 -> ELL ~ 6,3; maks can 30.
-        val maxed = MetaUpgrades(firepower = 4, optics = 3, fortification = 5)
+        val maxed = MetaUpgrades(
+            firepower = UpgradeLine.FIREPOWER.maxRank,
+            optics = UpgradeLine.OPTICS.maxRank,
+            fortification = UpgradeLine.FORTIFICATION.maxRank,
+        )
         assertEquals(1.4260, maxed.effectiveThroughput, 1e-4)
 
         val scaledLeaks = Math.round(9.0 / maxed.effectiveThroughput).toInt() // 6
@@ -1153,8 +1218,17 @@ class EconomySimulationTest {
         assertEquals("L22 tam maksli metayla bile 3 yildiz OLMAMALI", 2, stars)
 
         // Act I finali (L11, ELL 5,5) de 3 yildiz olmamali.
+        // **BU SATIR AGACIN IKI TAVANINI BIRDEN TUTUYOR** (ECONOMY_AUDIT_2 P0):
+        //  - Ates Gucu/Menzil'e tek rank daha eklenirse sizinti 4 -> 3'e duser
+        //    ve 3 yildiz olur -> saldiri hatlari GENISLETILEMEZ.
+        //  - Us Tahkimi 40 cana cikarsa 36/40 = %90 -> 3 yildiz olur -> Tahkimat
+        //    tavani 38 candir (9 rank).
         val l11Leaks = Math.round(5.5 / maxed.effectiveThroughput).toInt() // 4
         assertEquals(2, starsFor(maxed.maxBaseHealth - l11Leaks, maxed.maxBaseHealth))
+        assertEquals(
+            "Tahkimat tavani asildi — 40 canda L11 tam metayla 3 yildiz olur",
+            3, starsFor(40 - l11Leaks, 40),
+        )
     }
 
     @Test
