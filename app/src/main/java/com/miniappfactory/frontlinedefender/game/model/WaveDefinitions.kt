@@ -686,7 +686,22 @@ object WaveDefinitions {
         // aralarinda 41 bolum var — CAMPAIGN_55.md YR-1' zaten bu haritada bir
         // arketip tekrarini kabul ediyor (orada 'B' iki kez).
         LatePlan(53, 7, 6, 3, 'M', breath = true),
-        LatePlan(54, 7, 7, 5, 'S'),
+        // L54 ARKETIP 'S' -> 'C' (2026-08-19).
+        //
+        // HATA: L54 ile L50 BIREBIR AYNI GIRDIYI tasiyordu
+        // (7 dalga, 7 kadro, 5 kademe-3, 'S'). Uretici saf bir fonksiyon
+        // oldugu icin ayni girdi ayni dalga tablosunu veriyor — yani oyuncu
+        // 55 bolumluk kampanyada AYNI bolumu iki kez oynuyordu.
+        // Ekip bu hata sinifini L53'te zaten yakalayip elle duzeltmisti;
+        // bu cift kacmisti. Artik `noTwoLevelsGenerateTheSameWaveTable`
+        // testi ucuncu kez kacmasini engelliyor.
+        //
+        // 'C' (karsi-koyma) secildi: L54 boss'tan ONCEKI son bolum, yani
+        // finalin provasi olmali — "belirli bir tehdide dogru cevabi bul"
+        // tam olarak bu arketipin sordugu soru. Onceki 'C' L46'da, yani
+        // sekiz bolum arayla; Act V'teki digerlerinden ('Z' L52, 'K' L51)
+        // ise daha uzak.
+        LatePlan(54, 7, 7, 5, 'C'),
         LatePlan(55, 7, 7, 6, 'B', bosses = mapOf(4 to 1, 7 to 3))
     )
 
