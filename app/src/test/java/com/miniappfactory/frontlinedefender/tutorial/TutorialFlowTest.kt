@@ -374,11 +374,19 @@ class TutorialFlowTest {
     }
 
     @Test
-    fun levelOneStillAffordsExactlyOneTower() {
-        // Ogreticinin "isaretli mevziye kur" kararinin TUM gerekcesi bu:
-        // oyuncunun tek kule hakki var, yanlis yer bolumu bitirir. Oran
-        // degisirse (ikinci kule alinabilir hale gelirse) ogreticinin
-        // sertligi gozden gecirilmeli.
+    fun levelOneAffordsExactlyTwoTowers() {
+        // ⚠ 2026-08-19: L1 sermayesi 80 -> 120, yani IKI Gatling.
+        //
+        // Eski yorum "oyuncunun tek kule hakki var, yanlis yer bolumu bitirir"
+        // diyor ve oranin degismesi halinde ogreticinin sertliginin gozden
+        // gecirilmesini istiyordu. Gecirildi: ogretici SERTLESTIRILMEDI cunku
+        // zaten sert degil — `BUILD_TOWER` adimi `towerCount > 0` ile duser,
+        // yani isaretli pad bir ONERI, kural degil. Ikinci kule bu yuzden
+        // ogreticinin hicbir adimini kirmiyor; tersine, "iki silahini nerede
+        // kesistireceksin" sorusu oyunun gercek dersine daha yakin.
+        //
+        // UST SINIR KORUNUYOR: ucuncu kuleye yetmemeli, yoksa acilis bolumu
+        // yerlestirme karari olmayan bir ekrana doner.
         val spec = GameConfig.levelSpec(TutorialFlow.TUTORIAL_LEVEL_ID)
         val cost = GameConfig.TOWER_SPECS
             .getValue(GameConfig.TowerType.MACHINE_GUN)
@@ -386,8 +394,8 @@ class TutorialFlowTest {
         val affordable = spec.startingSupply / cost
         assertEquals(
             "bolum 1 baslangic Tedariki ${spec.startingSupply}, Gatling $cost -> " +
-                "tam olarak 1 kule bekleniyor",
-            1,
+                "tam olarak 2 kule bekleniyor",
+            2,
             affordable
         )
     }

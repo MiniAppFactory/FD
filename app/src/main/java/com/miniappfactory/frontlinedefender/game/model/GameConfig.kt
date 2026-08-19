@@ -1675,7 +1675,29 @@ object GameConfig {
      * eski 110/120/140/150 satirlari bolumler 8 dalgadan 5'e inince gelirin
      * yarisini goturdu ve SPI'yi bandin altina dusurdu (L4 1,33 · L5 1,31).
      */
-    private val EARLY_STARTING_SUPPLY = listOf(80, 90)
+    /**
+     * ⚠ 2026-08-19 — L1/L2 SERMAYESI 80/90 -> 120/130.
+     *
+     * Eski tasarim gerekcesi suydu: L1 = 80 = TAM BIR GATLING, "ikinci kuleyi
+     * KAZAN". Niyet dogruydu ama olcum yanlis yerden geliyordu:
+     * `CampaignSolvabilityAllLevelsTest` bolumun cozulebilir oldugunu
+     * gosteriyor — ancak simulator MUKEMMEL oynar (dogru pad, dogru an,
+     * hedeflemeyi bilir). Bolumun ILK KEZ oynayan biri tarafindan
+     * kazanilabilir oldugunu HICBIR sey olcmuyordu.
+     *
+     * Cihaz kanit: oyuncu L1de tek Gatling ile kaybediyor. Bir tower defense
+     * oyununun BIRINCI bolumu, kurallari daha yeni ogrenen birine kaybettirmez;
+     * ilk bolum dersin kendisidir, sinav degil.
+     *
+     * 120 = tam IKI Gatling (buildCost 60). Ders kaybolmuyor, YER DEGISTIRIYOR:
+     * artik soru "tek silahini nereye koyacaksin" degil, "iki silahini yolun
+     * neresinde kesistireceksin" — ve bu, oyunun gercek core loopu.
+     *
+     * L2 DE BIRLIKTE TASINDI (90 -> 130). Istenmemisti ama 120den 90a dusmek
+     * oyuncuyu iki kuleden birbucuga indirirdi; ikinci bolum birincisinden
+     * daha fakir baslayamaz. Ayni +40 farki korunuyor.
+     */
+    private val EARLY_STARTING_SUPPLY = listOf(120, 130)
 
     /**
      * ------------------------------------------------------------------------

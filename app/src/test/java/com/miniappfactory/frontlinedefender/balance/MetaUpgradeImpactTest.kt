@@ -623,12 +623,22 @@ class MetaUpgradeImpactTest {
         val base = GameConfig.levelSpec(1).startingSupply
         val bonus = only(UpgradeLine.STARTING_SUPPLY, 1).startingSupply -
             EconomyConfig.BASE_STARTING_SUPPLY
-
-        assertEquals("L1 meta 0: tam olarak TEK Gatling", 1, base / gatling.buildCost)
+        // ⚠ 2026-08-19: TABAN 80 -> 120, yani meta 0 artik IKI Gatling.
+        //
+        // Bu testin kendi yorumu 18 Agustos cihaz kanitini aktariyordu:
+        // "L1 tek Gatling ile 3. dalgada kaybedildi". Tespit dogruydu ama
+        // cozum YANLIS YERDEYDI — ikinci kule Baslangic Tedariki rank 1e
+        // baglanmisti ve o rutbe COIN ISTIYOR. Yeni kurulumda cuzdan sifir,
+        // yani "bir Gatling yetmiyor" sorununun cevabi oyuncunun HENUZ SATIN
+        // ALAMAYACAGI bir seydi: kilidi acan sey kilidin arkasindaydi.
+        //
+        // Taban iki kuleye cikarildi; meta rutbesinin isi degismedi, YERI
+        // degisti — artik UCUNCU kuleyi aciyor.
+        assertEquals("L1 meta 0: tam olarak IKI Gatling", 2, base / gatling.buildCost)
         assertEquals(
-            "Tedarik rank 1, L1 acilisini IKI Gatling'e cikarmali " +
+            "Tedarik rank 1, L1 acilisini UC Gatlinge cikarmali " +
                 "($base -> ${base + bonus} Tedarik)",
-            2, (base + bonus) / gatling.buildCost,
+            3, (base + bonus) / gatling.buildCost,
         )
     }
 

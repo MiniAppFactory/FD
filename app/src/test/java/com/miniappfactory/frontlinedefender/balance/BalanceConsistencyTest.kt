@@ -180,10 +180,19 @@ class BalanceConsistencyTest {
             "L1 tedariki $first, en ucuz kule $cheapest — ilk kule KURULABILMELI",
             first >= cheapest
         )
+        // ⚠ SOZLESME TERSINE CEVRILDI (2026-08-19). Eskiden burada "L1 iki
+        // kule birden ALMAMALI" yaziyordu — niyet "ikinci kuleyi KAZAN"di.
+        // Cihazda oyuncu tek Gatling ile L1i kaybetti; bir TD oyununun birinci
+        // bolumu kurallari yeni ogrenene kaybettirmez. Yeni kural: L1 tam iki
+        // kule almali, ne eksik ne fazla.
+        //
+        // UST SINIR HALA VAR ve gerekli: ucuncu kuleye yetseydi acilis bolumu
+        // "istedigini kur" ekranina donerdi ve yerlestirme karari tamamen
+        // ortadan kalkardi.
         assertTrue(
-            "L1 tedariki $first iki kule birden almamali ($cheapest x2) — ikinci " +
-                "kule oldurmeyle KAZANILIR",
-            first < cheapest * 2
+            "L1 tedariki $first tam IKI kule almali (en ucuz $cheapest); " +
+                "ucuncuye yetmemeli",
+            first >= cheapest * 2 && first < cheapest * 3
         )
         // MONOTONLUK **TABAN** UZERINDE OLCULUR.
         //
@@ -219,10 +228,22 @@ class BalanceConsistencyTest {
                 "(${GameConfig.startingSupplyFor(forkLevel)} vs ${cheapest * 2})",
             GameConfig.startingSupplyFor(forkLevel) >= cheapest * 2
         )
+        // ⚠ KURAL DEGISTI (2026-08-19). Eskiden "catallanmadan onceki bolum
+        // hâlâ TEK kule almali" deniyordu; L1/L2 sermayesi 120/130 olunca
+        // oyuncu ARTIK BASTAN IKI KULEYLE basliyor, yani "coklu kule buradan
+        // baslar" esigi diye bir sey kalmadi.
+        //
+        // Yerine gecen kural daha dayanikli: CATAL, ONCEKI BOLUMDEN DAHA COK
+        // MEVZI ALABILMELI. Onemli olan mutlak sayi degil, catallanmanin
+        // yaninda FAZLADAN IMKAN gelmesi — iki kol acilirken imkan sabit
+        // kalirsa bolum "ogret" degil "cezalandir" olur.
         assertTrue(
-            "catallanmadan onceki bolum (${forkLevel - 1}) hâlâ TEK kule almali — " +
-                "aksi halde esik gereksiz yere gec",
-            forkLevel <= 1 || GameConfig.startingSupplyFor(forkLevel - 1) < cheapest * 2
+            "catal bolumu (${forkLevel}) bir oncekinden DAHA COK kule almali: " +
+                "${GameConfig.startingSupplyFor(forkLevel) / cheapest} vs " +
+                "${GameConfig.startingSupplyFor(forkLevel - 1) / cheapest}",
+            forkLevel <= 1 ||
+                GameConfig.startingSupplyFor(forkLevel) / cheapest >
+                GameConfig.startingSupplyFor(forkLevel - 1) / cheapest
         )
         assertTrue(
             "INITIAL_GOLD (${GameConfig.INITIAL_GOLD}) L7+ icin taban degerdir ve " +

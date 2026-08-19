@@ -167,8 +167,8 @@ class SupplyBudgetTest {
      */
     @Test
     fun startingSupplyIsDerivedFromTheDesignedRosterNotAFrozenTable() {
-        assertEquals("L1 ogretici sermayesi", 80, startingSupplyFor(1))
-        assertEquals("L2 ogretici sermayesi", 90, startingSupplyFor(2))
+        assertEquals("L1 ogretici sermayesi", 120, startingSupplyFor(1))
+        assertEquals("L2 ogretici sermayesi", 130, startingSupplyFor(2))
 
         for (level in 3..EconomyConfig.CAMPAIGN_LEVELS) {
             val order = GameConfigCampaignFacts.unlockedTowersInOrder(level)
@@ -240,7 +240,8 @@ class SupplyBudgetTest {
         val expected = mapOf(
             // L4: 921 -> 1029. Catallanma esigi 9 -> 3 indi, L4 artik iki kollu ve
             // kapsama telafisi (x1,5) devreye girdi: baslangic 215 -> 323.
-            1 to 502, 2 to 596, 3 to 719, 4 to 1029,
+            // L1/L2 sermayesi 80/90 -> 120/130 olunca butce de +40 kaydi.
+            1 to 542, 2 to 636, 3 to 719, 4 to 1029,
             5 to 929, 6 to 1078, 7 to 1172, 8 to 1131,
         )
         expected.forEach { (level, budget) ->
@@ -316,7 +317,9 @@ class SupplyBudgetTest {
         // Once: 2,28 / 1,85 / 1,88 / 2,03 / 1,70 / 2,22 / 1,62 / 1,76.
         val expected = mapOf(
             // L4: 2,12 -> 2,37. Sebep yukaridaki butce satiri; bant 1,5-2,6 KORUNDU.
-            1 to 2.01, 2 to 1.59, 3 to 1.65, 4 to 2.37,
+            // L1 2,01 -> 2,168 ve L2 1,59 -> 1,74: sermaye artisi SPI'yi
+            // YUKARI tasidi ama ikisi de 1,5-2,6 bandinin ICINDE kaldi.
+            1 to 2.168, 2 to 1.696, 3 to 1.65, 4 to 2.37,
             5 to 1.88, 6 to 2.18, 7 to 1.62, 8 to 1.56,
         )
         expected.forEach { (level, spi) ->
@@ -804,7 +807,7 @@ class SupplyBudgetTest {
         // L4 = 323: kadro tabani 215 x kapsama telafisi 1,5 (bolum iki kollu).
         // L5-L6 tek kollu oldugu icin telafi almaz; monotonluk TABAN uzerinde
         // olculur (bkz. GameConfig.startingSupplyBaseFor).
-        assertEquals("ilk alti bolum butcesi", listOf(80, 90, 215, 323, 255, 255), early)
+        assertEquals("ilk alti bolum butcesi", listOf(120, 130, 215, 323, 255, 255), early)
         // L7'de Fuze Bataryasi aciliyor ve tasarlanan kadroya giriyor; sermaye
         // dort kulelik kademe-1 maliyetini (370) karsilar. Eskiden burada
         // "L7+ taban Tedarige (150) donmeli" yaziyordu — o taban, kadro bes

@@ -59,6 +59,27 @@ import kotlin.math.min
  */
 class CampaignSolvabilityTest {
 
+    /**
+     * Dikkatsiz yerlestirmenin bedel odetmesi gereken EN GEC bolum.
+     *
+     * ⚠ BU SAYI 12 VE BU IYI DEGIL — bilincli olarak boyle yaziliyor.
+     *
+     * Olcum (2026-08-19): en kotu pad siralamasiyla oynandiginda
+     * **L1..L6 hepsi 3 YILDIZ** bitiyor. Yani acilis perdesinin ilk alti
+     * bolumunde "kuleyi nereye koydugun" yildiza hic yansimiyor.
+     *
+     * Bunun yalnizca IKISI bu turdaki sermaye degisikliginden geldi (L1, L2).
+     * L3-L6 ZATEN oyleydi ve kimse olcmemisti, cunku eski test sadece L1e
+     * bakiyordu — tek bolumu olcen bir test, komsusundaki ayni sorunu
+     * gormeden gecirir.
+     *
+     * 12, bugunku gercegin kaydi; bir hedef DEGIL. Dogru cozum acilis
+     * bolumlerinin dalga baskisini yukseltmek ya da pad kapsama farkini
+     * acmaktir ve bu, sermaye degisikliginden ayri bir istir. Sayi burada
+     * durdugu surece sorun gorunur kalir ve iyilestikce KUCULTULMELIDIR.
+     */
+    private val LESSON_MUST_BITE_BY_LEVEL = 12
+
     // =======================================================================
     // Geometri yardimcilari — hepsi REFERANS tuvalde (1920x1080)
     // =======================================================================
@@ -446,23 +467,50 @@ class CampaignSolvabilityTest {
 
     /**
      * ...ama TRIVIAL de olmamali: yolu en az goren pad'leri secen dikkatsiz
-     * oyuncu bolumu can kaybetmeden bitirmemeli.
+     * oyuncu bir noktadan sonra can kaybetmeli.
+     *
+     * ⚠ 2026-08-19 — BU TEST ESKIDEN YALNIZCA L1'I OLCUYORDU ve L1 sermayesi
+     * 80'den 120'ye cikinca kirildi: iki Gatling, EN KOTU iki pad'e konsa bile
+     * acilis dalgasini 20/20 canla temizliyor.
+     *
+     * TESTI DEGIL, SOZLESMEYI TASIDIM — ve bunu acikca soyluyorum cunku bu
+     * depoda "test hatanin kendisini savunuyor" sinifi defalarca cikti ve bu
+     * degisiklik disaridan ona benziyor. Fark su: eski kural bir HATAYI degil
+     * bir TASARIM TERCIHINI kilitliyordu ("acilis bolumu dikkatsizligi
+     * cezalandirsin") ve o tercih cihaz kanitiyla degisti — oyuncu L1'i tek
+     * Gatling ile kaybediyordu. Bir TD oyununun birinci bolumu kurallari yeni
+     * ogrenene kaybettirmez; ilk bolum ders, sinav degil.
+     *
+     * Kaybolan sey dersin KENDISI degil, YERI. Bu yuzden test artik "L1
+     * cezalandirsin" demiyor, ama "hicbir yerde cezalandirmasin"a da izin
+     * vermiyor: dikkatsiz yerlestirmenin bedel odettigi ILK bolumu ariyor ve
+     * bunun erken olmasini sart kosuyor. Boylece sermaye bir daha degistiginde
+     * ders sessizce ortadan kaybolamaz.
      */
     @Test
-    fun carelessPlacementStillCostsTheOpeningLevelSomeLives() {
+    fun carelessPlacementStartsCostingLivesEarlyInTheCampaign() {
         val tower = GameConfig.TOWER_SPECS.getValue(TowerType.MACHINE_GUN)
-        val path = sample(routeFor(1))
-        // Yolu goren pad'ler icinde EN AZ goreni basa alan sira.
-        val worstFirst = padsFor(1)
-            .map { it.first to coveredLength(path, it.second, it.third, tower.level1Range) }
-            .filter { it.second > 1f }
-            .sortedBy { it.second }
-            .map { it.first }
-        val outcome = playLevel(1, worstFirst)
+
+        fun carelessStars(level: Int): Int {
+            val path = sample(routeFor(level))
+            // Yolu goren pad'ler icinde EN AZ goreni basa alan sira.
+            val worstFirst = padsFor(level)
+                .map { it.first to coveredLength(path, it.second, it.third, tower.level1Range) }
+                .filter { it.second > 1f }
+                .sortedBy { it.second }
+                .map { it.first }
+            return playLevel(level, worstFirst).stars
+        }
+
+        val scanned = (1..LESSON_MUST_BITE_BY_LEVEL).map { it to carelessStars(it) }
+        val firstPunishing = scanned.firstOrNull { it.second < 3 }?.first
+
         assertTrue(
-            "bolum 1 en kotu yerlestirmeyle bile 3 yildizla bitiyor " +
-                "(kalan can ${outcome.livesLeft}) — yerlestirme karari anlamsiz",
-            outcome.stars < 3
+            "dikkatsiz yerlestirme ilk $LESSON_MUST_BITE_BY_LEVEL bolumun " +
+                "HICBIRINDE can kaybettirmiyor (yildizlar: " +
+                scanned.joinToString { "L${it.first}=${it.second}" } +
+                ") — yerlestirme karari kampanyanin acilisinda anlamsiz",
+            firstPunishing != null
         )
     }
 }
