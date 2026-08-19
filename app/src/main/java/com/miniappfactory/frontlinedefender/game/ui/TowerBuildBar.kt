@@ -14,10 +14,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -33,6 +36,7 @@ import com.miniappfactory.frontlinedefender.game.economy.BattleTelemetry
 import com.miniappfactory.frontlinedefender.game.engine.GameEngine
 import com.miniappfactory.frontlinedefender.game.model.GameConfig
 import com.miniappfactory.frontlinedefender.ui.theme.*
+import kotlinx.coroutines.delay
 
 /**
  * ---------------------------------------------------------------------------
@@ -48,9 +52,21 @@ import com.miniappfactory.frontlinedefender.ui.theme.*
  *    150 ile 270 ref-px arasinda degistigi icin tek bir notr halka yanlis
  *    bilgi verirdi — ve Frost Field'in tum degeri genis kapsama alani.
  *
- * LOKALIZASYON: buradaki kilit etiketi ("LOCKED" / "Lv N") Ingilizce SABIT.
- * `strings.xml` baska bir ajanin dosyasi; eklenecek anahtarlar
- * docs/TOWER_REBALANCE.md'de listeli.
+ * 3. BOLUM DEGISTIRICILERI (`GameConfig.LevelModifiers`). Kartin ikinci satiri
+ *    artik "fiyat ya da kilit" degil, **hangi engel varsa ONUN adi**:
+ *    bolum kilidi · kadro disi · mevzi tavani dolu · dalga suruyor. Sebepler
+ *    AYIRT EDILEBILIR olmak zorunda; "Lv 12'de acilir" ile "bu harekatta yok"
+ *    oyuncu icin bambaska iki bilgidir ve ayni gorunurlerse oyuncuya var
+ *    olmayan bir hedef gosterilir.
+ *
+ *    Kural sahibi UI DEGIL MOTOR: kart `GameEngine.buildRejectionFor` sorar.
+ *    YAPISAL engeller (kilit / kadro / para) kartı tiklanamaz birakir — sebep
+ *    zaten SUREKLI yazili. GECICI engeller (tavan / catisma) kartı TIKLANABILIR
+ *    birakir ki dokunus cevapsiz kalmasin: ret desenli titresim + [BuildRejectionStrip].
+ *
+ * LOKALIZASYON: kilit etiketi ("LOCKED · Lv N") hâlâ Ingilizce SABIT (bkz.
+ * docs/TOWER_REBALANCE.md); degistirici etiketleri `strings.xml` + `values-tr`
+ * ikilisinden gelir.
  *
  * Faz 3'te iki sey degisti:
  *
@@ -79,6 +95,13 @@ fun TowerBuildBar(
     val selectedBuildSpot by gameEngine.selectedBuildSpot.collectAsState()
     val gold by gameEngine.gold.collectAsState()
     val levelId by gameEngine.currentLevelId.collectAsState()
+    // BOLUM DEGISTIRICILERI: kart durumu artik yalnizca kilit + paraya degil,
+    // savas durumuna (DONMUS MEVZI) ve sahadaki kule sayisina (MEVZI TAVANI) de
+    // bagli. Ikisi de BURADA toplanir, yoksa kartlar bayat cizilir: dalga
+    // baslayinca "CATISMADA" etiketi hic gorunmez, tavan dolunca kart hala
+    // kurulabilir gibi durur.
+    val gameState by gameEngine.gameState.collectAsState()
+    val towerCount by gameEngine.towerCount.collectAsState()
     val haptics = rememberHaptics()
 
     AnimatedVisibility(
@@ -117,25 +140,43 @@ fun TowerBuildBar(
             ) {
                 GameConfig.TowerType.values().forEach { towerType ->
                     val spec = GameConfig.TOWER_SPECS[towerType]!!
-                    val unlocked = GameConfig.isTowerUnlocked(towerType, levelId)
+                    // KURALIN TEK SAHIBI MOTOR. Kart kendi kilit/kadro/tavan
+                    // matematigini YAPMAZ, motorun kapisini sorar — panelin
+                    // dedigi ile motorun yaptigi boylece ayrisamaz.
+                    // Anahtarlar BAGIMLILIK BEYANIDIR: kartin durumu bu dort
+                    // degerin fonksiyonudur ve dordu de yukarida toplaniyor.
+                    // Biri listeden dusarse kart bayat cizilir — orn. tavan
+                    // dolunca kart hala kurulabilir gorunur.
+                    val rejection = remember(towerType, levelId, gold, gameState, towerCount) {
+                        gameEngine.buildRejectionFor(towerType)
+                    }
                     TowerBuildCard(
                         spec = spec,
-                        unlocked = unlocked,
-                        canAfford = gold >= spec.buildCost,
+                        rejection = rejection,
                         onBuild = {
-                            // HAPTIK, SES VE GORSEL AYNI KAREDE. Titresim
-                            // `buildTower`dan ONCE tetiklenir: motor cagrisi
-                            // kule listesini ve altini guncelleyip recomposition
-                            // baslatir, dokunsal geri bildirimi onun ARKASINA
-                            // koymak parmagin altinda olculebilir bir gecikme
-                            // yaratirdi.
-                            haptics.onTowerBuilt()
-                            // GOREV OLCUMU yalnizca motor GERCEKTEN kurduysa.
-                            // `buildTower` kilit/Tedarik/girdi kontrollerinde
-                            // false donebilir; reddedilen bir dokunusu saymak
-                            // `d_v_build15`i bedava doldururdu.
-                            if (gameEngine.buildTower(towerType)) {
-                                telemetry.noteTowerBuilt(towerType.name)
+                            if (rejection == null) {
+                                // HAPTIK, SES VE GORSEL AYNI KAREDE. Titresim
+                                // `buildTower`dan ONCE tetiklenir: motor cagrisi
+                                // kule listesini ve altini guncelleyip
+                                // recomposition baslatir, dokunsal geri bildirimi
+                                // onun ARKASINA koymak parmagin altinda
+                                // olculebilir bir gecikme yaratirdi.
+                                haptics.onTowerBuilt()
+                                // GOREV OLCUMU yalnizca motor GERCEKTEN kurduysa.
+                                // `buildTower` kilit/Tedarik/girdi kontrollerinde
+                                // false donebilir; reddedilen bir dokunusu saymak
+                                // `d_v_build15`i bedava doldururdu.
+                                if (gameEngine.buildTower(towerType)) {
+                                    telemetry.noteTowerBuilt(towerType.name)
+                                }
+                            } else {
+                                // GECICI kisitlar (tavan doldu / dalga suruyor)
+                                // TIKLANABILIR kalir: dokunus CEVAPSIZ kalmaz,
+                                // ret desenli titresim + mesaj seridi ile ayni
+                                // karede geri doner. Motor yine son sozu soyler
+                                // ve SEBEBI kendisi yayinlar.
+                                haptics.onActionRejected()
+                                gameEngine.buildTower(towerType)
                             }
                         },
                         onPreview = { pressed ->
@@ -179,19 +220,22 @@ fun TowerBuildBar(
 @Composable
 private fun TowerBuildCard(
     spec: GameConfig.TowerStats,
-    unlocked: Boolean,
-    canAfford: Boolean,
+    rejection: GameEngine.BuildRejection?,
     onBuild: () -> Unit,
     onPreview: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val buildable = unlocked && canAfford
+    val buildable = rejection == null
+    // YAPISAL kisit (bu bolumde ASLA kurulamaz) ile GECICI kisit (su an
+    // kurulamaz) ayri davranir: ilki tiklanamaz — kartin uzerindeki etiket
+    // sebebi zaten SUREKLI gosterir; ikincisi tiklanabilir kalir ki dokunus
+    // cevapsiz kalmasin ve oyuncu sebebi anlik olarak gorsun.
+    val structural = rejection == GameEngine.BuildRejection.TOWER_LOCKED ||
+        rejection == GameEngine.BuildRejection.NOT_IN_LOADOUT ||
+        rejection == GameEngine.BuildRejection.INSUFFICIENT_SUPPLY
+    val clickable = buildable || !structural
     val cardColor = if (buildable) SleekSurfaceCard else SleekDarkBg
-    val borderColor = when {
-        buildable -> SleekPrimaryGreen
-        !unlocked -> SleekBorderDark
-        else -> SleekBorderDark
-    }
+    val borderColor = if (buildable) SleekPrimaryGreen else SleekBorderDark
     // Faz 6: ad GameConfig'ten DEGIL kaynaktan. GameConfig.TowerStats.name
     // kullanilmayan Ingilizce fallback olarak kaldi.
     val towerName = stringResource(spec.type.nameRes())
@@ -211,7 +255,7 @@ private fun TowerBuildCard(
             .background(cardColor, RoundedCornerShape(12.dp))
             .border(1.5.dp, borderColor, RoundedCornerShape(12.dp))
             .clickable(
-                enabled = buildable,
+                enabled = clickable,
                 interactionSource = interaction,
                 indication = LocalIndication.current,
                 onClick = onBuild
@@ -225,12 +269,16 @@ private fun TowerBuildCard(
             id = towerSpriteRes(spec.type),
             size = 34.dp,
             contentDescription = towerName,
-            // Kilitli kart daha da soluk: "param yetmiyor" ile "henuz acilmadi"
-            // ayni gorunmemeli.
-            modifier = when {
-                buildable -> Modifier
-                !unlocked -> Modifier.alpha(0.25f)
-                else -> Modifier.alpha(0.4f)
+            // UC AYRI SOLUKLUK, UC AYRI SEBEP: "bu bolumde hic yok" (kilit ya
+            // da kadro disi) en soluk, "su an olmaz" (tavan/catisma) orta,
+            // "param yetmiyor" en az soluk. Oyuncu karta bakmadan da hangi
+            // engelle karsilastigini ayirt edebilmeli.
+            modifier = when (rejection) {
+                null -> Modifier
+                GameEngine.BuildRejection.TOWER_LOCKED,
+                GameEngine.BuildRejection.NOT_IN_LOADOUT -> Modifier.alpha(0.25f)
+                GameEngine.BuildRejection.INSUFFICIENT_SUPPLY -> Modifier.alpha(0.4f)
+                else -> Modifier.alpha(0.33f)
             }
         )
         Column(
@@ -251,17 +299,33 @@ private fun TowerBuildCard(
                 textAlign = TextAlign.Start,
                 modifier = Modifier.fillMaxWidth()
             )
-            if (!unlocked) {
-                // LOKALIZE EDILECEK: build_locked_at_level ("Lv %1$d'de acilir").
-                // Bkz. docs/TOWER_REBALANCE.md — strings.xml baska ajanin dosyasi.
+            // IKINCI SATIR = SEBEP SATIRI. Kurulabilir kartta fiyati, aksi
+            // halde ENGELIN ADINI tasir. Bolum kilidi ("Lv 12") ile harekat
+            // kisiti ("KADRO DISI") ayni gorunmez: biri ilerleyince acilir,
+            // digeri BU BOLUMDE hic acilmaz.
+            val blockLabel: String? = when (rejection) {
+                GameEngine.BuildRejection.TOWER_LOCKED ->
+                    "LOCKED · Lv ${spec.unlockedAtLevel}"
+                GameEngine.BuildRejection.NOT_IN_LOADOUT ->
+                    stringResource(R.string.build_off_roster)
+                GameEngine.BuildRejection.EMPLACEMENT_CAP ->
+                    stringResource(R.string.build_slots_full)
+                GameEngine.BuildRejection.WAVE_IN_PROGRESS ->
+                    stringResource(R.string.build_in_combat)
+                // Tedarik yetersizligi kendi satirini KULLANMAZ: fiyat zaten
+                // gri cizilir ve oyuncunun gormesi gereken sey fiyatin kendisi.
+                GameEngine.BuildRejection.INSUFFICIENT_SUPPLY, null -> null
+            }
+            if (blockLabel != null) {
                 AutoShrinkText(
-                    text = "LOCKED · Lv ${spec.unlockedAtLevel}",
+                    text = blockLabel,
                     color = Color(0xFF9AA5B1),
                     fontWeight = FontWeight.Bold,
                     maxFontSize = 11.sp,
                     minFontSize = 8.sp,
                     maxLines = 1,
                     textAlign = TextAlign.Start,
+                    resetKey = blockLabel,
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("build_locked_${spec.type.name.lowercase()}")
@@ -271,11 +335,10 @@ private fun TowerBuildCard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
-                    // TEDARIK glifi, COIN degil. Yukarida `canAfford`
-                    // `gold >= spec.buildCost` ile hesaplaniyor: insa bedeli
-                    // savas ici TEDARIK ile odeniyor. Buraya kadar coin glifi
-                    // cizildigi icin oyuncuya yanlis para birimi gosteriliyordu.
-                    // (Meta para birimi olan coin'in yeri `UpgradeShopScreen`.)
+                    // TEDARIK glifi, COIN degil: insa bedeli savas ici TEDARIK
+                    // ile odeniyor. Buraya kadar coin glifi cizildigi icin
+                    // oyuncuya yanlis para birimi gosteriliyordu. (Meta para
+                    // birimi olan coin'in yeri `UpgradeShopScreen`.)
                     SpriteIcon(
                         id = R.drawable.spr_ic_supply_crate,
                         size = 11.dp,
@@ -283,7 +346,9 @@ private fun TowerBuildCard(
                     )
                     Text(
                         text = stringResource(R.string.build_cost, spec.buildCost),
-                        color = if (canAfford) SleekGold else Color.Gray,
+                        color = if (
+                            rejection == GameEngine.BuildRejection.INSUFFICIENT_SUPPLY
+                        ) Color.Gray else SleekGold,
                         fontWeight = FontWeight.Bold,
                         fontSize = 12.sp
                     )
@@ -291,4 +356,100 @@ private fun TowerBuildCard(
             }
         }
     }
+}
+
+/**
+ * ---------------------------------------------------------------------------
+ * INSA RET SERIDI — "reddedilen bir insa sessiz olamaz"
+ * ---------------------------------------------------------------------------
+ * Motor bir insayi reddettiginde SEBEBI yayinlar
+ * ([GameEngine.buildRejection]); bu serit onu okur ve kisa sure gosterir.
+ *
+ * Neden motorun akisindan, kartin bildiginden DEGIL: reddin tek dogru sahibi
+ * motordur. Ogretici, test ya da ileride eklenecek surukle-birak yolu da ayni
+ * kapidan gecer ve ayni mesaji uretir — UI'ye ikinci bir kural kopyasi
+ * yazilmaz.
+ *
+ * Neden `Toast` DEGIL: yatay oyunda toast alt-ortada belirir ve tam olarak
+ * insa cekmecesinin uzerine oturur. Serit cekmecenin USTUNDE, oyuncunun
+ * parmaginin DISINDA durur (finger occlusion) ve girdi YUTMAZ.
+ *
+ * Yerlesim `GameConfig.BUILD_DRAWER_HEIGHT_DP`den turetilir: cekmece bir gun
+ * buyurse serit onunla birlikte yukari kayar, altinda kalmaz.
+ */
+@Composable
+fun BuildRejectionStrip(
+    gameEngine: GameEngine,
+    modifier: Modifier = Modifier
+) {
+    val notice by gameEngine.buildRejection.collectAsState()
+    val levelId by gameEngine.currentLevelId.collectAsState()
+
+    // Gorunurluk `notice`in KENDISINDEN degil yerel bir bayraktan gelir:
+    // ayni sebep ust uste geldiginde serit yeniden acilmali (notice.serial
+    // her seferinde degisir), ama sure dolunca motor durumunu temizlemeden
+    // kapanmali.
+    var shownSerial by remember { mutableStateOf(0L) }
+    LaunchedEffect(notice?.serial) {
+        val serial = notice?.serial ?: return@LaunchedEffect
+        shownSerial = serial
+        delay(REJECTION_MESSAGE_MS)
+        if (shownSerial == serial) shownSerial = 0L
+    }
+    // Yeni savas: kalan mesaj yeni bolumun uzerinde durmasin.
+    LaunchedEffect(levelId) { shownSerial = 0L }
+
+    val current = notice?.takeIf { it.serial == shownSerial && shownSerial != 0L }
+    val text = current?.let { rejectionMessage(it, gameEngine.levelSpec) }
+
+    AnimatedVisibility(
+        visible = text != null,
+        enter = fadeIn(),
+        exit = fadeOut(),
+        modifier = modifier
+    ) {
+        Box(
+            modifier = Modifier
+                .padding(bottom = GameConfig.BUILD_DRAWER_HEIGHT_DP.dp + 10.dp)
+                .widthIn(max = 300.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(SleekSurfaceHeader.copy(alpha = 0.94f))
+                .border(1.dp, SleekRedBorder, RoundedCornerShape(10.dp))
+                .padding(horizontal = 12.dp, vertical = 7.dp)
+                .testTag("build_rejection_caption")
+        ) {
+            AutoShrinkText(
+                text = text.orEmpty(),
+                color = SleekTextAccent,
+                maxFontSize = 12.sp,
+                minFontSize = 9.sp,
+                maxLines = 2,
+                textAlign = TextAlign.Center,
+                resetKey = text
+            )
+        }
+    }
+}
+
+/** Serit ne kadar kalir. BoosterRail'in mesaj suresiyle ayni bant. */
+private const val REJECTION_MESSAGE_MS = 1800L
+
+/** Ret sebebinin oyuncuya gosterilecek karsiligi. Sebepler AYRI AYRI ayirt edilir. */
+@Composable
+private fun rejectionMessage(
+    notice: GameEngine.BuildRejectionNotice,
+    spec: GameConfig.LevelSpec
+): String = when (notice.reason) {
+    GameEngine.BuildRejection.TOWER_LOCKED -> stringResource(
+        R.string.build_msg_locked,
+        GameConfig.TOWER_SPECS[notice.type]?.unlockedAtLevel ?: 1
+    )
+    GameEngine.BuildRejection.NOT_IN_LOADOUT ->
+        stringResource(R.string.build_msg_off_roster)
+    GameEngine.BuildRejection.WAVE_IN_PROGRESS ->
+        stringResource(R.string.build_msg_in_combat)
+    GameEngine.BuildRejection.EMPLACEMENT_CAP ->
+        stringResource(R.string.build_msg_slots_full, spec.maxTowers ?: 0)
+    GameEngine.BuildRejection.INSUFFICIENT_SUPPLY ->
+        stringResource(R.string.build_msg_supply)
 }

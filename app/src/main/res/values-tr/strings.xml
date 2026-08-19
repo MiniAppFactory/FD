@@ -21,6 +21,13 @@
     <string name="hud_supply_amount">%1$d</string>
     <string name="hud_lives_icon_desc">Üs bütünlüğü</string>
     <string name="hud_lives_value">%1$d/%2$d</string>
+    <!-- Rozet dar: "MEVZİ 3/5" 9sp'de sigar, uzun bir cumle sigmaz. -->
+    <string name="hud_emplacement_label">MEVZİ %1$d/%2$d</string>
+    <string name="hud_emplacement_desc">Mevzi %1$d / %2$d</string>
+    <string name="hud_build_plan">PLAN</string>
+    <string name="hud_build_locked">KİLİTLİ</string>
+    <string name="hud_build_plan_desc">İnşa penceresi açık</string>
+    <string name="hud_build_locked_desc">Dalga sürerken inşa kilitli</string>
     <string name="hud_start_wave">BAŞLAT</string>
     <string name="hud_start_wave_icon_desc">Dalgayı başlat</string>
     <string name="hud_speed_icon_desc">Oyun hızı</string>
@@ -41,6 +48,21 @@
     <!-- ==================== build ==================== -->
     <string name="build_cost">%1$d</string>
     <string name="build_close_desc">İnşa panelini kapat</string>
+
+    <!-- ==================== bolum degistiricileri ====================
+         Kart etiketleri dar kartta duruyor; TR metinler EN karsiliklariyla
+         ayni uzunlukta tutuldu. "KADRO DIŞI" bolum kilidinden ("Lv 7") KASTEN
+         farkli bir cumle: biri ilerleyince acilir, digeri bu bolumde hic
+         acilmaz. -->
+    <string name="build_off_roster">KADRO DIŞI</string>
+    <string name="build_slots_full">MEVZİ DOLU</string>
+    <string name="build_in_combat">ÇATIŞMADA</string>
+
+    <string name="build_msg_locked">%1$d. bölümde açılır.</string>
+    <string name="build_msg_off_roster">Bu kule harekât kadrosunda yok.</string>
+    <string name="build_msg_slots_full">Mevzi tavanı doldu (%1$d). Kurmak için bir kule sat.</string>
+    <string name="build_msg_in_combat">Dalga başlayınca yeni mevzi kurulamaz.</string>
+    <string name="build_msg_supply">Tedarik yetersiz.</string>
 
     <!-- ==================== tower ====================
          ANTI_ARMOR: sprite fuze rampasi, ses fuze firlatma -> gorunen metin de

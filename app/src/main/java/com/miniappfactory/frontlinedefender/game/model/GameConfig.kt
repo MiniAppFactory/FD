@@ -1241,7 +1241,13 @@ object GameConfig {
         val maxBaseLives: Int = INITIAL_BASE_LIVES,
         val disabledPadIds: List<Int> = emptyList(),
         val overlay: MapOverlay = MapOverlay.NONE,
-        val biome: Biome = Biome.TEMPERATE
+        val biome: Biome = Biome.TEMPERATE,
+        /**
+         * BOLUM DEGISTIRICILERI (CAMPAIGN_55.md 5.3 / K7). Varsayilani
+         * [LevelModifiers.NONE], yani degistirici TASIMAYAN bir bolumun
+         * davranisi BIREBIR eskisi gibidir. Tek kaynak [LEVEL_MODIFIERS].
+         */
+        val modifiers: LevelModifiers = LevelModifiers.NONE
     ) {
         /** Dalga sayisi TEK KAYNAKTAN gelir; burada kopyalanmaz. Getter = lazy. */
         val waveCount: Int get() = WaveDefinitions.waveCount(levelId)
@@ -1249,6 +1255,149 @@ object GameConfig {
         /** Bolum secme ekraninda gorunen ad. Ingilizce (lokalizasyon ajani alacak). */
         val displayName: String
             get() = MAP_NAMES_EN[mapId] ?: "Sector $mapId"
+
+        /** KISITLI KADRO: bu kule tipi BU HAREKATTA kurulabiliyor mu? */
+        fun allowsTowerType(type: TowerType): Boolean = modifiers.allows(type)
+
+        /** MEVZI TAVANI: ayni anda tutulabilen azami kule (null = tavan yok). */
+        val maxTowers: Int? get() = modifiers.maxTowers
+
+        /** DONMUS MEVZI: dalga basladiktan sonra YENI kule kurulamaz mi? */
+        val buildLockedDuringWave: Boolean get() = modifiers.buildLockedDuringWave
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * BOLUM DEGISTIRICILERI — CAMPAIGN_55.md 5.3 (M1 / M2 / M3 varyanti)
+     * ------------------------------------------------------------------------
+     * Kampanya 55 bolum ama yalnizca 11 savas alani var: her harita bes kez
+     * oynaniyor. Biyom yalnizca RENK degistirir; cesitlilik KURAL
+     * DEGISIKLIGINDEN gelmek zorunda (dokumanin kendi tespiti). Ayni layout,
+     * farkli kural = farkli bulmaca.
+     *
+     * TASARIM SOZLESMESI — bu tip **SAF VERI**dir:
+     *  · Motor yalnizca kurali okur, BOLUM NUMARASI BILMEZ. `GameEngine` icinde
+     *    hicbir yerde "eger bolum 19 ise" yazmaz.
+     *  · Varsayilan [NONE], yani degistirici tasimayan 49 bolumun davranisi
+     *    degismez — bu bir REGRESYON KAPISI, `LevelModifierTest` olcer.
+     *  · Denge tarafi da ayni veriyi okur: `CampaignSimulator.LevelModel`
+     *    kisiti TANIR, aksi halde cozulebilirlik testi yalan soylerdi.
+     *
+     * @param allowedTowers **KISITLI KADRO** (M1). `null` = kisit yok. Dolu ise
+     *   yalnizca bu tipler kurulabilir; kule KILIDI (bolum bazli acilma) bunun
+     *   USTUNE biner, yani kisit acik kuleleri DARALTIR, hic genisletmez.
+     * @param maxTowers **MEVZI TAVANI** (M2). `null` = tavan yok. Ayni anda
+     *   sahada tutulabilen azami kule sayisi; pad sayisindan BAGIMSIZ. Satis
+     *   yer acar (tavan bir STOK kisitidir, kota degil).
+     * @param buildLockedDuringWave **DONMUS MEVZI** (M3 varyanti). `true` ise
+     *   dalga BASLADIKTAN sonra YENI kule kurulamaz. Yukseltme ve satis SERBEST
+     *   kalir; gerekce: kural "catisma sirasinda tepki verme" degil "hattini
+     *   dalga baslamadan kur" der. Yukseltmeyi de kapatmak, dalga icinde
+     *   kazanilan Tedarigi OLU PARAYA cevirir (sessiz bir ekonomi vergisi) ve
+     *   L4'te ogretilen satma/yeniden konumlandirma dersini kullanilamaz
+     *   kilardi.
+     */
+    data class LevelModifiers(
+        val allowedTowers: Set<TowerType>? = null,
+        val maxTowers: Int? = null,
+        val buildLockedDuringWave: Boolean = false
+    ) {
+        /** Bu bolum HERHANGI bir degistirici tasiyor mu (UI rozetleri icin). */
+        val isEmpty: Boolean
+            get() = allowedTowers == null && maxTowers == null && !buildLockedDuringWave
+
+        fun allows(type: TowerType): Boolean = allowedTowers?.contains(type) ?: true
+
+        companion object {
+            val NONE = LevelModifiers()
+        }
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * DEGISTIRICI TABLOSU — hangi bolumde hangi kural, ve NEDEN
+     * ------------------------------------------------------------------------
+     * Bu tur SISTEMI AYAGA KALDIRIR, kampanyaya YAYMAZ: alti bolum, hicbirinde
+     * ikili kombinasyon yok. Yayilim ayri bir tur (CAMPAIGN_55.md 5.2'nin
+     * L32/L42/L47/L52 kombinasyonlari).
+     *
+     * SECIM KURALLARI (hepsi CAMPAIGN_55.md ve LEVEL_DESIGN.md'den):
+     *  · **Ogretici bandi (L1-L8) DOKUNULMAZ.** Cekirdek dongu once oturur.
+     *  · **Bir degistirici ILK gorundugu bolumde YALNIZ durur.** Iki yeni kural
+     *    ayni anda ogretilmez; bu yuzden perde acilislari (L12 krater + kademe 3,
+     *    L23 · L34 · L45 perde gecisleri) ve boss bolumleri
+     *    (L11/L16/L22/L33/L44/L55) KULLANILMAZ.
+     *  · Ikinci gorunum ilkinden en az 5 bolum sonra ve FARKLI bir tonda gelir.
+     *  · **ILK gorunum OLCULEREK secildi, tahminle degil.** Aday bolum/kural
+     *    ciftleri `LevelModifierImpactReportTool` ile kisitli ve kisitsiz
+     *    kosturuldu; ilk tanitimlar 7/7 davranisin gectigi ciftlerden secildi.
+     *    (Olcum sirasinda elenen adaylar: L13'te Gatling'i kaldirmak 7/7'yi
+     *    3/7'ye dusuruyordu — ilk ders icin fazla sert; Agir Top'u kaldirmak ise
+     *    hicbir davranisi degistirmiyordu — dekoratif.)
+     *
+     * Bolum 15 · harita 08 · KADRO: **Gatling YOK**. Ilk kisit. Kaldirilan sey
+     *   oyuncunun L1'den beri yaslandigi UCUZ IS ATI (60 Tedarik). Soru: "pahali
+     *   kadroyla ayni hatti nasil kurarim". Olcum: 7/7 -> 7/7, yani kural
+     *   ogretilir ama kimseyi kampanyada durdurmaz; degisen sey artan Tedarik
+     *   ve kadro bilesimi.
+     *
+     * Bolum 19 · harita 04 · TAVAN **7 mevzi** (11 acik pad). Lakeside Ring
+     *   kampanyanin EN GENIS tahtasi (16 pad). Tavan dersini ("genislemek mi,
+     *   derinlesmek mi") en genis tahtada vermek dersi en gorunur kilar: bos pad
+     *   her yerde duruyor ama insa hakki bitmis. Tavan 5 DENENDI ve reddedildi:
+     *   olcumde 830-1345 Tedarik harcanamadan kaliyordu, yani bolumun ikinci
+     *   yarisinda hicbir ekonomi karari kalmiyordu. 7'de artan 81-813'e iner.
+     *
+     * Bolum 24 · harita 09 · DONMUS MEVZI. Kis perdesinin mekanigi
+     *   (CAMPAIGN_55.md 5.2 bunu L23'e koyuyordu; L23 perde ACILISI oldugu icin
+     *   bir bolum otelendi). Hazirlik fazi ilk kez GERCEK bir planlama ani olur.
+     *
+     * Bolum 32 · harita 01 · KADRO: **Fuze Rampasi YOK**. Ikinci kisit, FARKLI
+     *   bir tondan: bu kez zirh cevabi gider ve oyuncu zirhi patlama ile
+     *   (Agir Top, zirhi BYPASS eder) cozmek zorunda kalir. Olcum: 6/7 -> 5/7.
+     *
+     * Bolum 36 · harita 07 · TAVAN **6 mevzi** (9 acik pad). Ikinci tavan, DAR
+     *   tahtada — ayni kural, bambaska bir his: L19'da bos pad bollugu vardi,
+     *   burada zaten kit olan yerin uzerine bir de hak kisiti biner.
+     *
+     * Bolum 46 · harita 07 · DONMUS MEVZI. Ikinci tekrar. **L36 ile AYNI
+     *   HARITA**: bu, dokumanin 6.1'deki 2. ekseninin ("ayni harita, farkli
+     *   kisitlayici") ilk somut ornegi — harita 07 kampanyada bes kez oynaniyor
+     *   ve bu iki gecis birbirinden RENKLE degil KURALLA ayriliyor.
+     *
+     * Kalan 49 bolum [LevelModifiers.NONE] tasir ve BIREBIR eski davranisi
+     * gosterir.
+     */
+    val LEVEL_MODIFIERS: Map<Int, LevelModifiers> = mapOf(
+        15 to LevelModifiers(
+            allowedTowers = setOf(TowerType.CANNON, TowerType.ANTI_ARMOR, TowerType.SLOW)
+        ),
+        19 to LevelModifiers(maxTowers = 7),
+        24 to LevelModifiers(buildLockedDuringWave = true),
+        32 to LevelModifiers(
+            allowedTowers = setOf(TowerType.MACHINE_GUN, TowerType.CANNON, TowerType.SLOW)
+        ),
+        36 to LevelModifiers(maxTowers = 6),
+        46 to LevelModifiers(buildLockedDuringWave = true)
+    )
+
+    /**
+     * Bolumun degistiricileri. Tablo disi her bolum icin [LevelModifiers.NONE].
+     *
+     * Cagirma yeri TEK: [CAMPAIGN] kurulumu. Motor, UI ve simulator degistiriciyi
+     * `LevelSpec.modifiers` uzerinden okur — kimse bu haritaya bolum numarasiyla
+     * ikinci kez sormaz.
+     */
+    fun modifiersFor(levelId: Int): LevelModifiers =
+        LEVEL_MODIFIERS[levelId] ?: LevelModifiers.NONE
+
+    /**
+     * KISITLI KADRO + KULE KILIDI birlikte: bu bolumde GERCEKTEN kurulabilir
+     * tipler. Kisit acik kule kumesini yalnizca DARALTIR.
+     */
+    fun buildableTowers(levelId: Int): List<TowerType> {
+        val mods = modifiersFor(levelId)
+        return unlockedTowers(levelId).filter { mods.allows(it) }
     }
 
     /** Olculmus 11 haritanin Ingilizce adlari (GEOMETRY_REPORT.md 0 tablosu). */
@@ -1854,7 +2003,8 @@ object GameConfig {
                     act = 1,
                     deploymentCost = actIDeploymentCost[lv - 1],
                     startingSupply = startingSupplyFor(lv),
-                    disabledPadIds = OUT_OF_RANGE_PADS[lv] ?: emptyList()
+                    disabledPadIds = OUT_OF_RANGE_PADS[lv] ?: emptyList(),
+                    modifiers = modifiersFor(lv)
                 )
             )
         }
@@ -1873,7 +2023,8 @@ object GameConfig {
                     startingSupply = startingSupplyFor(lv),
                     disabledPadIds = FROZEN_DISABLED_PADS[lv] ?: emptyList(),
                     overlay = MapOverlay.NIGHT,
-                    biome = Biome.NIGHT
+                    biome = Biome.NIGHT,
+                    modifiers = modifiersFor(lv)
                 )
             )
         }
@@ -1902,7 +2053,8 @@ object GameConfig {
                         startingSupply = startingSupplyFor(lv),
                         disabledPadIds = LATE_ACT_DISABLED_PADS[lv] ?: emptyList(),
                         overlay = overlay,
-                        biome = biome
+                        biome = biome,
+                        modifiers = modifiersFor(lv)
                     )
                 )
             }

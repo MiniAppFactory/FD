@@ -627,6 +627,15 @@ fun GameScreen(
                     modifier = Modifier.align(Alignment.BottomCenter)
                 )
 
+                // BOLUM DEGISTIRICILERI — reddedilen insanin SEBEBI.
+                // Cekmecenin USTUNDE ve onun disinda cizilir: cekmecenin
+                // olculen yuksekligi `GameCanvas`in secim hayaletine capa
+                // oluyor, seridi iceri koymak o capayi kaydirirdi.
+                BuildRejectionStrip(
+                    gameEngine = gameEngine,
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                )
+
                 // Bottom Inspector Drawer when tower is selected
                 SelectedTowerInspector(
                     gameEngine = gameEngine,

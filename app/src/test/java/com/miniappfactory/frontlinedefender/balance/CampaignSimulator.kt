@@ -147,7 +147,16 @@ object CampaignSimulator {
     // Bolum modeli — her deger GameConfig / WaveDefinitions / LevelGeometry'den
     // =======================================================================
 
-    class LevelModel(val levelId: Int) {
+    /**
+     * @param modifiersOverride yalnizca "NE OLURDU" olcumleri icin. `null` ise
+     *   bolumun GERCEK degistiricileri kullanilir (kapi testlerinin kullandigi
+     *   tek dogru deger). Ayni bolumu kisitli/kisitsiz kosturup farki olcmek,
+     *   "simulator kisiti gercekten taniyor mu" sorusunun tek durust cevabi.
+     */
+    class LevelModel(
+        val levelId: Int,
+        modifiersOverride: GameConfig.LevelModifiers? = null
+    ) {
         val spec: GameConfig.LevelSpec = GameConfig.levelSpec(levelId)
 
         /** Motor eksik bitmap'te yedege duser; bugun 1..11 hepsi pakette. */
@@ -175,7 +184,31 @@ object CampaignSimulator {
         val waves: List<GameConfig.WaveData> = WaveDefinitions.wavesFor(levelId)
         val actHpMul: Float = GameConfig.actHpMultiplier(spec.act)
         val actRewardMul: Float = GameConfig.actRewardMultiplier(spec.act)
-        val unlockedTowers: List<TowerType> = GameConfig.unlockedTowers(levelId)
+
+        /**
+         * BOLUM DEGISTIRICILERI (`GameConfig.LevelModifiers`).
+         *
+         * Simulator kisiti TANIMAK ZORUNDA: `CampaignSolvabilityAllLevelsTest`
+         * "bu bolum gecilebilir" diyorsa, olctugu sey oyuncunun GERCEKTEN
+         * oynayacagi bolum olmali. Kisiti modellemeden yesil kalan bir test
+         * YALAN SOYLER — kisitin dengeyi bozdugu bolumu tam da kapinin
+         * yakalamasi gereken yerde gozden kacirir.
+         */
+        val modifiers: GameConfig.LevelModifiers = modifiersOverride ?: spec.modifiers
+
+        /**
+         * KISITLI KADRO (M1): kule kilidi (bolum bazli acilma) VE harekat
+         * kadrosu birlikte. Motorun `buildRejectionFor` kapisiyla ayni kural,
+         * ayni sirayla.
+         */
+        val unlockedTowers: List<TowerType> =
+            GameConfig.unlockedTowers(levelId).filter { modifiers.allows(it) }
+
+        /** MEVZI TAVANI (M2): ayni anda tutulabilen azami kule; null = tavan yok. */
+        val maxTowers: Int? = modifiers.maxTowers
+
+        /** DONMUS MEVZI (M3): dalga basladiktan sonra YENI kule kurulamaz. */
+        val buildLockedDuringWave: Boolean = modifiers.buildLockedDuringWave
 
         fun maxTier(type: TowerType): Int = GameConfig.maxTowerTier(type, levelId)
 
@@ -507,11 +540,29 @@ object CampaignSimulator {
             val ratio: Float get() = gain / cost
         }
 
+        /**
+         * DONMUS MEVZI (M3) penceresi. Motorda `buildRejectionFor` yalnizca
+         * `WAVE_RUNNING` durumunda reddeder; simulatorde de tam olarak dalga
+         * dongusunun ICINDE kapanir, dalgalar ARASINDAKI hazirlik fazinda
+         * (motor her dalgadan once PREPARATION'a doner) yeniden acilir.
+         */
+        var buildWindowOpen = true
+
+        /** Motorun `EMPLACEMENT_CAP` + `WAVE_IN_PROGRESS` kapilariyla ayni kural. */
+        fun canBuildNow(): Boolean {
+            if (model.buildLockedDuringWave && !buildWindowOpen) return false
+            val cap = model.maxTowers ?: return true
+            return towers.size < cap
+        }
+
         fun candidates(): List<Move> {
             val out = ArrayList<Move>()
             val base = valueOf(delivered)
             val scratch = FloatArray(classes.size)
-            for (pad in model.pads) {
+            // Kisit YUKSELTMEYI etkilemez: motorda da yalnizca YENI kule
+            // reddedilir (`buildTower`), `upgradeSelectedTower` serbest kalir.
+            val buildsAllowed = canBuildNow()
+            for (pad in if (buildsAllowed) model.pads else emptyList()) {
                 if (pad.id in occupied) continue
                 for (type in buildTypes) {
                     val stats = GameConfig.TOWER_SPECS.getValue(type)
@@ -563,7 +614,7 @@ object CampaignSimulator {
                 val nextType = unlockOrder[towers.size % unlockOrder.size]
                 val stats = GameConfig.TOWER_SPECS.getValue(nextType)
                 val range = stats.tier(1).range * rangeMul
-                val pad = model.pads.filter { it.id !in occupied }
+                val pad = if (!canBuildNow()) null else model.pads.filter { it.id !in occupied }
                     .filter { model.cover(it, range) > 1f }
                     .maxByOrNull { model.cover(it, range) }
                 if (pad != null) {
@@ -587,7 +638,7 @@ object CampaignSimulator {
 
         /** [Playstyle.SINGLE_TOWER]: tek kule, en iyi pad, son kademeye kadar. */
         fun spendSingleTower() {
-            if (towers.isEmpty()) {
+            if (towers.isEmpty() && canBuildNow()) {
                 val best = attackTypes.flatMap { type ->
                     val range = GameConfig.TOWER_SPECS.getValue(type).tier(1).range * rangeMul
                     model.pads.map { pad ->
@@ -601,7 +652,9 @@ object CampaignSimulator {
                 occupied.add(best.second.id)
                 towers.add(SimTower(best.second, best.first, damageMul, rangeMul))
             }
-            val only = towers.first()
+            // Insa penceresi kapaliyken hic kule kurulamamis olabilir; bu
+            // davranis o bolumu kaybeder ve KAYBETMESI dogrudur.
+            val only = towers.firstOrNull() ?: return
             while (only.tier < min(model.maxTier(only.type), only.stats.maxTier)) {
                 val cost = only.stats.upgradeCostFrom(only.tier) ?: return
                 if (supply < cost) return
@@ -620,7 +673,8 @@ object CampaignSimulator {
                 // Kademe DEGISTIRMEZ (`slowFactor`/`slowPulseRadius` kademeden
                 // bagimsiz), o yuzden kd.1'de birakilir.
                 if (slowBuilt < style.forcedSlowTowers &&
-                    TowerType.SLOW in model.unlockedTowers
+                    TowerType.SLOW in model.unlockedTowers &&
+                    canBuildNow()
                 ) {
                     val slowStats = GameConfig.TOWER_SPECS.getValue(TowerType.SLOW)
                     val slowRange = slowStats.tier(1).range * rangeMul
@@ -750,6 +804,10 @@ object CampaignSimulator {
             // Motorun hazirlik penceresi: bolum suresine sayilir, simulasyona degil.
             elapsed += GameConfig.PREPARATION_TIME_SECONDS.toFloat()
 
+            // DONMUS MEVZI: dalga basliyor, insa penceresi KAPANIR. Motorda bu
+            // an `PREPARATION -> WAVE_RUNNING` gecisidir (`startNextWaveNow`).
+            buildWindowOpen = false
+
             while ((pending.isNotEmpty() || enemies.isNotEmpty()) && lives > 0 && t < WAVE_TIME_LIMIT) {
                 // 1) SPAWN
                 if (pending.isNotEmpty()) {
@@ -878,6 +936,8 @@ object CampaignSimulator {
             }
             wavesCleared++
             if (waveIdx < model.waves.lastIndex) supply += GameConfig.WAVE_CLEAR_SUPPLY_BONUS
+            // Motor dalga bitince PREPARATION'a doner: insa penceresi ACILIR.
+            buildWindowOpen = true
             spend()
         }
 

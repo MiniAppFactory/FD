@@ -419,6 +419,63 @@ class GameEngine(
         return spec.tier(1).range * metaRangeMultiplier
     }
 
+    // ------------------------------------------------------------------------
+    // BOLUM DEGISTIRICILERI — INSA RETLERI (GameConfig.LevelModifiers)
+    // ------------------------------------------------------------------------
+
+    /**
+     * Bir insa denemesinin REDDEDILME SEBEBI. Sebepler AYRI AYRI ayirt edilir:
+     * oyuncuya "olmadi" demek yetmez, NEDEN olmadigini soylemek gerekir. Bir
+     * bolum kilidi ("Lv 7'de acilir") ile bir harekat kisiti ("bu harekatta
+     * yok") oyuncu icin bambaska iki seydir ve ayni gorunemezler.
+     */
+    enum class BuildRejection {
+        /** Kule bu KAMPANYA BOLUMUNDE henuz acilmadi (TowerStats.unlockedAtLevel). */
+        TOWER_LOCKED,
+
+        /** KISITLI KADRO: kule acik ama bu harekatin kadrosunda degil. */
+        NOT_IN_LOADOUT,
+
+        /** DONMUS MEVZI: dalga basladi, yeni mevzi kurulamaz. */
+        WAVE_IN_PROGRESS,
+
+        /** MEVZI TAVANI: ayni anda tutulabilen kule sayisi doldu. */
+        EMPLACEMENT_CAP,
+
+        /** Tedarik yetmiyor. */
+        INSUFFICIENT_SUPPLY
+    }
+
+    /**
+     * Yayinlanan ret olayi.
+     *
+     * `serial` neden var: `MutableStateFlow` AYNI DEGERI TEKRAR YAYMAZ. Oyuncu
+     * ayni karta ust uste basarsa ikinci ret SESSIZ kalirdi — yani "reddedilen
+     * bir insa sessiz olmaz" kurali tam da en cok ihlal edilecegi anda
+     * ihlal edilirdi. Monoton artan sayac her reddi ayri bir olay yapar.
+     */
+    data class BuildRejectionNotice(
+        val reason: BuildRejection,
+        val type: GameConfig.TowerType,
+        val serial: Long
+    )
+
+    private var buildRejectionSerial = 0L
+    private val _buildRejection = MutableStateFlow<BuildRejectionNotice?>(null)
+
+    /** Son insa reddi. UI mesaj seridi bunu dinler; `null` = savas basi. */
+    val buildRejection: StateFlow<BuildRejectionNotice?> = _buildRejection.asStateFlow()
+
+    /**
+     * Sahadaki kule SAYISI — Compose'un okuyabilecegi akis.
+     *
+     * `towers` duz bir `mutableListOf`; uzerinde `size` okumak recomposition
+     * TETIKLEMEZ, yani HUD'daki "3/5 mevzi" sayaci kule kurulunca donmus kalir.
+     * Motor listeyi her degistirdiginde bu akisi da gunceller.
+     */
+    private val _towerCount = MutableStateFlow(0)
+    val towerCount: StateFlow<Int> = _towerCount.asStateFlow()
+
     private val _screenShake = MutableStateFlow(Offset.Zero)
     val screenShake: StateFlow<Offset> = _screenShake.asStateFlow()
 
@@ -885,6 +942,9 @@ class GameEngine(
      */
     fun startNewGame(levelNo: Int = _currentLevelId.value) {
         towers.clear()
+        _towerCount.value = 0
+        // Onceki savastan kalan ret mesaji yeni savasin uzerinde durmamali.
+        _buildRejection.value = null
         enemies.clear()
         projectiles.clear()
         visualEffects.clear()
@@ -1096,17 +1156,58 @@ class GameEngine(
     fun isTowerUnlocked(type: GameConfig.TowerType): Boolean =
         GameConfig.isTowerUnlocked(type, levelSpec.levelId)
 
+    /**
+     * INSA KAPISI — TEK KARAR YERI. `null` = kurulabilir.
+     *
+     * Hem [buildTower] hem de insa cubugu BU fonksiyonu cagirir, yani panelin
+     * cizdigi ile motorun yaptigi AYRILAMAZ: kart "harekatta yok" diyorsa motor
+     * da tam olarak o sebeple reddeder. Iki yerde iki ayri kural yazmak, bu
+     * dosyanin kendi gecmisinde (yildiz formulu, kademe kilidi) defalarca
+     * sessiz uyusmazlik uretmisti.
+     *
+     * SIRA ONEMLI: gosterilen sebep, oyuncunun ONCE cozmesi gereken sebeptir.
+     * Once kalici olanlar (kilit, kadro), sonra o ANA ozgu olanlar (dalga
+     * suruyor, tavan doldu), en sonda parasal olan.
+     */
+    fun buildRejectionFor(type: GameConfig.TowerType): BuildRejection? {
+        val spec = GameConfig.TOWER_SPECS[type] ?: return BuildRejection.TOWER_LOCKED
+        if (!isTowerUnlocked(type)) return BuildRejection.TOWER_LOCKED
+        // KISITLI KADRO — kule acik, ama bu harekatin kadrosunda degil.
+        if (!levelSpec.allowsTowerType(type)) return BuildRejection.NOT_IN_LOADOUT
+        // DONMUS MEVZI — dalga basladiktan sonra YENI mevzi yok (yukseltme ve
+        // satis serbest; bkz. GameConfig.LevelModifiers gerekcesi).
+        if (levelSpec.buildLockedDuringWave && _gameState.value == GameState.WAVE_RUNNING) {
+            return BuildRejection.WAVE_IN_PROGRESS
+        }
+        // MEVZI TAVANI — pad sayisindan bagimsiz STOK kisiti; satis yer acar.
+        val cap = levelSpec.maxTowers
+        if (cap != null && towers.size >= cap) return BuildRejection.EMPLACEMENT_CAP
+        if (_gold.value < spec.buildCost) return BuildRejection.INSUFFICIENT_SUPPLY
+        return null
+    }
+
+    /** Ret olayini yayinlar; ayni sebep ust uste gelse de yeni olay uretir. */
+    private fun publishBuildRejection(
+        reason: BuildRejection,
+        type: GameConfig.TowerType
+    ) {
+        buildRejectionSerial += 1
+        _buildRejection.value = BuildRejectionNotice(reason, type, buildRejectionSerial)
+    }
+
     fun buildTower(type: GameConfig.TowerType): Boolean {
         if (!acceptsBattlefieldInput()) return false
         val spot = _selectedBuildSpot.value ?: return false
         val spec = GameConfig.TOWER_SPECS[type] ?: return false
 
-        // KILIT: UI pasif kart cizse de motor son sozu soyler. Aksi halde bir
-        // gun baska bir cagiran (tutorial, test, ileride surukle-birak) kilidi
-        // sessizce atlar ve bolum 1'de fuze rampasi kurulabilirdi.
-        if (!isTowerUnlocked(type)) return false
-
-        if (_gold.value < spec.buildCost) return false
+        // KILIT + BOLUM DEGISTIRICILERI: UI pasif kart cizse de motor son sozu
+        // soyler. Aksi halde bir gun baska bir cagiran (tutorial, test, ileride
+        // surukle-birak) kurali sessizce atlar ve bolum 1'de fuze rampasi
+        // kurulabilirdi. Ret SESSIZ DEGILDIR: sebep yayinlanir.
+        buildRejectionFor(type)?.let { reason ->
+            publishBuildRejection(reason, type)
+            return false
+        }
 
         _gold.value -= spec.buildCost
         val newTower = TowerEntity(
@@ -1124,6 +1225,7 @@ class GameEngine(
             tierCap = GameConfig.maxTowerTier(type, levelSpec.levelId)
         )
         towers.add(newTower)
+        _towerCount.value = towers.size
 
         audioManager.playSound(AudioManager.SoundEffect.TOWER_BUILD)
         // Faz 3: insa geri bildirimi namlu alevi degil, TOZ bulutu.
@@ -1181,6 +1283,7 @@ class GameEngine(
         val refund = tower.sellValue
         _gold.value += refund
         towers.remove(tower)
+        _towerCount.value = towers.size
 
         audioManager.playSound(AudioManager.SoundEffect.TOWER_SELL)
         addEffect(

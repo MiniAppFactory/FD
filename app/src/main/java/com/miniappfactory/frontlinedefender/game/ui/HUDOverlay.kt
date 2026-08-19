@@ -9,11 +9,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -41,6 +44,11 @@ fun HUDOverlay(
     val totalWaves by gameEngine.totalWaves.collectAsState()
     val speed by gameEngine.gameSpeed.collectAsState()
     val gameState by gameEngine.gameState.collectAsState()
+    // Degistirici rozetleri bolume gore var/yok. Spec motorun `levelSpec`
+    // alanindan DEGIL akistan turetilir: duz bir `var` okumak recomposition
+    // tetiklemez ve bolum degisince rozet eski bolumun kuralini gosterirdi.
+    val levelId by gameEngine.currentLevelId.collectAsState()
+    val levelSpec = remember(levelId) { GameConfig.levelSpec(levelId) }
     // ⚠ `preparationTimer` BURADA OKUNMAZ. Motor onu HER KARE guncelliyor;
     // govdede okumak hazirlik fazi boyunca tum HUD'i 60 Hz yeniden
     // besteliyordu (bolum basina ~600 recomposition) ve bu maliyet tam da
@@ -131,6 +139,25 @@ fun HUDOverlay(
                             modifier = Modifier.testTag("gold_text")
                         )
                     }
+                }
+
+                // ------------------------------------------------------------
+                // BOLUM DEGISTIRICILERI (GameConfig.LevelModifiers)
+                //
+                // Ikisi de yalnizca kurali TASIYAN bolumlerde cizilir; kalan
+                // 49 bolumde HUD birebir eskisi gibi kalir.
+                //
+                // Neden HUD'da: gorunmeyen bir kisit, oyuncunun ancak
+                // REDDEDILDIGINDE ogrendigi bir kisitiir. "3/5 mevzi" her an
+                // okunabilir olmali ki tavan bir surpriz degil bir PLAN girdisi
+                // olsun.
+                // ------------------------------------------------------------
+                val cap = levelSpec.maxTowers
+                if (cap != null) {
+                    EmplacementCapBadge(gameEngine = gameEngine, cap = cap)
+                }
+                if (levelSpec.buildLockedDuringWave) {
+                    BuildWindowBadge(waveRunning = gameState == GameState.WAVE_RUNNING)
                 }
             }
 
@@ -331,4 +358,77 @@ private fun PreparationTimerText(gameEngine: GameEngine) {
         fontWeight = FontWeight.Bold,
         fontSize = 12.sp
     )
+}
+
+/**
+ * MEVZI TAVANI rozeti — KENDI RECOMPOSE KAPSAMI.
+ *
+ * `towerCount` yalnizca insa/satis aninda degisir (kare basina degil), ama
+ * okumayi yine de ayri tutmak HUD'un geri kalanini bu olaydan tamamen ayirir;
+ * [PreparationTimerText] ile ayni desen.
+ *
+ * Renk SEBEP tasir: tavan dolunca rozet kirmiziya doner, yani oyuncu insa
+ * cubugunu ACMADAN once hakkinin bittigini gorur.
+ */
+@Composable
+private fun EmplacementCapBadge(gameEngine: GameEngine, cap: Int) {
+    val used by gameEngine.towerCount.collectAsState()
+    val full = used >= cap
+    val desc = stringResource(R.string.hud_emplacement_desc, used, cap)
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = if (full) SleekRedBg else SleekSurfaceCard,
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            if (full) SleekRedBorder else SleekBorderLight
+        )
+    ) {
+        Text(
+            text = stringResource(R.string.hud_emplacement_label, used, cap),
+            color = if (full) SleekRedText else SleekTextAccent,
+            fontWeight = FontWeight.Bold,
+            fontSize = 12.sp,
+            maxLines = 1,
+            modifier = Modifier
+                .padding(horizontal = 10.dp, vertical = 6.dp)
+                .semantics { contentDescription = desc }
+                .testTag("emplacement_cap_text")
+        )
+    }
+}
+
+/**
+ * DONMUS MEVZI rozeti — insa penceresi acik mi?
+ *
+ * Hazirlik fazinda yesil "PLAN", dalga sirasinda kirmizi "KILITLI". Kural
+ * yalnizca reddedildiginde ogrenilseydi hazirlik fazi bir planlama ani degil
+ * bir tuzak olurdu; rozet pencereyi GORUNUR kilar.
+ */
+@Composable
+private fun BuildWindowBadge(waveRunning: Boolean) {
+    val desc = stringResource(
+        if (waveRunning) R.string.hud_build_locked_desc else R.string.hud_build_plan_desc
+    )
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = if (waveRunning) SleekRedBg else SleekSurfaceCard,
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            if (waveRunning) SleekRedBorder else SleekPrimaryGreen
+        )
+    ) {
+        Text(
+            text = stringResource(
+                if (waveRunning) R.string.hud_build_locked else R.string.hud_build_plan
+            ),
+            color = if (waveRunning) SleekRedText else SleekPrimaryGreen,
+            fontWeight = FontWeight.Bold,
+            fontSize = 12.sp,
+            maxLines = 1,
+            modifier = Modifier
+                .padding(horizontal = 10.dp, vertical = 6.dp)
+                .semantics { contentDescription = desc }
+                .testTag("build_window_text")
+        )
+    }
 }

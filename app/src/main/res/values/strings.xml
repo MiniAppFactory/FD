@@ -47,6 +47,16 @@
     <string name="hud_lives_icon_desc">Base integrity</string>
     <!-- %1$d = kalan can, %2$d = azami can -->
     <string name="hud_lives_value">%1$d/%2$d</string>
+    <!-- MEVZI TAVANI rozeti. Yalnizca tavani OLAN bolumlerde cizilir.
+         Neden HUD'da: tavan gorunmezse oyuncu onu ancak REDDEDILDIGINDE
+         ogrenir; kalan hak her an okunabilir olmali. -->
+    <string name="hud_emplacement_label">EMP %1$d/%2$d</string>
+    <string name="hud_emplacement_desc">Emplacements %1$d of %2$d</string>
+    <!-- DONMUS MEVZI rozeti. Hazirlik fazinda PLAN, dalga sirasinda LOCKED. -->
+    <string name="hud_build_plan">PLAN</string>
+    <string name="hud_build_locked">LOCKED</string>
+    <string name="hud_build_plan_desc">Build window open</string>
+    <string name="hud_build_locked_desc">Building locked while the wave runs</string>
     <string name="hud_start_wave">START</string>
     <string name="hud_start_wave_icon_desc">Start wave</string>
     <string name="hud_speed_icon_desc">Game speed</string>
@@ -76,6 +86,25 @@
     <!-- ==================== build (TowerBuildBar) ==================== -->
     <string name="build_cost">%1$d</string>
     <string name="build_close_desc">Close build menu</string>
+
+    <!-- ==================== level modifiers (GameConfig.LevelModifiers) ====
+         Kart etiketleri DAR bir kartta duruyor (4 kart ekrani weight(1f) ile
+         boluyor) ve AutoShrinkText ile 11sp'den 8sp'ye kadar kuculebiliyor;
+         yine de kisa tutuldular.
+
+         SEBEP AYRIMI onemli: bolum kilidi "LOCKED / Lv 7" der (ilerleyince
+         acilir), harekat kisiti "OFF ROSTER" der (bu bolumde hic acilmaz).
+         Ayni gorunmeleri oyuncuya yanlis hedef gosterirdi. -->
+    <string name="build_off_roster">OFF ROSTER</string>
+    <string name="build_slots_full">SLOTS FULL</string>
+    <string name="build_in_combat">IN COMBAT</string>
+
+    <!-- Reddedilen insanin SEBEBI (mesaj seridi). Ret sessiz olamaz. -->
+    <string name="build_msg_locked">Unlocks at level %1$d.</string>
+    <string name="build_msg_off_roster">Not in this operation roster.</string>
+    <string name="build_msg_slots_full">Emplacement cap reached (%1$d). Sell one to build.</string>
+    <string name="build_msg_in_combat">No new emplacements once the wave starts.</string>
+    <string name="build_msg_supply">Not enough supply.</string>
 
     <!-- ==================== tower (GameConfig.TowerType) ====================
          KIMLIK DUZELTMESI: ANTI_ARMOR sprite'i spr_tower_missile_launcher
