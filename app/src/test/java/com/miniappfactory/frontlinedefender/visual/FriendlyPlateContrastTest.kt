@@ -26,18 +26,40 @@ import kotlin.math.pow
 class FriendlyPlateContrastTest {
 
     // ---------------------------------------------------------------------
-    // Denetimden gelen OLCULMUS zemin parlakliklari (VISUAL_AUDIT 3.1).
-    // Her biyomda hem YOL hem ZEMIN kontrol edilir: kule cimde durur ama namlu
-    // alevi ve tracer yolun uzerinden de gecer.
+    // OLCULMUS zemin parlakliklari. Her biyomda hem YOL hem ZEMIN kontrol
+    // edilir: kule cimde durur ama namlu alevi ve tracer yolun uzerinden gecer.
+    //
+    // ---------------------------------------------------------------------
+    // 2026-08-20 — TABLO YENIDEN OLCULDU. Eski degerler KULLANILAMAZ.
+    //
+    // Iki ayri sebep:
+    //
+    //  1. OLCEK HATASI. Denetim §3.1 bu sayilari `docs/biome_previews_kotlin/`
+    //     altindaki onizlemelerden almisti; o dosyalar 300x168, yani kaynagin
+    //     5,6 katı kucultulmus hali. O olcekte her ornek yol ile zeminin
+    //     bilinear karisimidir ve iki yuzey birbirine dogru cekilir — tablodaki
+    //     bes YOL degerinin de 0,25-0,32 gibi dar bir bantta toplanmasinin
+    //     sebebi budur; gercekte oyle degiller.
+    //
+    //  2. BIYOM PARAMETRELERI DEGISTI. P0-2 duzeltmesi
+    //     (`BiomeParams.roadRelight`) col ve kis yollarini koyulastirdi,
+    //     sonbahar yolunu aydinlatti.
+    //
+    // Yeni degerler: 11 haritanin HEPSI, TAM COZUNURLUK, yol/zemin sinir bandi
+    // (yontem ve yeniden uretim: `BiomeGroundContrastTool`).
+    //
+    // EN DAR PAY: kis, plaka 3,05 (esik 3,0). Kis zemini bes biyomun en parlagi
+    // (0,4224) ve orada tasiyici kanal parlak bant DEGIL koyu guvertedir;
+    // guverte aciltilirsa ilk kirilacak yer burasidir.
     // ---------------------------------------------------------------------
     private data class BiomeGround(val name: String, val road: Double, val ground: Double)
 
     private val biomes = listOf(
-        BiomeGround("ORIGINAL", 0.2833, 0.1594),
-        BiomeGround("NIGHT", 0.2522, 0.0853),
-        BiomeGround("WINTER", 0.3169, 0.3771),
-        BiomeGround("DESERT", 0.2963, 0.2724),
-        BiomeGround("AUTUMN", 0.2799, 0.1296)
+        BiomeGround("ORIGINAL", 0.1552, 0.1046),
+        BiomeGround("NIGHT", 0.1670, 0.0377),
+        BiomeGround("WINTER", 0.1470, 0.4224),
+        BiomeGround("DESERT", 0.0769, 0.2585),
+        BiomeGround("AUTUMN", 0.2916, 0.0785)
     )
 
     private companion object {
@@ -184,6 +206,97 @@ class FriendlyPlateContrastTest {
     fun plateBandsAreThickEnoughToRead() {
         val total = FriendlyPlate.EDGE_REF_PX + FriendlyPlate.RIM_REF_PX
         assertTrue("plaka yakasi $total ref-px, okunamayacak kadar ince", total >= 8f)
+    }
+
+    // =====================================================================
+    // P0-3  KULE SILUETI  — tasiyici kanal PLAKAYA GECTI
+    // =====================================================================
+
+    /**
+     * Kule sprite'larinin OLCULMUS parlakliklari (asset-pack -> visuals -> towers klasorundeki png dosyalari,
+     * denetim §3 yontemi: govde = alfa>200 piksellerin ust %75'i, cizgi = ayni
+     * kumenin en karanlik %10'u).
+     */
+    private data class TowerTone(val name: String, val body: Double, val outline: Double)
+
+    private val towerTones = listOf(
+        TowerTone("machine_gun", 0.265, 0.000),
+        TowerTone("heavy_cannon", 0.219, 0.000),
+        TowerTone("missile_launcher", 0.155, 0.000),
+        TowerTone("energy_slow", 0.271, 0.001)
+    )
+
+    /**
+     * DENETIM P0-3 YENIDEN OLCULDU — bulgu artik GECERLI DEGIL, cunku plaka
+     * SORUYU DEGISTIRDI.
+     *
+     * Denetim "gecede kule dis cizgi kontrasti 2,81-2,86" demisti ve cozum
+     * olarak §A1 plakasini onermisti. Plaka eklendi. Yeniden olcum:
+     *
+     *   KANAL                                  GECE    diger biyomlar
+     *   dis cizgi  / zemin  (plaka ONCESI)     1,91    3,02 - 9,93
+     *   dis cizgi  / plaka guvertesi           1,28    1,28  (her biyomda)
+     *   govde      / plaka guvertesi           3,18 - 4,98   (her biyomda)
+     *
+     * Iki sey ortaya cikti:
+     *
+     * 1. Denetimin GECE sayisi (2,81) fazla IYIMSERDI; 300 px'lik onizleme
+     *    uzerinden olculdugu icin siyah kontur cevresine karismisti. Tam
+     *    cozunurlukte gercek deger **1,91** — sorun bildirilenden daha derindi.
+     *
+     * 2. Ama artik onemi yok: kule dis cizgisi (neredeyse saf siyah, L=0,000)
+     *    bugun ZEMININ uzerinde degil, PLAKANIN KOYU GUVERTESININ uzerinde
+     *    duruyor. Yani konturun kendisi hicbir biyomda tasiyici DEGIL (1,28) —
+     *    ve olmasi da gerekmiyor. Silueti tasiyan kanal **kule govdesi / plaka
+     *    guvertesi** kontrastina dondu ve o kontrast **biyomdan bagimsizdir**,
+     *    cunku iki taraf da haritaya degil sabit renklere dayanir.
+     *
+     * BU TESTIN VARLIK SEBEBI: bu depoda "sorunu cozen sey" ile "test edilen
+     * sey" ayni degildi. `plateIsVisibleInEveryBiome` plakayi ZEMINE karsi
+     * kilitliyor; ama silueti tasiyan kanal plakanin KENDI USTUNDEKI kule.
+     * O kanal bugune kadar hic test edilmemisti — DECK_ARGB birazcik
+     * aciltilsaydi ya da mevcut en koyu kuleden (missile_launcher, 3,18 ile
+     * esige EN YAKIN olan) daha koyu bir kule eklenseydi, siluet sessizce
+     * kaybolurdu ve hicbir test kirilmazdi.
+     */
+    @Test
+    fun towerBodyReadsAgainstThePlateDeck() {
+        val deck = luminance(FriendlyPlate.DECK_ARGB)
+        val failures = mutableListOf<String>()
+        towerTones.forEach { t ->
+            val c = contrast(t.body, deck)
+            println(String.format("%-18s govde/guverte = %.2f", t.name, c))
+            if (c < WCAG_THRESHOLD) {
+                failures += String.format("%s govde/guverte %.2f < %.1f", t.name, c, WCAG_THRESHOLD)
+            }
+        }
+        assertTrue(
+            "KULE SILUETI PLAKA UZERINDE OKUNMUYOR -> $failures " +
+                "(guverte L=$deck; guverte aciltildiysa ya da yeni kule cok koyuysa burasi kirilir)",
+            failures.isEmpty()
+        )
+    }
+
+    /**
+     * Plakanin bu isi yapabilmesinin SEBEBI guvertenin koyu olmasi. Guverte
+     * parlarsa `towerBodyReadsAgainstThePlateDeck` zaten kirilir, ama o test
+     * "hangi sayiyi bozdum" sorusunu cevaplamaz. Bu kilit dogrudan sebebi
+     * isaretler: guverte, EN KOYU kulenin (missile_launcher, L=0,155) esigi
+     * gecmesine izin verecek kadar koyu kalmali.
+     */
+    @Test
+    fun plateDeckStaysDarkEnoughForTheDarkestTower() {
+        val darkest = towerTones.minByOrNull { it.body }!!
+        // (0,155 + 0,05) / (L + 0,05) >= 3,0  ->  L <= 0,0183
+        val maxDeckLuminance = (darkest.body + 0.05) / WCAG_THRESHOLD - 0.05
+        val deck = luminance(FriendlyPlate.DECK_ARGB)
+        assertTrue(
+            String.format(
+                "plaka guvertesi cok acik: L=%.4f, en koyu kule (%s, L=%.3f) icin ust sinir %.4f",
+                deck, darkest.name, darkest.body, maxDeckLuminance
+            ),
+            deck <= maxDeckLuminance
+        )
     }
 
     // =====================================================================
