@@ -225,7 +225,13 @@ internal data class BiomeParams(
     val veilG: Int = 0,
     val veilB: Int = 0,
     val veilRatio: Float = 0f,
-    val contrast: Float = 1f
+    val contrast: Float = 1f,
+    /**
+     * Bitki maskesinin TERSINE (yol, build pad, kaya, us, su) uygulanan son
+     * parlaklik kaydirmasi, 0..255 olceginde. Isaret BIYOMA GORE degisir —
+     * bkz. [BiomeRecolor.roadRelightBand].
+     */
+    val roadRelight: Int = 0
 )
 
 /**
@@ -255,19 +261,23 @@ internal object BiomeRecolor {
     //   saglanir. Hue'yu yola dogru kaydirmak (ilk denemede -42) yolu YOK EDER.
     private val NIGHT = BiomeParams(
         hueDelta = 14, satMul = 0.66f, valMul = 0.66f,
-        veilR = 18, veilG = 30, veilB = 68, veilRatio = 0.14f
+        veilR = 18, veilG = 30, veilB = 68, veilRatio = 0.14f,
+        roadRelight = 40
     )
     private val WINTER = BiomeParams(
         hueDelta = 118, satMul = 0.12f, valMul = 0.58f, valAdd = 126f,
-        veilR = 228, veilG = 238, veilB = 248, veilRatio = 0.09f, contrast = 1.05f
+        veilR = 228, veilG = 238, veilB = 248, veilRatio = 0.09f, contrast = 1.05f,
+        roadRelight = -15
     )
     private val DESERT = BiomeParams(
         hueDelta = -6, satMul = 0.46f, satAdd = 6f, valMul = 0.72f, valAdd = 76f,
-        veilR = 212, veilG = 186, veilB = 132, veilRatio = 0.08f
+        veilR = 212, veilG = 186, veilB = 132, veilRatio = 0.08f,
+        roadRelight = -45
     )
     private val AUTUMN = BiomeParams(
         hueDelta = -24, satMul = 1.05f, satAdd = 14f, valMul = 0.94f, valAdd = 20f,
-        veilR = 196, veilG = 126, veilB = 60, veilRatio = 0.07f
+        veilR = 196, veilG = 126, veilB = 60, veilRatio = 0.07f,
+        roadRelight = 45
     )
 
     /**
@@ -301,8 +311,68 @@ internal object BiomeRecolor {
      *   yeni degerle YENIDEN URETILMELI (bu makinede Python kurulu degil).
      *   Sayisal koruma `BiomeReadabilityTest` icinde; gozle dogrulama bekliyor.
      * -------------------------------------------------------------------------
+     *
+     * =========================================================================
+     * 2026-08-20 — MEKANIZMA DORT BIYOMA BIRDEN ACILDI (VISUAL_AUDIT P0-2)
+     * =========================================================================
+     * Yukaridaki geri aydinlatma GECEYE OZELDI ve isaretle birlikte sabit
+     * kodlanmisti. Olcum, ayni kaldiracin diger uc biyomda da GEREKTIGINI
+     * gosterdi; bu yuzden sayi [BiomeParams.roadRelight] alanina tasindi ve
+     * her iki cizim yolu ([applyNight] ve [applyMasked]) ayni yardimciyi
+     * ([roadRelightBand]) cagirir. Iki paralel uygulama BIRAKILMADI: bu depoda
+     * elle yazilan ikizler defalarca ayristi.
+     *
+     * ISARET BIYOMA GORE DEGISIR — TEK BIR SAYI BES BIYOMU TASIYAMAZ.
+     * Kural mekanik: biyom bitki ortusunu KOYULASTIRIYORSA yol AYDINLATILIR,
+     * bitki ortusunu PARLATIYORSA yol KOYULASTIRILIR. Yani duzeltme her zaman
+     * bitkinin gittigi yonun TERSINE gider; ayni isareti dortune de vermek
+     * (ilk deneme) sonbaharda kontrasti 1,63'ten 1,08'e DUSURDU — yol cimenin
+     * uzerine bindi.
+     *
+     *   GECE   (+40) bitki koyuluyor  -> yol aydinlatilir  (ay isigi)
+     *   KIS    (-15) bitki karla parliyor -> yol koyulastirilir (acilmis yol)
+     *   COL    (-45) kum V+76 ile parliyor -> yol koyulastirilir (sikismis toprak)
+     *   SONBAHAR (+45) bitki koyu turuncuya kayiyor -> yol aydinlatilir
+     *
+     * OLCUM (11 haritanin HEPSI, tam cozunurluk, yol/zemin SINIR bandi;
+     * yontem `BiomeGroundContrastTool`). Solda oncesi, sagda sonrasi:
+     *
+     *   biyom     WCAG ort/en kotu      dE76 (orijinalin %'si)
+     *   ORIGINAL  1,38 / 1,16  (sabit)  17,4  100%   <- DOKUNULMAZ, taban cizgi
+     *   GECE      2,52 / 2,31  (sabit)  27,1  155%   <- degeri degismedi
+     *   KIS       2,04 / 1,89 -> 2,47 / 2,28   39,6 -> 40,9  (228% -> 235%)
+     *   COL       1,41 / 1,33 -> 2,51 / 2,35   15,3 -> 26,5  ( 88% -> 152%)
+     *   SONBAHAR  1,63 / 1,47 -> 2,69 / 2,40   16,8 -> 30,4  ( 97% -> 175%)
+     *
+     * NEDEN 3,0 DEGIL: WCAG 1.4.11'in 3,0 esigi tek bir grafik nesne icin
+     * tanimlidir, iki genis arazi YUZEYI icin degil. Bunun kaniti ORIGINAL
+     * biyomun kendisidir: sevk edilmis, oynanabilirligi kanitlanmis taban
+     * sanat 1,38'de duruyor ve `Biome.ORIGINAL.isIdentity` geregi tek bir
+     * pikseline dokunulamaz. 3,0'i mutlak kapi yapmak, gecen bir biyom
+     * birakmazdi. Uygulanan kural bu yuzden GORELIDIR: hicbir yeniden
+     * renklendirilmis biyom, oynanabilirligi kanitlanmis ORIGINAL taban
+     * cizgisinin altina dusemez. Kilit: `BiomeReadabilityTest`.
+     *
+     * NEDEN DAHA ILERI GIDILMEDI: dortu de ~2,5 bandinda bulusuyor. Col'de
+     * -55 (2,86) denendi ve BIRAKILDI — yol colde islak asfalt gibi okunuyor,
+     * biyom kimligi kontrast ugruna satilmis oluyordu.
+     * -------------------------------------------------------------------------
      */
-    private const val NIGHT_ROAD_RELIGHT = 40
+    private fun roadRelightBand(r: Int, g: Int, b: Int, delta: Int, roadWeight: Int): Int {
+        // "H ve S sabit, V += delta" ifadesi RGB'de saf bir OLCEKLEMEDIR:
+        // HSV->RGB'de p, q, t ve v'nin hepsi V ile dogru orantili, yani V'yi
+        // V' yapmak ucunu de V'/V ile carpar. Tam bir HSV gidis-donusu piksel
+        // basina fazladan bir rgbToHsv + bir hsvToRgb demekti ve gece biyomunu
+        // digerlerinden %35 yavas yapiyordu. Olcekleme hem daha hizli hem daha
+        // DOGRU (8-bit HSV kuantalama kaybi yok).
+        val v = if (r > g) (if (r > b) r else b) else (if (g > b) g else b)
+        if (v <= 0) return (r shl 16) or (g shl 8) or b
+        val lifted = (v + delta).coerceIn(0, 255)
+        val nr = blendMask((r * lifted / v).coerceAtMost(255), r, roadWeight)
+        val ng = blendMask((g * lifted / v).coerceAtMost(255), g, roadWeight)
+        val nb = blendMask((b * lifted / v).coerceAtMost(255), b, roadWeight)
+        return (nr shl 16) or (ng shl 8) or nb
+    }
 
     internal fun paramsFor(biome: Biome): BiomeParams? = when (biome) {
         Biome.ORIGINAL -> null
@@ -520,6 +590,19 @@ internal object BiomeRecolor {
             g = veil(g, p.veilG, p.veilRatio)
             b = veil(b, p.veilB, p.veilRatio)
 
+            // Yol bandi kaydirmasi — PERDEDEN SONRA, [applyNight] ile ayni sira.
+            // Perdeden once uygulanirsa perde duzeltmenin bir kismini geri alir
+            // (colde perde parlak: 212/186/132) ve kazanc olculebilir sekilde
+            // dusar. Sira burada bilincli olarak geceyle ayni tutuluyor ki tek
+            // bir zihinsel model gecerli olsun.
+            val roadWeight = 255 - m
+            if (roadWeight != 0 && p.roadRelight != 0) {
+                val lit = roadRelightBand(r, g, b, p.roadRelight, roadWeight)
+                r = (lit ushr 16) and 0xFF
+                g = (lit ushr 8) and 0xFF
+                b = lit and 0xFF
+            }
+
             px[i] = a or (r shl 16) or (g shl 8) or b
             if (p.contrast != 1f) lumaSum += (r * 299 + g * 587 + b * 114 + 500) / 1000
         }
@@ -529,7 +612,8 @@ internal object BiomeRecolor {
     /**
      * GECE - iki asamali ay isigi modeli.
      *   1) TUM sahne koyulur (maske yok) + mavi perde.
-     *   2) Bitki maskesinin TERSI (yol, pad, us, kaya) `V + 26` ile geri
+     *   2) Bitki maskesinin TERSI (yol, pad, us, kaya) [BiomeParams.roadRelight]
+     *      (gecede +40) ile geri
      *      aydinlatilir. Sonuc: yol ay isiginda parlar, bitki koyu kalir.
      */
     private fun applyNight(px: IntArray, mask: ByteArray, p: BiomeParams) {
@@ -565,21 +649,11 @@ internal object BiomeRecolor {
             var db = veil(darkRgb and 0xFF, p.veilB, p.veilRatio)
 
             val roadWeight = 255 - (mask[i].toInt() and 0xFF)
-            if (roadWeight != 0) {
-                // "H ve S sabit, V += 40" ifadesi RGB'de saf bir OLCEKLEMEDIR:
-                // HSV->RGB'de p, q, t ve v'nin hepsi V ile dogru orantili, yani
-                // V'yi V' yapmak ucunu de V'/V ile carpar. Referans betik burada
-                // tam bir HSV gidis-donusu yapiyor; onu oldugu gibi tasimak
-                // piksel basina fazladan bir rgbToHsv + bir hsvToRgb demekti ve
-                // gece biyomunu digerlerinden %35 yavas yapiyordu. Olcekleme hem
-                // daha hizli hem daha DOGRU (8-bit HSV kuantalama kaybi yok).
-                val v = if (dr > dg) (if (dr > db) dr else db) else (if (dg > db) dg else db)
-                if (v > 0) {
-                    val lifted = (v + NIGHT_ROAD_RELIGHT).coerceAtMost(255)
-                    dr = blendMask((dr * lifted / v).coerceAtMost(255), dr, roadWeight)
-                    dg = blendMask((dg * lifted / v).coerceAtMost(255), dg, roadWeight)
-                    db = blendMask((db * lifted / v).coerceAtMost(255), db, roadWeight)
-                }
+            if (roadWeight != 0 && p.roadRelight != 0) {
+                val lit = roadRelightBand(dr, dg, db, p.roadRelight, roadWeight)
+                dr = (lit ushr 16) and 0xFF
+                dg = (lit ushr 8) and 0xFF
+                db = lit and 0xFF
             }
             px[i] = a or (dr shl 16) or (dg shl 8) or db
         }

@@ -238,11 +238,29 @@ class BiomeRecolorTest {
     }
 
     @Test
-    fun maskedBiomesLeaveTheRoadEssentiallyUntouched() {
-        // Kis / col / sonbahar yola YALNIZCA ince perdeyi uygular. Perde
-        // oranlari %7-9 oldugu icin sapma sinirli olmali; buyurse yolun
-        // kimligi kaybolur.
+    fun maskedBiomesShiftTheRoadBrightnessButKeepItsIdentity() {
+        // ⚠ 2026-08-20 — BU TESTIN OLCTUGU SEY DEGISTI, sozlesme gevsetilmedi.
+        //
+        // Eski hali "yol EN FAZLA 24 birim kaysin" diyordu; gerekcesi
+        // "buyurse yolun kimligi kaybolur" idi. Niyet dogruydu ama VEKIL
+        // yanlisti: ham RGB sapmasi kimligi olcmez, yalnizca degisim
+        // miktarini olcer.
+        //
+        // Sonuc: COL biyomunda yol/zemin kontrasti **1,07**e kadar dusmustu —
+        // yani yol teknik olarak "neredeyse hic degismemis"ti ve tam da bu
+        // yuzden GORUNMUYORDU. Degismemek, kimligi korumak degil.
+        //
+        // Yeni olcut kimligi DOGRUDAN sorar:
+        //  · TON korunur (yol hala toprak tonunda, +-14 derece) — kimlik budur.
+        //  · PARLAKLIK serbest birakilir, cunku okunabilirligi tasiyan kanal o.
+        //    Ust sinir 64 birim: sinirsiz degil, ama zemin ile ayrisacak kadar.
+        //
+        // Kontrastin GERCEKTEN yettigi ayri bir testte kilitli:
+        // `BiomeReadabilityTest.everyRecoloredBiomeKeepsRoadBrightnessAtOrAboveTheOriginalBaseline`.
+        // Ikisi birlikte "yol hem yol kalir hem gorunur" der; tek basina
+        // hicbiri yetmez.
         val road = -0x1000000 or BiomeRecolor.hsvToRgb(26, 154, 118)
+        val roadHue = hueOf(road)
         for (biome in listOf(Biome.WINTER, Biome.DESERT, Biome.AUTUMN)) {
             val px = scene(argb = road)
             BiomeRecolor.apply(biome, px, 48, 48)
@@ -252,8 +270,39 @@ class BiomeRecolorTest {
                 abs(((c ushr 8) and 0xFF) - ((road ushr 8) and 0xFF)),
                 abs((c and 0xFF) - (road and 0xFF))
             )
-            assertTrue("$biome yolu $delta birim kaydirdi — perde disinda etki var", delta <= 24)
+            assertTrue(
+                "$biome yolu $delta birim kaydirdi — parlaklik ayari degil, yeniden boyama",
+                delta <= 64
+            )
+            val hueShift = hueDistance(hueOf(c), roadHue)
+            assertTrue(
+                "$biome yolun TONUNU $hueShift derece kaydirdi — yol artik toprak degil",
+                hueShift <= 14f
+            )
         }
+    }
+
+    /** HSL tonu, derece (0-360). Kimlik olcumu icin. */
+    private fun hueOf(argb: Int): Float {
+        val r = ((argb ushr 16) and 0xFF) / 255f
+        val g = ((argb ushr 8) and 0xFF) / 255f
+        val b = (argb and 0xFF) / 255f
+        val max = maxOf(r, g, b)
+        val min = minOf(r, g, b)
+        val d = max - min
+        if (d < 1e-6f) return 0f
+        val h = when (max) {
+            r -> 60f * (((g - b) / d) % 6f)
+            g -> 60f * (((b - r) / d) + 2f)
+            else -> 60f * (((r - g) / d) + 4f)
+        }
+        return (h + 360f) % 360f
+    }
+
+    /** Iki ton arasindaki EN KISA aci farki (0-180). */
+    private fun hueDistance(a: Float, b: Float): Float {
+        val d = abs(a - b) % 360f
+        return if (d > 180f) 360f - d else d
     }
 
     @Test

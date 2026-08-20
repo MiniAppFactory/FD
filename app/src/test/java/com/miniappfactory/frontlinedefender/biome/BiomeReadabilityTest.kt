@@ -243,6 +243,103 @@ class BiomeReadabilityTest {
         assertTrue("YOL/CIMEN AYRIMI KAYBOLDU -> $failures", failures.isEmpty())
     }
 
+    // =====================================================================
+    // 2b. KAPI — yol/cimen PARLAKLIK ekseni  (VISUAL_AUDIT P0-2)
+    //
+    // Yukaridaki kapi HUE eksenini (dE76) koruyor. Denetim P0-2 ise parlaklik
+    // ekseninde bir cokme bildirdi: colde 1,07, kista 1,16. Iki eksen ayri ayri
+    // cokebilir, bu yuzden ayri kapi gerekiyor.
+    // =====================================================================
+
+    /**
+     * KABUL KRITERI **GORELIDIR, 3,0 DEGILDIR** — ve bu bilincli bir karardir.
+     *
+     * WCAG 1.4.11'in 3,0 esigi TEK BIR grafik nesnenin kendi arkaplanina karsi
+     * okunmasi icin tanimlidir; iki genis arazi YUZEYI icin degil. Bunu bu
+     * depoda kanitlayan sey `Biome.ORIGINAL`'in kendisidir: sevk edilmis,
+     * oynanabilirligi kanitlanmis taban sanat bu sahnede **1,40** veriyor ve
+     * mukemmel okunuyor. Ustelik ORIGINAL `isIdentity` geregi DOKUNULAMAZ —
+     * tek bir pikseli bile degistirilemez. 3,0'i mutlak kapi yapmak, tanimi
+     * geregi hicbir zaman gecemeyecek bir biyom birakirdi.
+     *
+     * Bu yuzden uygulanan kural: **hicbir yeniden renklendirilmis biyom,
+     * oynanabilirligi kanitlanmis ORIGINAL taban cizgisinin altina dusemez.**
+     * Bir biyom ORIGINAL'den kotu ise, o oynanis regresyonudur; ORIGINAL ile
+     * ayni bantta ise oynanabilirligi zaten kanitlanmis demektir.
+     *
+     * Gercek haritalardaki karsiligi (11 haritanin hepsi, tam cozunurluk,
+     * sinir bandi — `BiomeGroundContrastTool`): ORIGINAL 1,38; duzeltmeden
+     * SONRA gece 2,52 / kis 2,47 / col 2,51 / sonbahar 2,69.
+     */
+    @Test
+    fun everyRecoloredBiomeKeepsRoadBrightnessAtOrAboveTheOriginalBaseline() {
+        val base = variant(Biome.ORIGINAL)
+        val baseline = contrastRatio(base.getValue("yol"), base.getValue("cimen"))
+        val failures = mutableListOf<String>()
+        for (biome in Biome.entries) {
+            if (biome.isIdentity) continue
+            val v = variant(biome)
+            val c = contrastRatio(v.getValue("yol"), v.getValue("cimen"))
+            if (c < baseline) {
+                failures += String.format("%s WCAG=%.2f < ORIGINAL %.2f", biome, c, baseline)
+            }
+        }
+        assertTrue(
+            "YOL PARLAKLIGI ORIJINAL TABAN CIZGISININ ALTINA DUSTU -> $failures",
+            failures.isEmpty()
+        )
+    }
+
+    /**
+     * ASIL REGRESYON KILIDI — duzeltmenin SAYISINI degil KURALINI korur.
+     *
+     * `BiomeParams.roadRelight` bitki maskesinin TERSINE (yol, pad, kaya, us)
+     * uygulanir. Isareti biyoma gore degismek ZORUNDADIR:
+     *
+     *   biyom bitki ortusunu KOYULASTIRIYORSA -> yol AYDINLATILMALI (+)
+     *   biyom bitki ortusunu PARLATIYORSA     -> yol KOYULASTIRILMALI (-)
+     *
+     * Yani duzeltme HER ZAMAN bitkinin gittigi yonun TERSINE gider. Ayni
+     * isareti dordune birden vermek somut olarak olculdu ve REDDEDILDI:
+     * sonbaharda negatif deger kontrasti 1,63'ten 1,08'e DUSURUYOR, cunku
+     * sonbaharda bitki ZATEN yoldan koyu — yolu da koyulastirmak ikisini
+     * ust uste bindiriyor.
+     *
+     * Bu test bir sayiyi degil bu KURALI kilitler: yeni bir biyom eklenirse ya
+     * da mevcut bir biyomun `valMul`/`valAdd`'i tersine cevrilirse, `roadRelight`
+     * guncellenmediginde burasi kirilir. Sayi kilidi tek basina bunu yakalamaz —
+     * yeni biyomun sayisi zaten testte olmazdi.
+     */
+    @Test
+    fun roadRelightAlwaysOpposesTheVegetationBrightnessShift() {
+        val base = variant(Biome.ORIGINAL)
+        val failures = mutableListOf<String>()
+        for (biome in Biome.entries) {
+            if (biome.isIdentity) continue
+            val params = BiomeRecolor.paramsFor(biome) ?: continue
+            val v = variant(biome)
+            // Bitki ortusu ne yone gitti? (cimen, sahnenin en buyuk tek yuzeyi)
+            val vegBefore = relativeLuminance(base.getValue("cimen"))
+            val vegAfter = relativeLuminance(v.getValue("cimen"))
+            val vegBrightened = vegAfter > vegBefore
+            val relight = params.roadRelight
+            val expected = if (vegBrightened) "negatif" else "pozitif"
+            val ok = if (vegBrightened) relight < 0 else relight > 0
+            println(
+                String.format(
+                    "%-9s bitki %.4f -> %.4f (%s), roadRelight=%+d",
+                    biome, vegBefore, vegAfter,
+                    if (vegBrightened) "parladi" else "koyuldu", relight
+                )
+            )
+            if (!ok) {
+                failures += "$biome: bitki ${if (vegBrightened) "parladi" else "koyuldu"}, " +
+                    "roadRelight $expected olmali ama $relight"
+            }
+        }
+        assertTrue("YOL KAYDIRMASININ ISARETI BITKININ YONUNE TERS DEGIL -> $failures", failures.isEmpty())
+    }
+
     @Test
     fun everyBiomeKeepsBuildPadsVisibleAgainstTheGround() {
         // Build pad gorunmezse oyuncu kule kuracak yeri bulamaz.
@@ -365,26 +462,34 @@ class BiomeReadabilityTest {
     }
 
     /**
-     * BILINEN ZAYIF NOKTA — col biyomunda oyuncu ussu / zemin ayrimi.
+     * ESKI BILINEN ZAYIF NOKTA — COZULDU (2026-08-20).
      *
-     * Olcum: col'de us/zemin dE76 = **6.80**, orijinalde 23.77 (%29). Sebep
-     * mekanigin kendisi: col zemini `value +76` ile yukari itiliyor ve us
-     * (V~147) tam o araliga dusuyor. Zemini asagi cekmek durumu KOTULESTIRIR
-     * (us'un altindan gecer), yukari itmek ise kumu yikar.
+     * Tarihce: col'de us/zemin dE76 **6.80** olculmustu (orijinalde 23.77, yani
+     * %29). Sebep mekanigin kendisiydi: col zemini `value +76` ile yukari
+     * itiliyor ve us (V~147) tam o araliga dusuyor. O gun kabul edilmesinin
+     * gerekcesi soyleydi: "zemini asagi cekmek durumu KOTULESTIRIR (us'un
+     * altindan gecer), yukari itmek ise kumu yikar."
      *
-     * NEDEN KABUL EDILDI: us tek ve kucuk bir nesnedir, kendi mimarisi
-     * (rampa/duvar) ve HUD'daki us-cani gostergesi ile ayrica okunur; yol,
-     * pad ve dusman zemini ayrimlari col'de saglam (%112 / %73). Yine de
-     * daha fazla asagi kaymasin diye zemin buraya KILITLENDI.
+     * O muhakemenin ATLADIGI ucuncu secenek vardi: ne zemini ne kumu, **ussun
+     * kendisini** oynatmak. Us bitki maskesinin DISINDADIR, yani P0-2 icin
+     * eklenen `roadRelight = -45` onu yol ve pad'lerle birlikte parlak kumdan
+     * uzaga, ASAGI tasidi. Kum hic dokunulmadan yerinde kaldi.
+     *
+     * OLCUM: dE76 **6.80 -> 22.3**, orijinalin %29'undan %94'une. Bu bir yan
+     * etki degil, ayni mekanizmanin ayni yondeki dogal sonucu.
+     *
+     * ESIK 6,0'DAN 18,0'A CIKARILDI: eski esik artik 16 puanlik sessiz bir
+     * regresyona izin verirdi. Yeni esik "acikca farkli renk" zemininin (10)
+     * belirgin ustunde ve olculen degerin altinda makul bir pay birakiyor.
      */
     @Test
-    fun desertBaseGroundSeparationDoesNotDegradeFurther() {
+    fun desertBaseStaysSeparatedFromTheSand() {
         val desert = variant(Biome.DESERT)
         val de = deltaE(desert.getValue("us"), desert.getValue("cimen"))
-        println(String.format("col us/zemin dE76 = %.2f (bilinen zayif nokta)", de))
+        println(String.format("col us/zemin dE76 = %.2f (eski zayif nokta: 6.80)", de))
         assertTrue(
-            String.format("col: us zeminde tamamen kayboldu (dE76=%.2f)", de),
-            de >= 6.0
+            String.format("col: us kumun icinde eridi (dE76=%.2f)", de),
+            de >= 18.0
         )
     }
 
