@@ -28,17 +28,52 @@
 
   Ondalik ayraci Turkce'de VIRGULdur ve elle yazilmaz: sayilar %.1f ile
   bicimlendigi icin Android cihazin diline gore "26,6" / "26.6" uretir.
+
+  ============================================================================
+  2026-08-20 [eksi] EKSIK DORT MEKANIK
+  ============================================================================
+  Yukseltme, hedefleme, guclendirici ve satis dersleri eklendi. Turkce
+  taraftaki en uzun satirlar (en uzun gercek adlarla olculmus, en kotu durum):
+    hint_booster_intro   [ok] "Hava Desteği [tire] herkese %45 hasar · 101 Tedarik"
+    hint_targeting_intro [ok] "Piyade Takımı 420 can · Keşif Eri 60 [tire] EN GÜÇLÜ"
+  Ikisi de 68 karakterlik butcenin altinda; kilit UnlockHintStringsTest'te.
+
+  EK UYUMU KURALI BURADA DA GECERLI: guclendirici adlari ("Acil Tedarik",
+  "Hava Desteği") arguman olarak geliyor ve ek ALMIYOR. "Hava Desteği'ni
+  cagir" gibi bir kurgu tek sablonla uc ada uyamaz.
 -->
 <resources>
 
     <string name="hint_tag_armor">ZIRH</string>
     <string name="hint_tag_new">YENİ</string>
 
+    <!-- Yonetim dersleri; en fazla 7 karakter. -->
+    <string name="hint_tag_upgrade">YÜKSELT</string>
+    <string name="hint_tag_target">HEDEF</string>
+    <string name="hint_tag_booster">DESTEK</string>
+    <string name="hint_tag_sell">SAT</string>
+
     <string name="hint_armor_intro">%1$s &#8212; %2$s %3$.1f DPS &#183; %4$s %5$.1f</string>
 
     <string name="hint_tower_matchup">%1$s: %2$s %3$.1f DPS &#183; %4$s %5$.1f</string>
 
     <string name="hint_frost_role">%1$s: %2$.1f DPS &#183; %%%3$d yavaşlatır, menzilde %4$.1f&#215; süre</string>
+
+    <string name="hint_upgrade_intro">%1$s: %2$.1f &#8594; %3$.1f DPS &#183; %4$d Tedarik</string>
+
+    <string name="hint_targeting_intro">%1$s %2$d can &#183; %3$s %4$d &#8212; %5$s</string>
+
+    <string name="hint_booster_intro">%1$s &#8212; %2$s &#183; %3$s</string>
+
+    <string name="hint_booster_effect_supply">+%1$d Tedarik</string>
+    <string name="hint_booster_effect_damage">herkese %%%1$d hasar</string>
+    <string name="hint_booster_effect_repair">+%%%1$d üs canı</string>
+
+    <string name="hint_booster_cost_ad">reklamla ücretsiz</string>
+    <string name="hint_booster_cost_supply">%1$d Tedarik</string>
+    <string name="hint_booster_cost_coin">%1$d Coin</string>
+
+    <string name="hint_sell_intro">%1$s: sat &#8594; +%2$d Tedarik, geri %%%3$d</string>
 
     <string name="hint_dismiss">ANLADIM</string>
     <string name="hint_dismiss_desc">İpucunu kapat</string>

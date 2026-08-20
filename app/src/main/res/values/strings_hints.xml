@@ -27,14 +27,35 @@
   TASMA BUTCESI
   ============================================================================
   Serit HUD'un altinda TEK SATIR ve "ANLADIM" cipiyle ayni satiri paylasir.
-  En dar desteklenen yatay ekran 640 dp kabul edildi:
+  En dar desteklenen yatay ekran 640 dp kabul edildi (hedef cihaz Galaxy S8
+  yatay 740x360 dp, yani olcum ondan DAHA DAR bir ekranda yapiliyor):
     640 (ekran) [eksi] 32 (satir padding) [eksi] 92 (ANLADIM cipi)
         [eksi] 12 (bosluk) [eksi] 28 (serit ic padding)
-        [eksi] 54 (ZIRH / YENI etiketi) [eksi] 8 (etiket boslugu) = 414 dp
+        [eksi] 54 (etiket) [eksi] 8 (etiket boslugu) = 414 dp
   13 sp kalin Latin metinde ortalama karakter ~7,7 dp, 10 sp'de ~5,9 dp.
-  Butce 64 karakter: tam puntoda 493 dp (sigmaz) ama AutoShrinkText 10 sp'ye
-  kadar kucultuyor ve orada 378 dp. Yani en uzun satir bile KIRPILMAZ.
+  Butce 68 karakter: tam puntoda sigmaz ama AutoShrinkText 10 sp'ye kadar
+  kucultuyor ve orada 401 dp. Yani en uzun satir bile KIRPILMAZ.
   Butce TutorialStringsTest desenindeki UnlockHintStringsTest ile kilitli.
+
+  ETIKET SINIRI 7 KARAKTER. Yukaridaki 54 dp, 10 sp kalin metinde 7 karaktere
+  (7 x 5,9 = 41 dp) arti 12 dp ic padding'e denk gelir. Sekiz karakterlik bir
+  etiket govdenin butcesini yer; bu yuzden etiketler ayri ve DAHA DAR bir
+  esikle olculur (UnlockHintStringsTest.TAG_BUDGET_CHARS).
+
+  ============================================================================
+  2026-08-20 [eksi] EKSIK DORT MEKANIK (docs/FUN_AUDIT_2.md (a))
+  ============================================================================
+  Satma, hedefleme modu, guclendiriciler ve yukseltme hicbir yerde
+  ogretilmiyordu. Dordunun de metni asagida ve hepsi ayni kurala uyar: sayiyi
+  goster, sifat kullanma. Sayilarin tamami GameConfig / EconomyConfig /
+  BoosterSystem'den turetilir (HintFacts + HintFlow.boosterCopy), yani denge
+  ya da fiyat tablosu degistiginde bu satirlar kendiliginden guncellenir.
+
+  Guclendirici satiri PARCALI kuruldu (govde + etki + bedel). Sebep: uc
+  guclendiricinin etkisi uc ayri birimde (Tedarik / yuzde hasar / yuzde us
+  cani) ve bedeli uc ayri para biriminde (reklam / Tedarik / Coin) olculur.
+  Tek sablona sikistirmak ya yalan soylerdi ya da satiri butcenin uzerine
+  cikarirdi.
 -->
 <resources>
 
@@ -45,6 +66,16 @@
     -->
     <string name="hint_tag_armor">ARMOUR</string>
     <string name="hint_tag_new">NEW</string>
+
+    <!--
+      Yonetim dersleri kendi etiketlerini tasir. "NEW" onlarda YALAN olurdu:
+      satis, yukseltme, hedefleme ve guclendirici ilk dakikadan beri oyunda
+      ama oyuncu onlari GORMEDI. En fazla 7 karakter (bkz. dosya basligi).
+    -->
+    <string name="hint_tag_upgrade">UPGRADE</string>
+    <string name="hint_tag_target">TARGET</string>
+    <string name="hint_tag_booster">SUPPORT</string>
+    <string name="hint_tag_sell">SELL</string>
 
     <!--
       Zirh dersi. Ayni kule, iki hedef: oyuncu farki kendi okur.
@@ -66,6 +97,57 @@
       4 menzilde kalma suresi carpani = 1 / (1 [eksi] yavaslatma)
     -->
     <string name="hint_frost_role">%1$s: %2$.1f DPS &#183; %3$d%% slow, %4$.1f&#215; time in range</string>
+
+    <!--
+      Yukseltme dersi. Ayni kule, iki kademe. DPS burada HEDEFSIZDIR
+      (HintFacts.rawDps): yukseltme kulenin kendi buyumesidir, araya bir dusman
+      adi koymak ikinci bir degiskeni ayni cumlede oynatirdi.
+      1 kule adi [ok] 2 su anki DPS [ok] 3 yukseltilmis DPS [ok] 4 bedel
+    -->
+    <string name="hint_upgrade_intro">%1$s: %2$.1f &#8594; %3$.1f DPS &#183; %4$d supply</string>
+
+    <!--
+      Hedefleme dersi. Siradaki dalganin en can'lisi ve en can'sizi yan yana;
+      farki oyuncu kendi okur. Son arguman hedefleme modunun adidir ve
+      SelectedTowerInspector butonunda yazan metnin AYNISIDIR
+      (inspector_target_strongest) [eksi] oyuncuya panelde arayacagi kelime
+      verilir, es anlamlisi degil.
+      1 en canli hedef [ok] 2 cani [ok] 3 en cansiz hedef [ok] 4 cani [ok] 5 mod adi
+    -->
+    <string name="hint_targeting_intro">%1$s %2$d HP &#183; %3$s %4$d &#8212; %5$s</string>
+
+    <!--
+      Guclendirici dersi. Ad, etki ve bedel AYNI satirda: booster secim UX'i
+      kurali bu ucunu ayirmayi yasakliyor.
+      1 guclendirici adi [ok] 2 etki metni [ok] 3 bedel metni
+    -->
+    <string name="hint_booster_intro">%1$s &#8212; %2$s &#183; %3$s</string>
+
+    <!--
+      Etki parcalari. Birim guclendiriciye gore degisir; sayilar EconomyConfig'ten
+      turetilir (emergencySupplyAmount / AIR_SUPPORT_DAMAGE_FRACTION /
+      BASE_REPAIR_HEALTH_RATIO).
+    -->
+    <string name="hint_booster_effect_supply">+%1$d supply</string>
+    <string name="hint_booster_effect_damage">%1$d%% to all enemies</string>
+    <string name="hint_booster_effect_repair">+%1$d%% base health</string>
+
+    <!--
+      Bedel parcalari. Reklam yolunun AYRI bir satiri var: "0 supply" demek
+      teknik olarak dogru ama oyuncuya hicbir sey soylemez [eksi] ogrenmesi
+      gereken sey butona basinca kisa bir reklam acilacagidir.
+    -->
+    <string name="hint_booster_cost_ad">free with an ad</string>
+    <string name="hint_booster_cost_supply">%1$d supply</string>
+    <string name="hint_booster_cost_coin">%1$d coin</string>
+
+    <!--
+      Satis dersi. Iki sayi: geri gelen Tedarik ve orani. Oran gosteriliyor
+      cunku satis her zaman ZARARLIDIR (oran 1,0'in altinda) ve oyuncunun bunu
+      ipucundan ogrenmesi, ilk satistan sonra ogrenmesinden iyidir.
+      1 kule adi [ok] 2 geri gelen Tedarik [ok] 3 geri donus yuzdesi
+    -->
+    <string name="hint_sell_intro">%1$s: sell &#8594; +%2$d supply, %3$d%% back</string>
 
     <!--
       Kapatma. Her ipucunda AYNI yerde ve AYNI etiket (ogreticinin GEC cipiyle

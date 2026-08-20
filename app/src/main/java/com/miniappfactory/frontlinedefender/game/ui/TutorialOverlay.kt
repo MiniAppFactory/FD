@@ -50,9 +50,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.miniappfactory.frontlinedefender.R
 import com.miniappfactory.frontlinedefender.game.data.SaveManager
+import com.miniappfactory.frontlinedefender.game.economy.BoosterCurrency
+import com.miniappfactory.frontlinedefender.game.economy.BoosterType
+import com.miniappfactory.frontlinedefender.game.economy.EconomyConfig
+import com.miniappfactory.frontlinedefender.game.economy.boosterPrice
+import com.miniappfactory.frontlinedefender.game.economy.boostersAvailableAt
+import com.miniappfactory.frontlinedefender.game.economy.emergencySupplyAmount
 import com.miniappfactory.frontlinedefender.game.engine.GameEngine
 import com.miniappfactory.frontlinedefender.game.engine.GameState
 import com.miniappfactory.frontlinedefender.game.model.GameConfig
+import com.miniappfactory.frontlinedefender.game.model.TowerEntity
 import com.miniappfactory.frontlinedefender.ui.theme.SleekBorderLight
 import com.miniappfactory.frontlinedefender.ui.theme.SleekGold
 import com.miniappfactory.frontlinedefender.ui.theme.SleekSurfaceCard
@@ -947,6 +954,28 @@ object HintFacts {
 
     fun armorOf(enemy: GameConfig.EnemyType): Float =
         GameConfig.ENEMY_SPECS[enemy]?.armor ?: 0f
+
+    /**
+     * Kademe merdiveninin HAM hasar/sn degeri — hedeften BAGIMSIZ.
+     *
+     * [dps] her zaman bir dusman ister cunku zirh hesaba girer. Yukseltme dersi
+     * ise "bu kule ne kadar buyuyor" sorusunu sorar; oraya bir dusman adi
+     * karistirmak iki degiskeni ayni cumlede oynatirdi ve ustelik ipucunun
+     * o bolumde CIKMAYAN bir dusmandan bahsetme riskini geri getirirdi
+     * (bkz. HintTeachesPresentEnemyTest). `TowerTier.dps` ile ayni formul.
+     */
+    fun rawDps(tower: GameConfig.TowerType, tier: Int): Float {
+        val spec = GameConfig.TOWER_SPECS[tower] ?: return 0f
+        val step = spec.tier(tier)
+        return if (step.fireRate <= 0f) 0f else step.damage / step.fireRate
+    }
+
+    /**
+     * Dusmanin tam cani. Hedefleme dersi bunu gosterir: "EN GUCLU" modunun ne
+     * anlama geldigi ancak iki can yan yana konunca okunur.
+     */
+    fun maxHp(enemy: GameConfig.EnemyType): Int =
+        (GameConfig.ENEMY_SPECS[enemy]?.maxHp ?: 0f).roundToInt()
 }
 
 /**
@@ -962,6 +991,28 @@ object HintFacts {
  * 2. [MISSILE_ROLE] — denetimin en buyuk sayisal farki (tankta 6,1'e karsi 26,6).
  * 3. [CANNON_ROLE] — zirhin ikinci cevabi; patlama zirhi BYPASS eder.
  * 4. [FROST_ROLE] — hasar vermeyen destek; en az acil olan, en son.
+ * 5. [UPGRADE_INTRO] — "insa mi, yukseltme mi" ekonominin ikinci karari.
+ * 6. [TARGETING_INTRO] — kule zaten atis yapiyor; SIRAYI degistirmek ince ayar.
+ * 7. [BOOSTER_INTRO] — savas ici tuketilebilir; oynanisin zorunlu parcasi degil.
+ * 8. [SELL_INTRO] — en son, cunku en yikici eylem. Bkz. kendi KDoc'u.
+ *
+ * ---------------------------------------------------------------------------
+ * 2026-08-20 — EKSIK DORT MEKANIK (docs/FUN_AUDIT_2.md (a))
+ * ---------------------------------------------------------------------------
+ * Denetim: satma, hedefleme modu, guclendiriciler ve yukseltme HICBIR YERDE
+ * ogretilmiyordu. `WaveDefinitions.kt` icinde "L6'da hedefleme modlari
+ * tanitilir" yazan bir yorum vardi ama tanitan bir UI yoktu — olu yorum.
+ *
+ * Dordu de ayni sozlesmeyle buraya eklendi ve **hicbiri bolum numarasina
+ * baglanmadi**: tetikleyici oyuncunun sahada ULASTIGI durumdur (yukseltme
+ * odenebilir hale geldi, ray'de guclendirici belirdi, dalga karisik geldi,
+ * insa edecek yer/tedarik kalmadi). Kampanya yeniden sekillenirse ders
+ * kendiliginden dogru yere tasinir.
+ *
+ * Dordu de oncelik listesinin ALTINA kondu: bir kule kilidinin acilmasi
+ * zamana duyarli bir HABERDIR (oyuncu o kuleyi hemen kurmak ister), yonetim
+ * dersleri ise her hazirlik fazinda ayni derecede gecerlidir. Cakismada haber
+ * once verilir, ders bir sonraki fazda cikar.
  *
  * @param saveId `SaveManager`'daki kalici anahtarin govdesi. **ASLA
  *   degistirilmez**: degisirse ipucu eski kayitlarda yeniden gorunur. Enum
@@ -980,18 +1031,79 @@ enum class UnlockHint(val saveId: String) {
     CANNON_ROLE("cannon_role"),
 
     /** Frost acildi: hasar VERMEZ, yavaslatir. */
-    FROST_ROLE("frost_role");
+    FROST_ROLE("frost_role"),
 
     /**
-     * Bu ipucunu acan kule; [ARMOR_INTRO] icin `null` (onu dusman tetikler).
-     * Tetikleyici bolum NUMARASI degil, bu kulenin kilidinin acilmasidir.
+     * **YUKSELTME.** Tetikleyici: sahadaki bir kulenin bir sonraki kademesi
+     * ACIK ve o an ODENEBILIR ([HintFlow.upgradeCandidate]).
+     *
+     * Neden "odenebilir" kosulu var: yukseltme paneli yalnizca kuleye
+     * dokununca acilir, yani ders ancak oyuncu O ANDA uygulayabiliyorsa
+     * yapiskan olur. Odeyemeyecegi bir rakami gostermek, `BoosterRail`'in
+     * "karsilanamayan secenegi sebebiyle goster" kuralinin aksine, burada
+     * yalnizca gurultu uretir: ipucu bir KEZ cikar ve kaybolur, buton gibi
+     * ekranda kalmaz.
+     */
+    UPGRADE_INTRO("upgrade_intro"),
+
+    /**
+     * **HEDEFLEME MODU.** Tetikleyici: sahada en az bir kule VAR ve siradaki
+     * dalga en az IKI farkli dusman tipi getiriyor ([HintSignals.incomingEnemyTypes]).
+     *
+     * Tek tipli bir dalgada "kule once kime atsin" diye bir soru YOKTUR; ders
+     * o zaman bir cevabi olmayan soruyu sorar. Karisik dalga ise sorunun
+     * kendisidir ve `WavePreviewBar` onu ayni hazirlik fazinda zaten
+     * gosteriyor: serit "ne geliyor", ipucu "sen ne yapabilirsin" der.
+     */
+    TARGETING_INTRO("targeting_intro"),
+
+    /**
+     * **GUCLENDIRICILER.** Tetikleyici: `boostersAvailableAt(levelId)` bos
+     * degil, yani `BoosterRail` GERCEKTEN en az bir buton ciziyor
+     * ([BoosterRail] ile AYNI fonksiyon okunur, ayri bir kural yazilmaz).
+     *
+     * Denetimin sikayeti tam olarak buydu: uc guclendirici var, biri reklamla
+     * besleniyor ve ray'e hicbir sey isaret etmiyor. Bu yuzden bu ipucu
+     * seridin yaninda ray'in ALT-SAG kosesine bir halka da cizer.
+     */
+    BOOSTER_INTRO("booster_intro"),
+
+    /**
+     * **SATMA.** Tetikleyici: sahada EN AZ IKI kule var VE su anda hicbir kule
+     * insa edilemiyor ([HintSignals.buildBlocked]) — yer, tavan ya da Tedarik
+     * bitmis.
+     *
+     * Iki kosul da zorunlu:
+     * · **Insa tikandi** olmadan satis bir cozum degil, sadece bir kayiptir
+     *   (`salvageRate` her zaman 1,0'in altinda). Motorun kendi yorumu da
+     *   ayni: "MEVZI TAVANI — satis yer acar".
+     * · **En az iki kule** olmadan ders ZARARLIDIR: tek kulesi olan yeni
+     *   oyuncuya "satabilirsin" demek, savunmasini bosaltmasina davettir.
+     *
+     * Oncelik listesinin en altinda olmasinin sebebi de budur: geri alinmasi
+     * en pahali eylemi en son ogretiyoruz.
+     */
+    SELL_INTRO("sell_intro");
+
+    /**
+     * Bu ipucunu acan kule; **kule kilidine bagli OLMAYAN** ipuclari icin
+     * `null`. Tetikleyici bolum NUMARASI degil, bu kulenin kilidinin
+     * acilmasidir.
+     *
+     * `null` donen her ipucunun tetikleyicisi [HintFlow.isTriggered] icinde
+     * ACIKCA yazilidir; bu alan yalnizca "kilitli her kulenin bir rol dersi
+     * var mi" sorusunu cevaplar (UnlockHintFlowTest).
      */
     val unlockTower: GameConfig.TowerType?
         get() = when (this) {
-            ARMOR_INTRO -> null
             MISSILE_ROLE -> GameConfig.TowerType.ANTI_ARMOR
             CANNON_ROLE -> GameConfig.TowerType.CANNON
             FROST_ROLE -> GameConfig.TowerType.SLOW
+            ARMOR_INTRO,
+            UPGRADE_INTRO,
+            TARGETING_INTRO,
+            BOOSTER_INTRO,
+            SELL_INTRO -> null
         }
 }
 
@@ -1008,6 +1120,16 @@ enum class UnlockHint(val saveId: String) {
  * @param incomingArmoredTypes SIRADAKI dalgadaki zirhli tipler. [UnlockHint.ARMOR_INTRO]
  *   tetikleyicisi ve ornek dusmani. `WavePreviewBar` ayni dalgayi gosterdigi
  *   icin serit ile ipucu ayni seyden bahseder.
+ * @param incomingEnemyTypes SIRADAKI dalgadaki TUM tipler. [UnlockHint.TARGETING_INTRO]
+ *   tetikleyicisi: "kule once kime atsin" sorusu ancak birden fazla tip
+ *   geliyorsa vardir.
+ * @param fieldTowers su anda sahada duran kulelerin ozeti. Yukseltme ve satis
+ *   dersleri yalnizca oyuncunun GERCEKTEN sahip oldugu bir kuleden bahsedebilir;
+ *   varsayimsal bir kule uzerinden ders vermek, dusman tarafinda tam bir gun
+ *   once duzeltilen hatanin ekonomi tarafindaki esidi olurdu.
+ * @param supply o andaki Tedarik. Yukseltme dersinin "odenebilir mi" kosulu.
+ * @param buildBlocked su anda HICBIR kule kurulamiyor mu (bos mevzi yok, mevzi
+ *   tavani doldu ya da Tedarik yetmiyor). [UnlockHint.SELL_INTRO] tetikleyicisi.
  */
 data class HintSignals(
     val gameState: GameState,
@@ -1015,7 +1137,37 @@ data class HintSignals(
     val waveIndex: Int,
     val tutorialArmed: Boolean,
     val levelEnemyTypes: Set<GameConfig.EnemyType> = emptySet(),
-    val incomingArmoredTypes: Set<GameConfig.EnemyType> = emptySet()
+    val incomingArmoredTypes: Set<GameConfig.EnemyType> = emptySet(),
+    val incomingEnemyTypes: Set<GameConfig.EnemyType> = emptySet(),
+    val fieldTowers: List<HintTowerSnapshot> = emptyList(),
+    val supply: Int = 0,
+    val buildBlocked: Boolean = false
+)
+
+/**
+ * Sahadaki tek bir kulenin ipucuna giren OZETI.
+ *
+ * Neden `TowerEntity` degil de ozet: [HintFlow] saf kalmali ve testte
+ * Compose/motor kurmadan kosmali. Ozet, panelin (`SelectedTowerInspector`)
+ * gosterdigi ayni turetilmis degerleri tasir — yani ipucu ile panel AYNI
+ * sayiyi soyler. `TowerEntity.upgradeCost` / `sellValue` getter'lari tek
+ * kaynaktir; burada hicbir sey yeniden hesaplanmaz.
+ *
+ * @param towerId sahadaki kuleyi geri bulmak icin. Vurgu halkasi kulenin O
+ *   ANKI konumuna cizilecek ve konum her karede degisebilir (cihaz donusu,
+ *   yeniden olcekleme), bu yuzden koordinat DEGIL kimlik tasiniyor.
+ * @param tier kulenin su anki kademesi (1 tabanli).
+ * @param upgradeCost bir sonraki kademenin bedeli; son kademede `null`.
+ * @param sellValue satista geri gelen Tedarik.
+ * @param salvagePercent geri donus yuzdesi (meta yukseltmeyle 70..90 arasi).
+ */
+data class HintTowerSnapshot(
+    val towerId: String,
+    val type: GameConfig.TowerType,
+    val tier: Int,
+    val upgradeCost: Int?,
+    val sellValue: Int,
+    val salvagePercent: Int
 )
 
 /**
@@ -1143,16 +1295,163 @@ object HintFlow {
         }
 
     /**
-     * Bu ipucunun KOSULU sagladi mi? Bolum numarasi degil, kilit olayi.
+     * Bu ipucunun KOSULU sagladi mi? **Hicbir dalda bolum numarasi yok** —
+     * her dal bir OLAYI sorar.
      *
-     * Iki kosul birlikte: kule ACILMIS olacak VE dersin ornegi bu bolumde
-     * gercekten cikacak. Ikincisi olmadan ipucu "gorulduye" yazilir ve dogru
-     * an geldiginde bir daha hic cikmazdi.
+     * Kule dersleri icin iki kosul birlikte: kule ACILMIS olacak VE dersin
+     * ornegi bu bolumde gercekten cikacak. Ikincisi olmadan ipucu "gorulduye"
+     * yazilir ve dogru an geldiginde bir daha hic cikmazdi.
+     *
+     * Yonetim dersleri (yukseltme / hedefleme / guclendirici / satis) ayni
+     * mantigi ekonomi tarafinda kurar: her biri, ilgili mekanigin O ANDA
+     * GERCEKTEN kullanilabilir oldugu duruma bakar. Gerekceler [UnlockHint]
+     * icindeki tek tek KDoc'larda.
      */
-    fun isTriggered(hint: UnlockHint, signals: HintSignals): Boolean {
-        val tower = hint.unlockTower ?: return signals.incomingArmoredTypes.isNotEmpty()
-        return GameConfig.isTowerUnlocked(tower, signals.levelId) &&
-            hasTeachableExample(hint, signals)
+    fun isTriggered(hint: UnlockHint, signals: HintSignals): Boolean = when (hint) {
+        UnlockHint.ARMOR_INTRO -> signals.incomingArmoredTypes.isNotEmpty()
+
+        UnlockHint.MISSILE_ROLE,
+        UnlockHint.CANNON_ROLE,
+        UnlockHint.FROST_ROLE -> {
+            val tower = hint.unlockTower
+            tower != null &&
+                GameConfig.isTowerUnlocked(tower, signals.levelId) &&
+                hasTeachableExample(hint, signals)
+        }
+
+        // Yukseltme O AN odenebiliyor mu (kule sahada, kademe acik, Tedarik yeter).
+        UnlockHint.UPGRADE_INTRO -> upgradeCandidate(signals) != null
+
+        // Kule var VE dalga karisik: "once kime" sorusunun bir cevabi var.
+        UnlockHint.TARGETING_INTRO ->
+            signals.fieldTowers.isNotEmpty() && signals.incomingEnemyTypes.size >= 2
+
+        // Ray GERCEKTEN buton ciziyor mu.
+        UnlockHint.BOOSTER_INTRO -> firstBooster(signals.levelId) != null
+
+        // Insa tikandi VE feda edilebilecek yedek kule var.
+        UnlockHint.SELL_INTRO -> signals.buildBlocked && sellCandidate(signals) != null
+    }
+
+    // ---------------------------------------------------------------------
+    // Yonetim derslerinin aday secimi — saf, bu yuzden test edilebilir
+    // ---------------------------------------------------------------------
+
+    /**
+     * Yukseltme dersinin konusacagi kule: **su an odenebilen EN UCUZ** adim.
+     *
+     * En ucuz olani secmek bilincli — ders bir EYLEM oneriyor ve oyuncunun
+     * kasasini bosaltmayan oneri, hazirlik fazinin geri kalanini (yeni kule
+     * kurmak) bozmaz. Esitlikte kimlige gore siralanir: ayni kare iki kez
+     * cizildiginde ipucu farkli kuleyi gostermez.
+     */
+    fun upgradeCandidate(signals: HintSignals): HintTowerSnapshot? =
+        signals.fieldTowers
+            .filter { snapshot ->
+                val cost = snapshot.upgradeCost
+                cost != null && cost <= signals.supply
+            }
+            .minWithOrNull(compareBy({ it.upgradeCost ?: Int.MAX_VALUE }, { it.towerId }))
+
+    /**
+     * Satis dersinin konusacagi kule: **en az yatirim yapilmis** olan.
+     *
+     * Iki sebep: (1) ders bir ornek gosterir, bir emir vermez — en ucuz kuleyi
+     * ornek almak en az yikici olanidir; (2) `sellValue` yatirimla dogru
+     * orantili oldugu icin en dusuk yatirimli kule, oyuncunun geri alamayacagi
+     * en kucuk karari temsil eder.
+     *
+     * `null` doner: sahada ikiden az kule varsa. Gerekce [UnlockHint.SELL_INTRO].
+     */
+    fun sellCandidate(signals: HintSignals): HintTowerSnapshot? {
+        if (signals.fieldTowers.size < 2) return null
+        return signals.fieldTowers.minWithOrNull(compareBy({ it.sellValue }, { it.towerId }))
+    }
+
+    /**
+     * Bu bolumde ray'de belirEN ILK guclendirici.
+     *
+     * `boostersAvailableAt` `BoosterRail`'in okudugu AYNI fonksiyondur; ayri
+     * bir "hangi bolumde hangisi acik" kurali yazilmadi, cunku iki yerde iki
+     * kural bu depoda daha once sessiz uyusmazlik uretti. Kill switch de
+     * ([BoosterType.enabled]) oradan gelir: kapali guclendirici ne ray'de
+     * cizilir ne de ders konusu olur.
+     *
+     * Aralik disi bolum icin `null`: [boosterPrice] gecersiz bolumde
+     * `require` atar ve bir ipucu motoru asla cokme sebebi olamaz.
+     */
+    fun firstBooster(levelId: Int): BoosterType? {
+        if (levelId !in 1..EconomyConfig.CAMPAIGN_LEVELS) return null
+        return boostersAvailableAt(levelId).minByOrNull { it.unlockLevel }
+    }
+
+    /**
+     * Sahadaki bir kuleyi ipucu ozetine cevirir.
+     *
+     * Butun turetilmis degerler `TowerEntity`nin KENDI getter'larindan gelir;
+     * burada tek bir formul bile tekrar edilmez. Aksi halde panel ile ipucu bir
+     * gun farkli sayi soylerdi ve bu dosyanin gecmisinde (yildiz formulu,
+     * kademe kilidi) tam olarak bu tur sessiz uyusmazliklar cikti.
+     */
+    fun snapshotOf(tower: TowerEntity): HintTowerSnapshot = HintTowerSnapshot(
+        towerId = tower.id,
+        type = tower.type,
+        tier = tower.level,
+        upgradeCost = tower.upgradeCost,
+        sellValue = tower.sellValue,
+        salvagePercent = (tower.salvageRate.coerceIn(0f, 1f) * 100f).roundToInt()
+    )
+
+    // ---------------------------------------------------------------------
+    // `BoosterRail` yerlesim aynasi (dp)
+    //
+    // Bu sabitler BASKA bir composable'in olculerini yansitir ve o dosya baska
+    // bir is kolunun elindedir. [TutorialFlow] yerlesim sabitlerindeki ayni
+    // sozlesme burada da gecerli: konum TAHMINDIR ve ipucu hicbir yerde
+    // "halkaya dokun" kosuluyla ilerlemedigi icin sapma HICBIR SEYI kilitlemez
+    // — en kotu ihtimalle halka butonun birkac dp yanina duser.
+    // ---------------------------------------------------------------------
+
+    /** `BoosterRail.WIDE_BAND_DP` — genis bant esigi. */
+    const val RAIL_WIDE_BAND_DP = 680f
+
+    /** Ray butonunun kenari (genis / dar bant). */
+    const val RAIL_BUTTON_WIDE_DP = 56f
+    const val RAIL_BUTTON_NARROW_DP = 48f
+
+    /** Rayin sag kenardan uzakligi (genis / dar bant). */
+    const val RAIL_END_WIDE_DP = 10f
+    const val RAIL_END_NARROW_DP = 8f
+
+    /** Rayin alt kenardan uzakligi; `TowerBuildBar` cekmecesinin ustunde kalir. */
+    const val RAIL_BOTTOM_DP = 72f
+
+    /** Ray butonunun kenari — bant esigine gore. */
+    private fun railButtonDp(widthPx: Float, density: Float): Float {
+        if (density <= 0f) return RAIL_BUTTON_NARROW_DP
+        val widthDp = widthPx / density
+        return if (widthDp >= RAIL_WIDE_BAND_DP) RAIL_BUTTON_WIDE_DP else RAIL_BUTTON_NARROW_DP
+    }
+
+    /**
+     * Ray'in EN ALTTAKI butonunun merkezi (x).
+     *
+     * `BoosterRail` butonlari `unlockLevel` AZALAN sirada dizer, yani en altta
+     * duran buton ilk acilan guclendiricidir — [firstBooster] ile ayni sey.
+     * Ders o butonu anlattigi icin halka da onun uzerine biner.
+     */
+    fun boosterRailAnchorX(widthPx: Float, density: Float): Float {
+        if (widthPx <= 0f || density <= 0f) return 0f
+        val button = railButtonDp(widthPx, density)
+        val end = if (button == RAIL_BUTTON_WIDE_DP) RAIL_END_WIDE_DP else RAIL_END_NARROW_DP
+        return (widthPx - (end + button / 2f) * density).coerceIn(0f, widthPx)
+    }
+
+    /** Ray'in EN ALTTAKI butonunun merkezi (y). */
+    fun boosterRailAnchorY(widthPx: Float, heightPx: Float, density: Float): Float {
+        if (heightPx <= 0f || density <= 0f) return 0f
+        val button = railButtonDp(widthPx, density)
+        return (heightPx - (RAIL_BOTTOM_DP + button / 2f) * density).coerceIn(0f, heightPx)
     }
 
     /** Ortam ipucu gostermeye musait mi? (faz + ogretici cakismasi) */
@@ -1232,6 +1531,16 @@ object HintFlow {
         val armored = LinkedHashSet<GameConfig.EnemyType>()
         for (entry in entries) if (entry.armored) armored += entry.type
         return armored
+    }
+
+    /**
+     * Siradaki dalgadaki TUM tipler — hedefleme dersinin tetigi ve ornekleri.
+     * Yine `WavePreview` uzerinden okunuyor: `WaveDefinitions` baska bir is
+     * kolunun elinde ve ayni tabloyu iki yerden okumak gerekmiyor.
+     */
+    fun enemyTypesInWave(levelId: Int, waveIndex: Int): Set<GameConfig.EnemyType> {
+        val entries = WavePreview.forWave(levelId, waveIndex)?.entries ?: return emptySet()
+        return entries.mapTo(LinkedHashSet()) { it.type }
     }
 
     // =================================================================================
@@ -1321,6 +1630,109 @@ object HintFlow {
                 rangeTimeMultiplier = HintFacts.rangeTimeMultiplier(tower)
             )
         }
+
+        UnlockHint.UPGRADE_INTRO -> {
+            val snapshot = upgradeCandidate(signals)
+            val cost = snapshot?.upgradeCost
+            if (snapshot == null || cost == null) {
+                null
+            } else {
+                HintCopy.UpgradeStep(
+                    hint = hint,
+                    towerId = snapshot.towerId,
+                    tower = snapshot.type,
+                    // HAM DPS: hedefsiz, cunku yukseltme kulenin kendi
+                    // buyumesidir. Zirhli/zirhsiz ayrimi ayri bir derstir
+                    // ([ARMOR_INTRO]) ve iki dersi tek satira sikistirmak
+                    // ikisini de okunmaz yapardi.
+                    currentDps = HintFacts.rawDps(snapshot.type, snapshot.tier),
+                    nextDps = HintFacts.rawDps(snapshot.type, snapshot.tier + 1),
+                    cost = cost
+                )
+            }
+        }
+
+        UnlockHint.TARGETING_INTRO -> targetingCopy(hint, signals)
+
+        UnlockHint.BOOSTER_INTRO -> boosterCopy(hint, signals)
+
+        UnlockHint.SELL_INTRO -> sellCandidate(signals)?.let { snapshot ->
+            HintCopy.SellRefund(
+                hint = hint,
+                towerId = snapshot.towerId,
+                tower = snapshot.type,
+                refund = snapshot.sellValue,
+                salvagePercent = snapshot.salvagePercent
+            )
+        }
+    }
+
+    /**
+     * Hedefleme dersi: siradaki dalganin **en can'li** ve **en can'sizi**.
+     *
+     * Ucu ucuna iki sayi gostermek yeterli — "EN GUCLU" modunun ne demek
+     * oldugu ancak bu iki sayinin arasindaki mesafe gorulunce anlasilir.
+     * Ornekler SIRADAKI dalgadan seciliyor, yani `WavePreviewBar`'da o anda
+     * ekranda duran kartlardan; oyuncunun gormedigi bir birim adi gecemez.
+     *
+     * `null` doner: dalgada iki ayri tip yoksa ya da ikisi AYNI cana sahipse
+     * (fark okunmaz, ders bos kalir).
+     */
+    private fun targetingCopy(hint: UnlockHint, signals: HintSignals): HintCopy? {
+        val anchor = signals.fieldTowers.firstOrNull() ?: return null
+        val sorted = signals.incomingEnemyTypes
+            .sortedWith(compareBy({ -HintFacts.maxHp(it) }, { it.ordinal }))
+        if (sorted.size < 2) return null
+        val strongest = sorted.first()
+        val weakest = sorted.last()
+        if (HintFacts.maxHp(strongest) == HintFacts.maxHp(weakest)) return null
+        return HintCopy.TargetingChoice(
+            hint = hint,
+            towerId = anchor.towerId,
+            strongEnemy = strongest,
+            strongHp = HintFacts.maxHp(strongest),
+            weakEnemy = weakest,
+            weakHp = HintFacts.maxHp(weakest)
+        )
+    }
+
+    /**
+     * Guclendirici dersi: ray'de beliren ILK guclendiricinin ADI, ETKISI ve
+     * BEDELI.
+     *
+     * Uc alan da ayni kartta olmali (booster secim UX'i kurali: fiyat, etki ve
+     * karsilanabilirlik ayni yerde). Etki ve bedel `EconomyConfig` ile
+     * `BoosterSystem`'in saf fonksiyonlarindan TURETILIR — fiyat tablosu
+     * degisirse ipucu kendiliginden guncellenir.
+     */
+    private fun boosterCopy(hint: UnlockHint, signals: HintSignals): HintCopy? {
+        val booster = firstBooster(signals.levelId) ?: return null
+        val level = signals.levelId
+        val effect = when (booster) {
+            BoosterType.EMERGENCY_SUPPLY ->
+                HintBoosterEffect.SUPPLY to emergencySupplyAmount(level)
+
+            BoosterType.AIR_SUPPORT ->
+                HintBoosterEffect.DAMAGE to
+                    (EconomyConfig.AIR_SUPPORT_DAMAGE_FRACTION * 100.0).roundToInt()
+
+            BoosterType.BASE_REPAIR ->
+                HintBoosterEffect.REPAIR to
+                    (EconomyConfig.BASE_REPAIR_HEALTH_RATIO * 100.0).roundToInt()
+        }
+        val cost = when (booster.currency) {
+            BoosterCurrency.AD_ONLY -> HintBoosterCost.AD to 0
+            BoosterCurrency.SUPPLY -> HintBoosterCost.SUPPLY to boosterPrice(booster, level)
+            BoosterCurrency.COIN -> HintBoosterCost.COIN to boosterPrice(booster, level)
+        }
+        return HintCopy.BoosterIntro(
+            hint = hint,
+            booster = booster,
+            effect = effect.first,
+            effectAmount = effect.second,
+            cost = cost.first,
+            price = cost.second
+        )
     }
 
     /**
@@ -1348,18 +1760,56 @@ object HintFlow {
     }
 }
 
+/** [HintCopy.BoosterIntro] etkisinin BIRIMI. Metin sablonunu bu secer. */
+enum class HintBoosterEffect {
+    /** Aninda Tedarik (Acil Tedarik). */
+    SUPPLY,
+
+    /** Ekrandaki herkese yuzde hasar (Hava Destegi). */
+    DAMAGE,
+
+    /** Us caninin yuzdesi (Us Tamiri). */
+    REPAIR
+}
+
+/** [HintCopy.BoosterIntro] bedelinin BIRIMI. Metin sablonunu bu secer. */
+enum class HintBoosterCost {
+    /** Ucretli yol yok; rewarded reklamla alinir. */
+    AD,
+
+    /** Savas ici Tedarik. */
+    SUPPLY,
+
+    /** Kalici Coin. */
+    COIN
+}
+
 /**
  * Bir ipucunun EKRANDAKI icerigi — sayilar ve turler, metin degil.
  *
- * Uc bicim var cunku uc farkli ders anlatiliyor ve hepsini tek bir sablona
- * sikistirmak metni uzatirdi (tek satir butcesi 64 karakter):
- *  - [ArmorContrast] — ayni kule, IKI hedef ("kursun zirha islemez")
- *  - [TowerMatchup]  — ayni hedef, IKI kule ("bunun cevabi bu kule")
- *  - [SupportRole]   — karsilastirma yok; kulenin kendi mekanigi
+ * Yedi bicim var cunku yedi farkli ders anlatiliyor ve hepsini tek bir
+ * sablona sikistirmak metni uzatirdi (tek satir butcesi 68 karakter):
+ *  - [ArmorContrast]   — ayni kule, IKI hedef ("kursun zirha islemez")
+ *  - [TowerMatchup]    — ayni hedef, IKI kule ("bunun cevabi bu kule")
+ *  - [SupportRole]     — karsilastirma yok; kulenin kendi mekanigi
+ *  - [UpgradeStep]     — ayni kule, IKI kademe ("bu kadar buyuyor, bu kadara")
+ *  - [TargetingChoice] — ayni dalga, IKI hedef ("once hangisi")
+ *  - [BoosterIntro]    — ad + etki + bedel, tek kartta
+ *  - [SellRefund]      — geri donen Tedarik ve orani
+ *
+ * [towerId] tasiyan bicimler, seridin yaninda SAHADAKI kuleye bir halka da
+ * cizdirir: dersin gectigi panel (`SelectedTowerInspector`) yalnizca kuleye
+ * dokununca acilir, yani metin tek basina "nereye" sorusunu cevaplayamaz.
  */
 sealed interface HintCopy {
 
     val hint: UnlockHint
+
+    /**
+     * Vurgu halkasinin cizilecegi kule; halka istemeyen bicimlerde `null`.
+     * Koordinat DEGIL kimlik: kule konumu her karede degisebilir.
+     */
+    val towerId: String? get() = null
 
     /** Zirh dersi: [tower] iki farkli hedefte kac DPS yapiyor. */
     data class ArmorContrast(
@@ -1388,6 +1838,56 @@ sealed interface HintCopy {
         val dps: Float,
         val slowPercent: Int,
         val rangeTimeMultiplier: Float
+    ) : HintCopy
+
+    /**
+     * Yukseltme dersi: ayni kule, iki kademe.
+     *
+     * DPS **hedefsizdir** ([HintFacts.rawDps]): yukseltme kulenin kendi
+     * buyumesidir ve araya bir dusman adi koymak hem satiri uzatir hem de
+     * ikinci bir degiskeni ayni cumlede oynatir.
+     */
+    data class UpgradeStep(
+        override val hint: UnlockHint,
+        override val towerId: String,
+        val tower: GameConfig.TowerType,
+        val currentDps: Float,
+        val nextDps: Float,
+        val cost: Int
+    ) : HintCopy
+
+    /** Hedefleme dersi: siradaki dalganin en can'li ve en can'siz hedefi. */
+    data class TargetingChoice(
+        override val hint: UnlockHint,
+        override val towerId: String,
+        val strongEnemy: GameConfig.EnemyType,
+        val strongHp: Int,
+        val weakEnemy: GameConfig.EnemyType,
+        val weakHp: Int
+    ) : HintCopy
+
+    /**
+     * Guclendirici dersi: ad + etki + bedel.
+     *
+     * [towerId] YOK — bu dersin hedefi sahadaki bir kule degil, sag alttaki
+     * `BoosterRail`. Halka oraya cizilir ([HintFlow.boosterRailAnchorX]).
+     */
+    data class BoosterIntro(
+        override val hint: UnlockHint,
+        val booster: BoosterType,
+        val effect: HintBoosterEffect,
+        val effectAmount: Int,
+        val cost: HintBoosterCost,
+        val price: Int
+    ) : HintCopy
+
+    /** Satis dersi: geri donen Tedarik ve orani. */
+    data class SellRefund(
+        override val hint: UnlockHint,
+        override val towerId: String,
+        val tower: GameConfig.TowerType,
+        val refund: Int,
+        val salvagePercent: Int
     ) : HintCopy
 }
 
@@ -1452,6 +1952,9 @@ fun UnlockHintStrip(
     val incomingArmored = remember(levelId, waveIndex) {
         HintFlow.armoredTypesInWave(levelId, waveIndex)
     }
+    val incomingTypes = remember(levelId, waveIndex) {
+        HintFlow.enemyTypesInWave(levelId, waveIndex)
+    }
     val tutorialArmed = remember(battleEpoch, levelId) {
         TutorialFlow.shouldStart(levelId, saveManager.tutorialSeen)
     }
@@ -1468,6 +1971,12 @@ fun UnlockHintStrip(
     // basina bir kez kurulmali; aksi halde dalga degisiminde dongu yeniden
     // baslar ve `shownSeconds` sifirlanirdi. `rememberUpdatedState` tam olarak
     // bu ayrimi saglar.
+    // SAHA DURUMU her karede TAZE okunur. `towers` duz bir liste (StateFlow
+    // degil), yani Compose'a okutulamaz; ama bu lambda kare dongusunun ICINDE
+    // cagriliyor, dolayisiyla recomposition'a hic dokunmadan guncel kaliyor.
+    // Liste birkac elemanli oldugu icin kare basina maliyet olculemez
+    // seviyededir ve butun ipuclari gorulduyse dongu zaten hic kurulmaz
+    // (`HintFlow.isExhausted`).
     val signalsProvider by rememberUpdatedState {
         HintSignals(
             gameState = gameEngine.gameState.value,
@@ -1475,7 +1984,11 @@ fun UnlockHintStrip(
             waveIndex = gameEngine.currentWaveIndex.value,
             tutorialArmed = tutorialArmed,
             levelEnemyTypes = levelEnemyTypes,
-            incomingArmoredTypes = incomingArmored
+            incomingArmoredTypes = incomingArmored,
+            incomingEnemyTypes = incomingTypes,
+            fieldTowers = gameEngine.towers.map { HintFlow.snapshotOf(it) },
+            supply = gameEngine.gold.value,
+            buildBlocked = gameEngine.noTowerCanBeBuiltNow()
         )
     }
 
@@ -1510,10 +2023,36 @@ fun UnlockHintStrip(
 
     val density = LocalDensity.current
 
+    // Halka NABZI. Yalnizca isaret gerektiren ipuclarinda donuyor; digerlerinde
+    // hic okunmadigi icin cizim fazi bile gecersiz olmaz.
+    val transition = rememberInfiniteTransition(label = "hint")
+    val pulse = transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1200, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "hint_pulse"
+    )
+
     Box(modifier = modifier.fillMaxSize()) {
         // DIKKAT: burada `pointerInput` YOK. Compose isabet testini yalnizca
         // girdi modifier'i tasiyan dugumlere yapar, dolayisiyla dokunuslar
         // altindaki savas alanina duser.
+        //
+        // ISARET KATMANI (2026-08-20). Yonetim dersleri metinle ANLATILAMAZ,
+        // cunku anlattiklari yuzey ekranda GORUNMUYOR: yukseltme/satis/
+        // hedefleme yalnizca kuleye dokununca acilan `SelectedTowerInspector`
+        // icindedir. Denetimin guclendirici sikayeti de birebir buydu —
+        // "BoosterRail'e hicbir sey isaret etmiyor". Halka ogreticideki
+        // [TutorialCue.RING] ile AYNI sekildir ve orada "dokunulacak hedef"
+        // anlamina gelir; oyuncu ikinci bir gorsel dil ogrenmez.
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val anchor = resolveHintAnchor(copy, gameEngine, density.density) ?: return@Canvas
+            drawTutorialCue(anchor, pulse.value, density.density)
+        }
+
         Row(
             modifier = Modifier
                 .align(Alignment.TopStart)
@@ -1553,6 +2092,62 @@ fun UnlockHintStrip(
  * kare basina degisen [HintState]'i recomposition'dan ayirmak.
  */
 private class HintMachine(var state: HintState)
+
+/**
+ * Su anda HICBIR kule kurulamiyor mu? [UnlockHint.SELL_INTRO] tetikleyicisi.
+ *
+ * Iki ayri tikanma birlestiriliyor cunku oyuncu icin ikisi de ayni sonuca
+ * varir ("insa edemiyorum") ve ikisinin de cozumu satistir:
+ *  · **Bos mevzi yok** — `buildRejectionFor` bunu BILMEZ; pad doluluğu
+ *    motorun insa denemesinde degil, mevzi seciminde ele alinir.
+ *  · **Motorun kendi reddi** — mevzi tavani, kadro kisiti ya da Tedarik.
+ *    Kural burada TEKRAR YAZILMIYOR; motorun tek karar noktasi soruluyor.
+ *
+ * Yalnizca BU BOLUMDE ACIK kuleler sorulur: kilitli bir kulenin reddi
+ * "insa tikandi" demek degildir, o kule zaten hicbir zaman kurulamaz.
+ */
+private fun GameEngine.noTowerCanBeBuiltNow(): Boolean {
+    val spots = scaledBuildSpots
+    if (spots.isEmpty()) return false
+    val occupied = towers.mapTo(HashSet()) { it.buildSpotId }
+    if (spots.none { it.id !in occupied }) return true
+    val unlocked = GameConfig.unlockedTowers(currentLevelId.value)
+    if (unlocked.isEmpty()) return false
+    return unlocked.none { buildRejectionFor(it) == null }
+}
+
+/**
+ * Ipucunun isaret ettigi ekran noktasi; isaret istemeyen ipuclarinda `null`
+ * (o karede hicbir sey cizilmez, serit metni tek basina yeter).
+ *
+ * Kule hedefli derslerde koordinat KULENIN KENDISINDEN okunur: ozet yalnizca
+ * kimlik tasir, cunku konum cihaz donusunde ve yeniden olceklemede degisir
+ * (`GameEngine.updateMapDimensions` kule konumlarini yeniden yaziyor). Kule
+ * bir sekilde bulunamazsa (savas bitti, kule satildi) `null` doner —
+ * ogreticideki "yanlis yerde halka cizmektense hic cizme" kuralinin aynisi.
+ */
+private fun DrawScope.resolveHintAnchor(
+    copy: HintCopy,
+    engine: GameEngine,
+    densityScale: Float
+): TutorialAnchor? {
+    if (copy is HintCopy.BoosterIntro) {
+        return TutorialAnchor(
+            x = HintFlow.boosterRailAnchorX(size.width, densityScale),
+            y = HintFlow.boosterRailAnchorY(size.width, size.height, densityScale),
+            radiusPx = TutorialFlow.PAD_RING_DP * densityScale,
+            cue = TutorialCue.RING
+        )
+    }
+    val towerId = copy.towerId ?: return null
+    val tower = engine.towers.firstOrNull { it.id == towerId } ?: return null
+    return TutorialAnchor(
+        x = tower.posX,
+        y = tower.posY,
+        radiusPx = TutorialFlow.PAD_RING_DP * densityScale,
+        cue = TutorialCue.RING
+    )
+}
 
 /**
  * Yeni "gosterildi" bayraklarini kalici yazar.
@@ -1644,11 +2239,23 @@ private fun HintDismissChip(onDismiss: () -> Unit) {
     }
 }
 
-/** Rozet metni: tehdit mi (ZIRH), firsat mi (YENI). */
+/**
+ * Rozet metni: ipucunun NEDEN ciktigini tek kelimeyle soyler.
+ *
+ * Tehdit mi (ZIRH), firsat mi (YENI), yoksa bir YONETIM dersi mi. Yonetim
+ * dersleri ayri rozetler kullanir cunku "YENI" onlarda yalan olurdu: satis ve
+ * yukseltme oyunun ilk dakikasindan beri vardi, oyuncu onlari GORMEDI.
+ * Rozetler en fazla 7 karakter — govde butcesinin turetilisi
+ * `strings_hints.xml` basliginda.
+ */
 private fun hintTagRes(copy: HintCopy): Int = when (copy) {
     is HintCopy.ArmorContrast -> R.string.hint_tag_armor
     is HintCopy.TowerMatchup,
     is HintCopy.SupportRole -> R.string.hint_tag_new
+    is HintCopy.UpgradeStep -> R.string.hint_tag_upgrade
+    is HintCopy.TargetingChoice -> R.string.hint_tag_target
+    is HintCopy.BoosterIntro -> R.string.hint_tag_booster
+    is HintCopy.SellRefund -> R.string.hint_tag_sell
 }
 
 /**
@@ -1686,4 +2293,79 @@ private fun hintBody(copy: HintCopy): String = when (copy) {
         copy.slowPercent,
         copy.rangeTimeMultiplier
     )
+
+    is HintCopy.UpgradeStep -> stringResource(
+        R.string.hint_upgrade_intro,
+        stringResource(copy.tower.nameRes()),
+        copy.currentDps,
+        copy.nextDps,
+        copy.cost
+    )
+
+    // Hedefleme modu adi ARGUMAN olarak geliyor ve `SelectedTowerInspector`'in
+    // butonunda yazan METNIN AYNISI (`inspector_target_strongest`). Ipucu
+    // oyuncuya panelde arayacagi kelimeyi verir, es anlamlisini degil.
+    is HintCopy.TargetingChoice -> stringResource(
+        R.string.hint_targeting_intro,
+        stringResource(copy.strongEnemy.nameRes()),
+        copy.strongHp,
+        stringResource(copy.weakEnemy.nameRes()),
+        copy.weakHp,
+        stringResource(GameConfig.TargetingMode.STRONGEST.labelRes())
+    )
+
+    is HintCopy.BoosterIntro -> stringResource(
+        R.string.hint_booster_intro,
+        stringResource(copy.booster.hintNameRes()),
+        boosterEffectText(copy),
+        boosterCostText(copy)
+    )
+
+    is HintCopy.SellRefund -> stringResource(
+        R.string.hint_sell_intro,
+        stringResource(copy.tower.nameRes()),
+        copy.refund,
+        copy.salvagePercent
+    )
+}
+
+/**
+ * Guclendirici adi.
+ *
+ * `BoosterRail.kt` ayni eslemeyi PRIVATE tasiyor ve o dosya baska bir is
+ * kolunun elinde; aynisi burada tekrarlaniyor ama ANAHTARLAR ayni, yani
+ * oyuncu iki yerde ayni adi gorur. Kopyalanan sey bir kural degil, bir
+ * kaynak referansi — ikisi ayrisirsa `UnlockHintStringsTest` bunu gormez,
+ * ama ayrisabilecek bir DEGER de yok.
+ */
+@androidx.annotation.StringRes
+private fun BoosterType.hintNameRes(): Int = when (this) {
+    BoosterType.EMERGENCY_SUPPLY -> R.string.booster_emergency_supply_name
+    BoosterType.AIR_SUPPORT -> R.string.booster_air_support_name
+    BoosterType.BASE_REPAIR -> R.string.booster_base_repair_name
+}
+
+/** Guclendiricinin ETKISI — birimi tipe gore degisir, sablonu da oyle. */
+@Composable
+private fun boosterEffectText(copy: HintCopy.BoosterIntro): String = when (copy.effect) {
+    HintBoosterEffect.SUPPLY ->
+        stringResource(R.string.hint_booster_effect_supply, copy.effectAmount)
+
+    HintBoosterEffect.DAMAGE ->
+        stringResource(R.string.hint_booster_effect_damage, copy.effectAmount)
+
+    HintBoosterEffect.REPAIR ->
+        stringResource(R.string.hint_booster_effect_repair, copy.effectAmount)
+}
+
+/**
+ * Guclendiricinin BEDELI. Reklam yolu ayri bir sablon: "0 Tedarik" demek
+ * teknik olarak dogru ama oyuncuya hicbir sey soylemez; ogrenmesi gereken
+ * sey butona basinca kisa bir reklam acilacagidir.
+ */
+@Composable
+private fun boosterCostText(copy: HintCopy.BoosterIntro): String = when (copy.cost) {
+    HintBoosterCost.AD -> stringResource(R.string.hint_booster_cost_ad)
+    HintBoosterCost.SUPPLY -> stringResource(R.string.hint_booster_cost_supply, copy.price)
+    HintBoosterCost.COIN -> stringResource(R.string.hint_booster_cost_coin, copy.price)
 }

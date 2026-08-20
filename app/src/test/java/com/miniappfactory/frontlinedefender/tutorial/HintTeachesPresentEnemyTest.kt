@@ -48,11 +48,22 @@ class HintTeachesPresentEnemyTest {
         incomingArmoredTypes = emptySet()
     )
 
-    /** Ipucunun ekranda ADINI VERDIGI dusmanlar. */
+    /**
+     * Ipucunun ekranda ADINI VERDIGI dusmanlar.
+     *
+     * Yonetim dersleri (yukseltme / guclendirici / satis) hicbir dusman adi
+     * GECIRMEZ; tam da bu yuzden bu kuralla hic caristirilamazlar. Tek istisna
+     * [HintCopy.TargetingChoice]: ornegini SIRADAKI dalgadan alir, yani
+     * `WavePreviewBar`'da o anda ekranda duran kartlardan.
+     */
     private fun enemiesNamedBy(copy: HintCopy): Set<GameConfig.EnemyType> = when (copy) {
         is HintCopy.TowerMatchup -> setOf(copy.enemy)
         is HintCopy.ArmorContrast -> setOf(copy.softEnemy, copy.armoredEnemy)
-        is HintCopy.SupportRole -> emptySet()
+        is HintCopy.TargetingChoice -> setOf(copy.strongEnemy, copy.weakEnemy)
+        is HintCopy.SupportRole,
+        is HintCopy.UpgradeStep,
+        is HintCopy.BoosterIntro,
+        is HintCopy.SellRefund -> emptySet()
     }
 
     @Test
