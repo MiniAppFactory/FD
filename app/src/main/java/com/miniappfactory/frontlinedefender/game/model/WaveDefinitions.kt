@@ -710,6 +710,17 @@ object WaveDefinitions {
     /** Geç-perde bölümü mü (üretilmiş dalga tablosu). */
     fun isGeneratedLevel(levelId: Int): Boolean = LATE_PLAN_BY_LEVEL.containsKey(levelId)
 
+    /**
+     * Bu bolumun arketip harfi (K/S/Z/C/M/B) — L23..L55 icin. Elle yazilmis
+     * bolumlerde tanimsiz (null).
+     *
+     * Test ve olcum araclari icin acildi: arketip ETIKETI ile sahadaki gercek
+     * dagilimin uyustugunu dogrulayan regresyon testi (ArchetypeReadabilityTest)
+     * niyeti uretilmis tabloyla karsilastirmak zorunda; elle yazilan bir kopya
+     * tablo bu depoda defalarca bayatladi.
+     */
+    fun archetypeOfOrNull(levelId: Int): Char? = LATE_PLAN_BY_LEVEL[levelId]?.archetype
+
     /** Bu bölümün tasarlanan kadro büyüklüğü `R`. 22'nin altında tanımsız (0). */
     fun designedRosterSize(levelId: Int): Int = LATE_PLAN_BY_LEVEL[levelId]?.roster ?: 0
 
@@ -818,6 +829,68 @@ object WaveDefinitions {
     }
 
     /**
+     * **DALGA BASINA TEK-TIP TAVANI.** Uretilmis bir dalgada hicbir dusman tipi
+     * govdelerin bu paydan fazlasini olusturamaz.
+     *
+     * NEDEN VAR (olculdu, 2026-08-20): tavan yokken Act IV/V'in FINAL dalgalari
+     * bolumun arketip etiketinden BAGIMSIZ olarak %76-88 Kalkanli Er'e
+     * cokuyordu — L51 'K' (kalabalik) finali %88 kalkanli, L50 'S' (hiz) finali
+     * %86 kalkanli, L52 'Z' (zirh) finali %79 kalkanli. Yani "K / S / Z / C"
+     * ayrimi tabloda vardi, SAHADA yoktu.
+     *
+     * %55 secildi: 56 govdelik bir dalgada %55 = 31 govde; kalan 25 govde dort
+     * tipe dagildiginda her biri hâlâ ~6 govdeyle ekranda GORUNUR kalir. Bunun
+     * ustunde ikinci en kalabalik tip %15'in altina duser ve oyuncu icin bir
+     * KARAR olmaktan cikar — dalga tek bir cevaba kilitlenir.
+     *
+     * Testi: `ArchetypeReadabilityTest.noSingleEnemyTypeDominatesAGeneratedWave`.
+     */
+    const val MAX_TYPE_SHARE_PER_WAVE: Double = 0.55
+
+    /**
+     * [densifyToBodyCap] icindeki calisma tavani. [MAX_TYPE_SHARE_PER_WAVE]'in
+     * ALTINDA tutulur cunku profilden sonra iki adim daha govde ekler/takas eder
+     * ([countsFor] en-buyuk-kalan yuvarlamasi ve [correctSupply] gelir
+     * duzeltmesi); aradaki 7 puan o iki adimin payidir.
+     */
+    private const val DENSIFY_TYPE_CEILING: Double = 0.48
+
+    /**
+     * YOGUNLASTIRMA HEDEF KARISIMI — hafiflerden alinan pay hangi agir tipe gider.
+     *
+     * Eski surum bu soruyu SORMUYORDU: hangi arketip olursa olsun agirligin
+     * %90'i Kalkanli Er'e gidiyordu. Gerekce olarak "Tedarik basina AEHP
+     * kalkanlida 22, zirhlida 38, tankta 46; zirh/tank uzerinden yogunlastirmak
+     * ayni butceyle %70 daha agir dalga uretir" yaziliydi. Bu gerekce DOGRU ama
+     * eksik: dalganin ne kadar agir oldugunu belirleyen sey karisimin Tedarik
+     * basina AEHP'sidir, ve o sayi hedefler ARASINDAKI DAGILIMLA ayarlanabilir —
+     * "hepsi kalkanli" tek cozum degil, sadece en ucuz olani.
+     *
+     * Bu tablo her arketipe kendi agir cevabini verir ve toplam agirligi
+     * kalkanli-agirlikli karisima YAKIN tutar (hafif tipler kaynak oldugu icin
+     * fark yalnizca tasinan payda olusur). Solvability 55/55 kaniti:
+     * `CampaignSolvabilityAllLevelsTest`.
+     *
+     *   K kalabalik   -> ucuz agirlasma; kalkanli agirlikli ama tavanli, boylece
+     *                    piyade omurgasi ayakta kalir.
+     *   S hiz         -> kosucu kimligi hafifin ICINDE korunur, agirlik dengeli.
+     *   Z zirh        -> agirligin cogu ZIRHLI/TANK'a; bolumun sordugu soru zaten
+     *                    "delici muhimmat getirdin mi".
+     *   C karsi-koyma -> kalkanli agirlikli (eski davranisin DOGRU oldugu tek
+     *                    arketip); tavan burada da gecerli.
+     *   M / B         -> uc agir tip arasinda kasitli olarak dengeli.
+     */
+    private fun densifyBlend(archetype: Char): DoubleArray = when (archetype) {
+        //                          inf  fast shld  arm  tank
+        'K' -> doubleArrayOf(0.0, 0.0, 0.52, 0.33, 0.15)
+        'S' -> doubleArrayOf(0.0, 0.0, 0.44, 0.36, 0.20)
+        'Z' -> doubleArrayOf(0.0, 0.0, 0.18, 0.56, 0.26)
+        'C' -> doubleArrayOf(0.0, 0.0, 0.86, 0.11, 0.03)
+        'M' -> doubleArrayOf(0.0, 0.0, 0.42, 0.36, 0.22)
+        else -> doubleArrayOf(0.0, 0.0, 0.40, 0.37, 0.23)
+    }
+
+    /**
      * K-4'Ü SAĞLAYAN TEK MEKANİZMA: bir dalga 56 gövdeyi aşacaksa karışım
      * AĞIRLAŞIR (piyade/koşucu payı kalkanlı-zırhlı-tank'a kayar); dalga
      * KALABALIKLAŞMAZ.
@@ -828,33 +901,63 @@ object WaveDefinitions {
      * göremez, dolayısıyla hedef seçimi diye bir karar kalmaz. Aynı tehdidi daha
      * AZ ama daha AĞIR gövdeyle vermek kararı geri getirir (önce hangi tank?)
      * ve dalgayı okunur tutar.
+     *
+     * AGIRLIGIN NEREYE GITTIGINI ARTIK ARKETIP SOYLUYOR ([densifyBlend]) ve
+     * hicbir tip [DENSIFY_TYPE_CEILING] payini gecemez. Eski surum bu iki soruyu
+     * da sormuyordu: her dalgada agirligin %90'i kalkanliya gidiyor ve tavan
+     * olmadigi icin dongu profili neredeyse saf kalkanliya yakinsatiyordu.
      */
-    private fun densifyToBodyCap(profile: DoubleArray, targetSupply: Int, cap: Int, level: Int): DoubleArray {
+    private fun densifyToBodyCap(
+        profile: DoubleArray,
+        targetSupply: Int,
+        cap: Int,
+        level: Int,
+        archetype: Char
+    ): DoubleArray {
         val p = profile.copyOf()
+        val blend = densifyBlend(archetype)
         var guard = 0
-        while (targetSupply / supplyPerBody(p, level) > cap && guard < 200) {
+        while (targetSupply / supplyPerBody(p, level) > cap && guard < 400) {
+            // KAYNAK: yalnizca en ucuz iki hafif tip. Zirhli ARTIK KAYNAK DEGIL.
+            // Eski surum her turda p[3]'ten de 0,004 cekiyordu; yani tavana
+            // dayanan her dalga 'Z' bolumlerinde bile zirhliyi ERITIYORDU.
             val takeInf = minOf(p[0], 0.012)
             val takeFast = minOf(p[1], 0.012)
             val moved = takeInf + takeFast
             if (moved <= 1e-9) break
-            p[0] -= takeInf
-            p[1] -= takeFast
-            // AGIRLIGIN COGU KALKANLIYA GIDER — bu bir denge karari:
-            // Tedarik basina AEHP (yani "ayni para kac can satin aliyor")
-            // kalkanlida 22, zirhlida 38, tankta 46. Yogunlastirmayi zirh/tank
-            // uzerinden yapmak ayni butceyle %70 daha agir bir dalga uretirdi ve
-            // bolum SPI 2,00 iken sayisal olarak gecilemez hale gelirdi.
-            // Kalkanli ayrica DOGRU cevabi da ogretiyor: patlama zirhi bypass
-            // eder ve kalkanliya 1,6x vurur (DECISIONS B2), yani kalabalik
-            // kalkanli dalgasi "Heavy Cannon getir" der, "sansin varsa gec" demez.
-            // Zırhlı da BIRAKILIR: Tedarik başına AEHP zırhlıda 38, kalkanlıda
-            // 22, tankta 46 — yani zırhlı yoğunlaştırma için hiçbir zaman
-            // verimli seçim değil (aynı parayla %70 daha fazla can satar).
-            // Zırhlının kimliği TABAN karışımda korunur, tavan zorlarken değil.
-            val fromArm = minOf(p[3], 0.004)
-            p[3] -= fromArm
-            p[2] += (moved + fromArm) * 0.90
-            p[4] += (moved + fromArm) * 0.10
+
+            // HEDEFLERIN BOS KAPASITESI. Tavana dayanan hedef sirasini kalan
+            // hedeflere birakir; hicbiri kalmadiysa dongu biter (govde sayisi
+            // asagida zaten coerceIn(8, cap) ile kirpilir, yani K-4 bozulmaz).
+            val room = DoubleArray(5)
+            for (i in 2..4) room[i] = (DENSIFY_TYPE_CEILING - p[i]).coerceAtLeast(0.0)
+
+            val add = DoubleArray(5)
+            var remaining = moved
+            var pass = 0
+            while (remaining > 1e-12 && pass < 4) {
+                val liveWeight = (2..4).sumOf { if (room[it] > 1e-12) blend[it] else 0.0 }
+                if (liveWeight <= 1e-12) break
+                var placed = 0.0
+                for (i in 2..4) {
+                    if (room[i] <= 1e-12) continue
+                    val give = minOf(remaining * blend[i] / liveWeight, room[i])
+                    add[i] += give
+                    room[i] -= give
+                    placed += give
+                }
+                if (placed <= 1e-12) break
+                remaining -= placed
+                pass++
+            }
+
+            val placedTotal = add.sum()
+            if (placedTotal <= 1e-9) break
+            // Yalnizca YERLESEBILEN kadari hafiflerden dusulur -> toplam 1'de kalir.
+            val scale = placedTotal / moved
+            p[0] -= takeInf * scale
+            p[1] -= takeFast * scale
+            for (i in 2..4) p[i] += add[i]
             normalised(p)
             guard++
         }
@@ -1008,7 +1111,7 @@ object WaveDefinitions {
         val caps = IntArray(plan.waves) { MAX_BODIES_PER_WAVE - (plan.bosses[it + 1] ?: 0) }
 
         val counts = Array(plan.waves) { w ->
-            val profile = densifyToBodyCap(base, perWave[w], caps[w], level)
+            val profile = densifyToBodyCap(base, perWave[w], caps[w], level, plan.archetype)
             val bodies = (perWave[w] / supplyPerBody(profile, level))
                 .toInt().coerceIn(8, caps[w])
             countsFor(profile, bodies)

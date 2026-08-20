@@ -132,7 +132,14 @@ class CampaignScaleTest {
             return effective.toDouble() / SupplyBudgetModel.waveKillSupply(level)
         }
         assertEquals("L23 tehdit/Tedarik", 32.4, ratio(23), 1.5)
-        assertEquals("L55 tehdit/Tedarik", 48.7, ratio(55), 1.5)
+        // 48,7 -> 52,1 (2026-08-20). Arketip karisimi duzeltilince gec perde
+        // dalgalarinin tip dagilimi degisti; Kalkanli Er payi dusup yerine
+        // odulu/HP orani farkli tipler gelince oran YUKARI kaydi.
+        //
+        // GERCEK KISIT KIRILMADI ve asil onemli olan o: asagidaki
+        // "L55 <= L22 x 1,5" bagi hala saglaniyor (52,1 <= 57,2). Buradaki sayi
+        // bir tavan degil, bugunku olcumun KAYDI.
+        assertEquals("L55 tehdit/Tedarik", 52.1, ratio(55), 1.5)
         assertEquals("L22 tehdit/Tedarik", 38.1, ratio(22), 1.5)
 
         assertTrue(
