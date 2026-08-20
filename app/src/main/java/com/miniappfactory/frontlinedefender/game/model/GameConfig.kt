@@ -1300,11 +1300,46 @@ object GameConfig {
     data class LevelModifiers(
         val allowedTowers: Set<TowerType>? = null,
         val maxTowers: Int? = null,
-        val buildLockedDuringWave: Boolean = false
+        val buildLockedDuringWave: Boolean = false,
+        /**
+         * KUSATMA EMRI (CAMPAIGN_55.md M7) — oldurme gelirine bolum bazli
+         * carpan. `1f` = degisiklik yok.
+         *
+         * Motor odul yolunda ZATEN bir carpan isletiyor (`actRewardMultiplier`);
+         * bu, ayni yere ikinci bir katsayi eklemek. Iki katsayi motorda TEK bir
+         * `Float` degerinde birlestiriliyor — ayri ayri carpilsalardi kayan
+         * nokta sirasi yuzunden motor ile `SupplyBudgetModel` bir Tedarik
+         * ayrisabilirdi ve o hata bu depoda daha once cikti.
+         *
+         * Sordugu soru: "Butce tek seferlik. Yanlis kule = geri donusu yok."
+         * Telafisi [startingSupplyBonus]: gelir kisilirken sermaye yukselir,
+         * yani bolum FAKIRLESMEZ, gelirin ZAMANI degisir.
+         */
+        val supplyRewardMultiplier: Float = 1f,
+        /**
+         * Baslangic Tedarikine bolum bazli ek. [supplyRewardMultiplier]'in
+         * telafisi; tek basina kullanilmasi tasarlanmadi.
+         *
+         * ⚠ BU EK `SupplyBudgetModel`E GIRMEZ ve bu BILINCLI bir ayrim.
+         *
+         * Ilk denemede ek modelin `startingSupply` fonksiyonuna konuldu ve
+         * kampanya coktu: **dalga URETICISI o degeri okuyor**. L35'e 2.594
+         * eklemek o bolumun DALGALARINI buyuttu, buyuyen dalgalar geliri
+         * degistirdi, gelir butceyi degistirdi — dairesel bir bagimlilik ve
+         * sekiz test birden kirildi.
+         *
+         * Dogru ayrim su: `SupplyBudgetModel` TASARIM katmanidir ve bolumun
+         * degistiricisiz halini olcer; degistirici ONUN USTUNE, calisma
+         * zamaninda biner. Model ile motorun "birebir ayni aritmetik" sozu bu
+         * yuzden degistirici tasiyan bolumlerde KASITLI olarak ayrisir —
+         * modelin olctugu sey zaten baska bir sey.
+         */
+        val startingSupplyBonus: Int = 0
     ) {
         /** Bu bolum HERHANGI bir degistirici tasiyor mu (UI rozetleri icin). */
         val isEmpty: Boolean
-            get() = allowedTowers == null && maxTowers == null && !buildLockedDuringWave
+            get() = allowedTowers == null && maxTowers == null && !buildLockedDuringWave &&
+                supplyRewardMultiplier == 1f && startingSupplyBonus == 0
 
         fun allows(type: TowerType): Boolean = allowedTowers?.contains(type) ?: true
 
@@ -1341,12 +1376,20 @@ object GameConfig {
      *   ogretilir ama kimseyi kampanyada durdurmaz; degisen sey artan Tedarik
      *   ve kadro bilesimi.
      *
-     * Bolum 19 · harita 04 · TAVAN **7 mevzi** (11 acik pad). Lakeside Ring
-     *   kampanyanin EN GENIS tahtasi (16 pad). Tavan dersini ("genislemek mi,
+     * Bolum 19 · harita 04 · TAVAN **7 mevzi** (10 acik pad). Lakeside Ring
+     *   kampanyanin EN GENIS tahtasi. Tavan dersini ("genislemek mi,
      *   derinlesmek mi") en genis tahtada vermek dersi en gorunur kilar: bos pad
      *   her yerde duruyor ama insa hakki bitmis. Tavan 5 DENENDI ve reddedildi:
      *   olcumde 830-1345 Tedarik harcanamadan kaliyordu, yani bolumun ikinci
      *   yarisinda hicbir ekonomi karari kalmiyordu. 7'de artan 81-813'e iner.
+     *
+     *   ⚠ SAYILAR 2026-08-19'DA KAYDI ve bu yorum bir gun bayat kaldi: harita
+     *   04'un catal pad'leri birlestirilince 16 -> 14 pad, L19'un krater
+     *   listesi de 5 -> 4 oldu, yani **11 acik pad 10'a indi**. Tavan 7'de
+     *   BIRAKILDI: ders "bos pad goruyorum ama hakkim bitti" ve 10 acik pad ile
+     *   7 tavan hâlâ UC bos pad birakiyor, yani ders gorunur kalmaya devam
+     *   ediyor. 7'yi de dusurmek, olcumle reddedilmis olan 5'e dogru kaymak
+     *   olurdu — o yon zaten kapali.
      *
      * Bolum 24 · harita 09 · DONMUS MEVZI. Kis perdesinin mekanigi
      *   (CAMPAIGN_55.md 5.2 bunu L23'e koyuyordu; L23 perde ACILISI oldugu icin
@@ -1376,6 +1419,33 @@ object GameConfig {
         24 to LevelModifiers(buildLockedDuringWave = true),
         32 to LevelModifiers(
             allowedTowers = setOf(TowerType.MACHINE_GUN, TowerType.CANNON, TowerType.SLOW)
+        ),
+        // Bolum 35 · harita 06 · KUSATMA EMRI (CAMPAIGN_55.md M7). Dorduncu
+        //   kural ve ilk kez EKONOMIYE dokunan kural: oldurme geliri SIFIR,
+        //   telafisi baslangic Tedarikine biniyor.
+        //
+        //   SAYI OLCULEREK SECILDI: L35 bugun 788 sermaye + 2.594 oldurme
+        //   geliri = 3.382 tasiyor. Telafi TAM O GELIR KADAR (2.594); x0,25 DENENDI
+        //   VE OLCUMLE REDDEDILDI: odul tam sayiya kirpildigi icin kucuk
+        //   oduller (5 -> 1) coktu ve gelir 2.594 yerine 132 cikti — yani
+        //   x0,25 pratikte "%25 gelir" degil, dusman tipine gore ONGORULEMEZ
+        //   bir kirpinti. CAMPAIGN_55.md zaten "(veya x0)" diyor; sifir hem
+        //   tasarima sadik hem OLCULEBILIR.
+        //   Bolum FAKIRLESMIYOR — gelirin ZAMANI degisiyor.
+        //   Toplam butce sabit kaldigi icin SPI de bantta kaliyor; kural bir
+        //   zorluk artisi degil, bir KARAR degisikligi.
+        //
+        //   Sordugu soru: "Butce tek seferlik. Yanlis kule = geri donusu yok."
+        //   Oyuncu 2.734 Tedarikle basliyor ve dalgalar boyunca neredeyse hic
+        //   gelir gormuyor; hazirlik fazi ilk kez bir SATIN ALMA PLANI oluyor.
+        //
+        //   YERI KURALLARA UYUYOR: L34 perde acilisi (kullanilmaz), L33 ve L44
+        //   boss (kullanilmaz), L35 bos. Yanindaki L36 kadro tavani tasiyor ama
+        //   o bir TEKRAR, yeni kural degil — "iki yeni kural ayni anda
+        //   ogretilmez" kurali kirilmiyor.
+        35 to LevelModifiers(
+            supplyRewardMultiplier = 0f,
+            startingSupplyBonus = 2594
         ),
         36 to LevelModifiers(maxTowers = 6),
         46 to LevelModifiers(buildLockedDuringWave = true)

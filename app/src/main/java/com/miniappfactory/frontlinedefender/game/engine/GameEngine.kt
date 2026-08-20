@@ -944,7 +944,17 @@ class GameEngine(
         // Kalici ilerleme + tur olceklendirmesi bolum basinda okunur.
         refreshMetaUpgrades()
         actHpMul = GameConfig.actHpMultiplier(spec.act)
-        actRewardMul = GameConfig.actRewardMultiplier(spec.act)
+        // KUSATMA EMRI burada, odul yolunda DEGIL, birlestiriliyor.
+        //
+        // `rewardGold` hesabi `(spec.rewardGold * actRewardMul).toInt()` ve
+        // `SupplyBudgetModel.killSupplyWith` bunu birebir aynaliyor. Iki
+        // carpani orada ayri ayri carpsaydik kayan nokta SIRASI iki katmanda
+        // farkli olur ve modelin "motorun aritmetigini birebir aynalar"
+        // iddiasi bozulurdu — bu depoda tam bu hata (Double/Float ayrimi)
+        // bolum basina 30-50 Tedarik fark uretmisti. Tek bir `Float`ta
+        // birlestirmek o riski tanim geregi kaldiriyor.
+        actRewardMul = GameConfig.actRewardMultiplier(spec.act) *
+            spec.modifiers.supplyRewardMultiplier
 
         activeMapId = if (spec.mapId in GameConfig.SHIPPED_MAP_IDS) {
             spec.mapId
@@ -988,7 +998,22 @@ class GameEngine(
         loadLevel(GameConfig.levelSpec(levelNo))
 
         // Meta yukseltmeler taban degerin USTUNE biner.
-        _gold.value = levelSpec.startingSupply + metaSupplyBonus
+        // KUSATMA EMRI telafisi BURADA biner, `LevelSpec.startingSupply` icinde
+        // DEGIL — ve bu ayrim olcumle ogrenildi.
+        //
+        // Ek once spec'e konuldu ve kampanya coktu: DALGA URETICISI bolumun
+        // baslangic Tedarikini okuyor ve ondan dalga buyuklugu turetiyor.
+        // L35'e 2.594 eklemek uretiye "bu bolum zengin" dedirtti, dalgalar
+        // buyudu, buyuyen dalgalar geliri degistirdi, gelir butceyi... on yedi
+        // test birden kirildi. Sermaye ile dalga boyu TASARIM GEREGI bagli
+        // (SPI = butce / kadro) ve o bag kirilamaz.
+        //
+        // Dogru ayrim: `LevelSpec.startingSupply` bolumun TASARIM degeridir ve
+        // uretici onu gorur; degistirici ise CALISMA ZAMANINDA, uretici islerini
+        // bitirdikten sonra biner. Boylece "ayni butce, farkli zamanlama"
+        // gercekten ayni butce olur.
+        _gold.value = levelSpec.startingSupply + metaSupplyBonus +
+            levelSpec.modifiers.startingSupplyBonus
         _lives.value = levelSpec.maxBaseLives + metaLivesBonus
         _score.value = 0
         _currentWaveIndex.value = 0
@@ -2057,7 +2082,14 @@ class GameEngine(
                 // farkli bir oyun oluyordu.
                 baseSpeed = spec.baseSpeed * renderScale,
                 armor = spec.armor,
-                rewardGold = (spec.rewardGold * actRewardMul).toInt().coerceAtLeast(1),
+                // KUSATMA EMRI: carpan SIFIRSA odul de SIFIR.
+                //
+                // `coerceAtLeast(1)` normalde dogru — kirpilma yuzunden bir
+                // dusmanin odulunun sifira dusmesini engeller. Ama kusatma
+                // emrinde sifir KASITLIDIR ve taban 1 kurali sessizce iptal
+                // ederdi.
+                rewardGold = if (actRewardMul <= 0f) 0
+                else (spec.rewardGold * actRewardMul).toInt().coerceAtLeast(1),
                 radius = spec.sizeRadius
             )
         )

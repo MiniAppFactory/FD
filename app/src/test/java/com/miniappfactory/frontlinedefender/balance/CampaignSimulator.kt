@@ -183,8 +183,6 @@ object CampaignSimulator {
 
         val waves: List<GameConfig.WaveData> = WaveDefinitions.wavesFor(levelId)
         val actHpMul: Float = GameConfig.actHpMultiplier(spec.act)
-        val actRewardMul: Float = GameConfig.actRewardMultiplier(spec.act)
-
         /**
          * BOLUM DEGISTIRICILERI (`GameConfig.LevelModifiers`).
          *
@@ -195,6 +193,20 @@ object CampaignSimulator {
          * yakalamasi gereken yerde gozden kacirir.
          */
         val modifiers: GameConfig.LevelModifiers = modifiersOverride ?: spec.modifiers
+
+        /**
+         * KUSATMA EMRI (M7) DAHIL odul carpani.
+         *
+         * Motor iki carpani TEK bir Float ifadesinde birlestiriyor
+         * (`GameEngine.loadLevel`); simulator ayni sirayi kullanmak ZORUNDA,
+         * yoksa kayan nokta sirasi yuzunden ayrisir — bu dosyanin en ustundeki
+         * Double/Float dersinin aynisi.
+         */
+        val actRewardMul: Float = GameConfig.actRewardMultiplier(spec.act) *
+            modifiers.supplyRewardMultiplier
+
+        // NOT: `actRewardMul` `modifiers`TAN SONRA tanimlanmak zorunda —
+        // Kotlin ozellikleri BILDIRIM SIRASINDA baslatir.
 
         /**
          * KISITLI KADRO (M1): kule kilidi (bolum bazli acilma) VE harekat
@@ -438,7 +450,13 @@ object CampaignSimulator {
         val livesBonus = meta.maxBaseHealth - EconomyConfig.BASE_MAX_HEALTH
         val effectiveMaxLives = model.spec.maxBaseLives + livesBonus
 
-        var supply = startingSupplyOverride ?: (model.spec.startingSupply + supplyBonus)
+        // KUSATMA EMRI telafisi motorda `_gold`a CALISMA ZAMANINDA biniyor
+        // (`LevelSpec.startingSupply` icinde DEGIL — orada olsaydi dalga
+        // uretici bolumu zengin sanip dalgalari buyuturdu). Simulator ayni
+        // yeri kullanir, yoksa kusatma bolumunu ELINDE OLMAYAN parayla oynar
+        // ve "gecilemez" der.
+        var supply = startingSupplyOverride
+            ?: (model.spec.startingSupply + supplyBonus + model.modifiers.startingSupplyBonus)
         var lives = effectiveMaxLives
         var leaked = 0
         var elapsed = 0f
@@ -823,7 +841,10 @@ object CampaignSimulator {
                                 routeIndex = routeIndex,
                                 hp0 = spec.maxHp * model.actHpMul,
                                 // MOTORLA BIREBIR: Int * Float -> toInt (Double DEGIL).
-                                reward = (spec.rewardGold * model.actRewardMul).toInt()
+                                // Carpan sifirsa odul sifir; motorun
+                                // `rewardGold` satiriyla ayni kural.
+                                reward = if (model.actRewardMul <= 0f) 0
+                                else (spec.rewardGold * model.actRewardMul).toInt()
                                     .coerceAtLeast(1)
                             )
                         )

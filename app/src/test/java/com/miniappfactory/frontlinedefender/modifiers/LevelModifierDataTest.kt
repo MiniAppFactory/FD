@@ -57,11 +57,22 @@ class LevelModifierDataTest {
         )
     }
 
-    /** Bu turda alti bolum: sistemi ayaga kaldirmak, kampanyaya yaymak DEGIL. */
+    /**
+     * Sistemi ayaga kaldirmak, kampanyaya YAYMAK degil.
+     *
+     * Bant 4-6 -> 4-7 (2026-08-20): Kusatma Emri eklendi, yani CAMPAIGN_55.md
+     * M7 de artik kodda. Bu bir yayilim DEGIL, tasarlanan yedi mekanigin
+     * dorduncusu; ust sinir ayni gerekceyle yerinde duruyor — degistirici
+     * kampanyaya yayilirsa "az sayida bolum" kurali sessizce olur.
+     *
+     * Kalan uc mekanik (Devralinan Mevzi, Hazirliksiz Dalga, Kol Degisimi)
+     * eklendiginde bu bant bilincli olarak yeniden konusulmali; kendiliginden
+     * buyumemeli.
+     */
     @Test
     fun `bu turda degistirici AZ SAYIDA bolume kondu`() {
         val n = GameConfig.LEVEL_MODIFIERS.size
-        assertTrue("degistirici sayisi 4-6 bandinin disinda: $n", n in 4..6)
+        assertTrue("degistirici sayisi 4-7 bandinin disinda: $n", n in 4..7)
     }
 
     /**
