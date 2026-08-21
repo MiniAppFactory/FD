@@ -69,7 +69,11 @@ class BoosterChipStringsTest {
             "booster_chip_cooldown",
             "booster_chip_confirm",
             "booster_chip_spent",
-            "booster_chip_reserve"
+            "booster_chip_reserve",
+            // NoEffect ayristirildi (cihaz raporu: "hava destegi butonu gelmiyor").
+            // Ayni yuvayi paylastiklari icin genislik butcesi bunlara da isler.
+            "booster_chip_no_target",
+            "booster_chip_base_full"
         )
 
         /**

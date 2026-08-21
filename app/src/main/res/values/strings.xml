@@ -323,6 +323,9 @@
     <string name="booster_chip_cooldown">WAIT %1$d</string>
     <string name="booster_chip_confirm">CONFIRM</string>
     <string name="booster_chip_spent">USED</string>
+    <!-- NoEffect is TEMPORARY, not exhaustion: keep these distinct from USED. -->
+    <string name="booster_chip_no_target">NO TARGET</string>
+    <string name="booster_chip_base_full">FULL HP</string>
     <string name="booster_chip_reserve">RESERVE</string>
 
     <string name="booster_msg_armed">Tap again to confirm</string>

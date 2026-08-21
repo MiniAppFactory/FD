@@ -584,7 +584,22 @@ private fun chipText(
     decision is BoosterDecision.InsufficientCoins ->
         stringResource(R.string.booster_chip_short, decision.shortfall)
     decision is BoosterDecision.ReserveLocked -> stringResource(R.string.booster_chip_reserve)
-    decision is BoosterDecision.NoEffect -> stringResource(R.string.booster_chip_spent)
+    // ⛔ BURASI "BITTI" YAZIYORDU VE OYUNCUYA YALAN SOYLUYORDU.
+    //
+    // Cihaz raporu: *"hava destegi calismiyor, butonu gelmiyor"*. Sebep bu
+    // satirdi: `NoEffect` iki AYRI durumu tasiyor — us tamiri icin "can zaten
+    // tam", hava destegi icin "sahada hedef yok". Ikisi de "BITTI" olarak
+    // ciziliyordu, yani oyuncu hakkinin TUKENDIGINI saniyor ve bir daha
+    // denemiyordu. Oysa ikisi de GECICI: dalga baslayinca hedef gelir, can
+    // azalinca tamir anlam kazanir.
+    //
+    // Toast mesaji bu ayrimi ZATEN dogru yapiyordu (`booster_msg_no_targets`);
+    // yalniz cip bayatti. Ayni karar iki yerde ayri ayri yazildigi icin biri
+    // duzelirken digeri geride kalmis — bu depoda tekrar eden kalip.
+    decision is BoosterDecision.NoEffect -> when (type) {
+        BoosterType.AIR_SUPPORT -> stringResource(R.string.booster_chip_no_target)
+        else -> stringResource(R.string.booster_chip_base_full)
+    }
     else -> ""
 }
 
