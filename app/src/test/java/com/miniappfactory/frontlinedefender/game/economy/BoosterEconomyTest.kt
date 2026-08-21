@@ -353,11 +353,14 @@ class BoosterEconomyTest {
                 baseHealth = 20, maxBaseHealth = 20,
             ),
         )
+        // ⚠ 2026-08-21: us tamiri ORAN degil DUZ CAN veriyor (coin 4 / reklam 7).
+        // Eski beklentiler %40'a gore yazilmisti (20 canda 8).
         assertEquals(0, baseRepairAmount(20, 20))
         // Kaybedilenden fazlasini vermez.
-        assertEquals(3, baseRepairAmount(17, 20))
-        assertEquals(8, baseRepairAmount(4, 20))
-        assertEquals(12, baseRepairAmount(1, 30))
+        assertEquals(3, baseRepairAmount(17, 20))   // kayip 3 < 4, kayip kadar
+        assertEquals(4, baseRepairAmount(4, 20))    // duz 4
+        assertEquals(7, baseRepairAmount(4, 20, viaAd = true))  // reklam yolu 7
+        assertEquals(4, baseRepairAmount(1, 30))    // maks candan BAGIMSIZ
     }
 
     // ---------------------------------------------------------------------------------
@@ -759,27 +762,40 @@ class BoosterEconomyTest {
     @Test
     fun baseRepairIsStarNeutralSoItCanNeverBeCoinPositive() {
         // ARBITRAJ: "tamir et -> yildiz atla -> tamirden fazla coin kazan".
-        // Yildiz, tamir edilen can DUSULEREK hesaplandigi icin arbitraj fiyatlamaya
-        // bagli olmaktan cikar, YAPISAL olarak yok olur.
+        // Yildiz, tamir edilen can DUSULEREK hesaplandigi icin arbitraj
+        // fiyatlamaya bagli olmaktan cikar, YAPISAL olarak yok olur.
+        //
+        // ⚠ TEST SAYI EZBERLEMIYOR (2026-08-21). Eski hali "tamir 8 can verir"
+        // ve "14 - 8 = 6" gibi ara sonuclari elle yaziyordu; us tamiri oran
+        // yerine duz cana (coin 4 / reklam 7) donunce hepsi bayatladi. Oysa
+        // kilitlenmesi gereken sey MIKTAR degil, DEGISMEZ: tamir ne kadar
+        // olursa olsun yildizi ve odulu artiramaz. Yeni hali her iki yolu da
+        // ve her kayip miktarini tarayarak bunu soruyor.
         val maxLives = 20
-        val repaired = baseRepairAmount(currentHealth = 6, maxHealth = maxLives) // 8
-        assertEquals(8, repaired)
-
-        // Tamir edilmeden bitis: 6/20 = %30 -> 1 yildiz.
-        assertEquals(1, starsFor(6, maxLives))
-        // Tamir sonrasi ham can 14/20 = %70 -> 2 yildiz gorunurdu...
-        assertEquals(2, starsFor(14, maxLives))
-        // ...ama etkin can tamiri duser: 14 - 8 = 6 -> yine 1 yildiz.
-        assertEquals(6, effectiveStarHealth(14, repaired))
-        assertEquals(1, starsFor(effectiveStarHealth(14, repaired), maxLives))
-
         val wallet = PlayerWallet(unlockedLevels = (1..22).toSet())
-        val withRepair = resolveLevelClear(wallet, 10, effectiveStarHealth(14, repaired), maxLives)
-        val withoutRepair = resolveLevelClear(wallet, 10, 6, maxLives)
-        assertEquals(
-            "tamir odulu ARTIRMAMALI",
-            withoutRepair.total, withRepair.total,
-        )
+
+        for (viaAd in listOf(false, true)) {
+            for (health in 1 until maxLives) {
+                val repaired = baseRepairAmount(health, maxLives, viaAd)
+                val rawAfter = health + repaired
+                val effective = effectiveStarHealth(rawAfter, repaired)
+
+                assertEquals(
+                    "tamir (viaAd=$viaAd, can=$health) etkin cani degistirmemeli",
+                    health, effective,
+                )
+                assertEquals(
+                    "tamir (viaAd=$viaAd, can=$health) yildizi artirmamali",
+                    starsFor(health, maxLives),
+                    starsFor(effective, maxLives),
+                )
+                assertEquals(
+                    "tamir (viaAd=$viaAd, can=$health) odulu ARTIRMAMALI",
+                    resolveLevelClear(wallet, 10, health, maxLives).total,
+                    resolveLevelClear(wallet, 10, effective, maxLives).total,
+                )
+            }
+        }
     }
 
     @Test

@@ -325,7 +325,7 @@
     <string name="booster_chip_spent">USED</string>
     <!-- NoEffect is TEMPORARY, not exhaustion: keep these distinct from USED. -->
     <string name="booster_chip_no_target">NO TARGET</string>
-    <string name="booster_chip_base_full">FULL HP</string>
+    <string name="booster_chip_base_full">NO DAMAGE</string>
     <string name="booster_chip_reserve">RESERVE</string>
     <string name="booster_chip_locked">LVL %1$d</string>
     <string name="booster_msg_locked">Unlocks at level %1$d</string>

@@ -271,7 +271,9 @@ class CampaignProgressImpl(
         }
 
         val restored = if (type == BoosterType.BASE_REPAIR) {
-            baseRepairAmount(baseHealth, maxBaseHealth)
+            // Reklam yolu daha comert (7 vs 4); karar burada, cizim tarafinda
+            // DEGIL — UI yalnizca sonucu gosterir.
+            baseRepairAmount(baseHealth, maxBaseHealth, viaAd)
         } else {
             0
         }

@@ -1716,9 +1716,11 @@ object HintFlow {
                 HintBoosterEffect.DAMAGE to
                     (EconomyConfig.AIR_SUPPORT_DAMAGE_FRACTION * 100.0).roundToInt()
 
+            // Us tamiri artik ORAN degil DUZ CAN veriyor; ders de yuzde
+            // yerine can sayisi soyluyor. Ucretli yol gosteriliyor cunku ipucu
+            // guclendiriciyi TANITIYOR, reklam yolunu pazarlamiyor.
             BoosterType.BASE_REPAIR ->
-                HintBoosterEffect.REPAIR to
-                    (EconomyConfig.BASE_REPAIR_HEALTH_RATIO * 100.0).roundToInt()
+                HintBoosterEffect.REPAIR to EconomyConfig.BASE_REPAIR_LIVES_PAID
         }
         val cost = when (booster.currency) {
             BoosterCurrency.AD_ONLY -> HintBoosterCost.AD to 0

@@ -58,3 +58,6 @@ original-ai-studio/
 copied items/
 asset-pack/
 /docs/
+
+# Ajan izole worktreeleri — gecici, depoya girmez.
+.claude/

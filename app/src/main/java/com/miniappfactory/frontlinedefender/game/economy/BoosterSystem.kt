@@ -303,11 +303,14 @@ fun emergencySupplyAmount(level: Int): Int {
  * Us Tamiri'nin geri verecegi can. Kaybedilmis candan fazlasini vermez, maks cani
  * asmaz. Us cani zaten tamsa 0 doner ve [boosterAllowed] [BoosterDecision.NoEffect] verir.
  */
-fun baseRepairAmount(currentHealth: Int, maxHealth: Int): Int {
+fun baseRepairAmount(currentHealth: Int, maxHealth: Int, viaAd: Boolean = false): Int {
     require(maxHealth > 0) { "maxHealth > 0 olmali" }
     val lost = (maxHealth - currentHealth).coerceAtLeast(0)
     if (lost == 0) return 0
-    val nominal = Math.ceil(maxHealth * EconomyConfig.BASE_REPAIR_HEALTH_RATIO).toInt()
+    // Iki yol, iki sayi: coin 4 / reklam 7. Kayip candan FAZLASI verilmez —
+    // "tam cana tamamla" bir tavan degil, sadece israfi engelleyen sinir.
+    val nominal =
+        if (viaAd) EconomyConfig.BASE_REPAIR_LIVES_AD else EconomyConfig.BASE_REPAIR_LIVES_PAID
     return minOf(nominal, lost)
 }
 

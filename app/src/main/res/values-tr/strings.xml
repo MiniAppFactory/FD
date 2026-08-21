@@ -242,7 +242,7 @@
     <string name="booster_chip_spent">BİTTİ</string>
     <!-- NoEffect GECICI bir durum, tukenme DEGIL: BITTI ile ayni gorunmemeli. -->
     <string name="booster_chip_no_target">HEDEF YOK</string>
-    <string name="booster_chip_base_full">CAN TAM</string>
+    <string name="booster_chip_base_full">HASAR YOK</string>
     <string name="booster_chip_reserve">REZERV</string>
     <string name="booster_chip_locked">BÖLÜM %1$d</string>
     <string name="booster_msg_locked">%1$d. bölümde açılır</string>

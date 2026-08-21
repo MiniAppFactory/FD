@@ -677,7 +677,19 @@ object EconomyConfig {
     const val BASE_REPAIR_COIN_STEP: Int = 20
 
     /** Geri verilen can = ceil(maksCan x oran), kaybedilen candan fazla degil. 20 -> 8. */
-    const val BASE_REPAIR_HEALTH_RATIO: Double = 0.40
+    /**
+     * ⚠ 2026-08-21: ORAN yerine DUZ CAN (kullanici karari).
+     *
+     * Eskiden maks canin %40'i geri verilirdi — 20 canlik bir usste 8 can, ve
+     * meta Tahkimat ile maks can buyudukce sessizce daha da buyuyordu. Oyuncu
+     * ne alacagini ONCEDEN bilemiyordu.
+     *
+     * Artik iki YOL, IKI FARKLI sayi: coinle 4 can, reklamla 7. Reklam yolunun
+     * daha comert olmasi bilincli — oyuncu parayi degil ZAMANI odedigi icin
+     * karsiligini gormeli, yoksa reklam yolu olu kalir.
+     */
+    const val BASE_REPAIR_LIVES_PAID: Int = 4
+    const val BASE_REPAIR_LIVES_AD: Int = 7
 
     const val BASE_REPAIR_COOLDOWN_MS: Long = 60_000L
 
