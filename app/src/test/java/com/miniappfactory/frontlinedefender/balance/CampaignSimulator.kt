@@ -222,6 +222,16 @@ object CampaignSimulator {
         /** DONMUS MEVZI (M3): dalga basladiktan sonra YENI kule kurulamaz. */
         val buildLockedDuringWave: Boolean = modifiers.buildLockedDuringWave
 
+        /**
+         * HAZIRLIKSIZ DALGA (M5): bu dalgalar hazirlik fazi OLMADAN baslar,
+         * yani oncesinde insa/yukseltme PENCERESI ACILMAZ. 1 tabanli indeks.
+         *
+         * Simulator bunu modellemek ZORUNDA: kisiti gormezse "iki dalga arasi
+         * savunmasini guclendirdi" varsayar ve bolumu oyuncunun oynayacagindan
+         * DAHA KOLAY olcer. Ayni kor nokta Kusatma Emri'nde bir kez olustu.
+         */
+        val noPrepWaveIndices: Set<Int> = modifiers.noPrepWaveIndices
+
         fun maxTier(type: TowerType): Int = GameConfig.maxTowerTier(type, levelId)
 
         private val coverCache = HashMap<Long, Float>()
@@ -957,9 +967,15 @@ object CampaignSimulator {
             }
             wavesCleared++
             if (waveIdx < model.waves.lastIndex) supply += GameConfig.WAVE_CLEAR_SUPPLY_BONUS
-            // Motor dalga bitince PREPARATION'a doner: insa penceresi ACILIR.
-            buildWindowOpen = true
-            spend()
+            // Motor dalga bitince PREPARATION'a doner: insa penceresi ACILIR —
+            // AMA sonraki dalga HAZIRLIKSIZ isaretliyse donmez ve pencere
+            // acilmaz. Motorun `prepSecondsFor` kapisiyla ayni kural.
+            val nextOneBased = waveIdx + 2
+            val nextIsNoPrep = nextOneBased in model.noPrepWaveIndices
+            if (!nextIsNoPrep) {
+                buildWindowOpen = true
+                spend()
+            }
         }
 
         return Outcome(

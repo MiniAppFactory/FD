@@ -1126,6 +1126,19 @@ class GameEngine(
         return restored
     }
 
+    /**
+     * Bu dalganin hazirlik suresi. HAZIRLIKSIZ DALGA (M5) burada uygulanir.
+     *
+     * ILK DALGA KOSULSUZ HARIC: oyuncu bolume girerken savunmasini kurmali,
+     * yoksa kural "bolum kaybedilmis basliyor" demek olurdu. Tablo yanlislikla
+     * 1'i icerse bile burasi onu yok sayar — kural veriye degil KODA yazili.
+     */
+    private fun prepSecondsFor(waveIndex: Int): Float {
+        val oneBased = waveIndex + 1
+        val marked = oneBased > 1 && oneBased in levelSpec.modifiers.noPrepWaveIndices
+        return if (marked) 0f else GameConfig.PREPARATION_TIME_SECONDS.toFloat()
+    }
+
     private fun setupWave(waveIndex: Int) {
         pendingWaveSpawns.clear()
         if (waveIndex < levelWaves.size) {
@@ -2030,7 +2043,10 @@ class GameEngine(
                 _gold.value += GameConfig.WAVE_CLEAR_SUPPLY_BONUS
                 setupWave(_currentWaveIndex.value)
                 _gameState.value = GameState.PREPARATION
-                _preparationTimer.value = GameConfig.PREPARATION_TIME_SECONDS.toFloat()
+                // HAZIRLIKSIZ DALGA: sifir sure verildiginde bir sonraki karede
+                // `tick` sayaci gecmis bulur ve dalga hemen baslar; ayri bir
+                // "hemen basla" yolu ACILMADI, mevcut sayac yolu kullaniliyor.
+                _preparationTimer.value = prepSecondsFor(_currentWaveIndex.value)
                 // Faz 14 SES AYRIMI TAMAMLANDI. Once COIN_EARNED caliyordu
                 // ("bir dusman oldu" ile "dalga temizlendi" kulakta AYNI
                 // olaydi), sonra gecici olarak TOWER_BUILD kullanildi. Artik

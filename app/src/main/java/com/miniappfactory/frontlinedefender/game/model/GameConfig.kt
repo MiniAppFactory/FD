@@ -1315,6 +1315,18 @@ object GameConfig {
          * Telafisi [startingSupplyBonus]: gelir kisilirken sermaye yukselir,
          * yani bolum FAKIRLESMEZ, gelirin ZAMANI degisir.
          */
+        /**
+         * HAZIRLIKSIZ DALGA (CAMPAIGN_55.md M5) — bu dalgalar hazirlik fazi
+         * OLMADAN, bir oncekinin hemen ustune baslar. 1 tabanli dalga indeksi.
+         *
+         * Sordugu soru: "Bu iki dalgayi tek savunmayla mi karsilayacagim?"
+         * Gercek zaman baskisi, hiz carpani olmadan.
+         *
+         * ILK DALGA HIC ISARETLENMEZ: oyuncunun bolume girerken savunmasini
+         * kurmasi gerekiyor, aksi halde kural "bolum kaybedilmis basliyor"
+         * demek olurdu. [prepSecondsFor] bunu kosulsuz uyguluyor.
+         */
+        val noPrepWaveIndices: Set<Int> = emptySet(),
         val supplyRewardMultiplier: Float = 1f,
         /**
          * Baslangic Tedarikine bolum bazli ek. [supplyRewardMultiplier]'in
@@ -1339,7 +1351,8 @@ object GameConfig {
         /** Bu bolum HERHANGI bir degistirici tasiyor mu (UI rozetleri icin). */
         val isEmpty: Boolean
             get() = allowedTowers == null && maxTowers == null && !buildLockedDuringWave &&
-                supplyRewardMultiplier == 1f && startingSupplyBonus == 0
+                supplyRewardMultiplier == 1f && startingSupplyBonus == 0 &&
+                noPrepWaveIndices.isEmpty()
 
         fun allows(type: TowerType): Boolean = allowedTowers?.contains(type) ?: true
 

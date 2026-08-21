@@ -106,7 +106,10 @@ class RouteStaysOnRoadTest {
                 route.size >= 45
             )
         }
-        assertEquals("toplam waypoint sayisi degisti", 995, allRoutes().sumOf { it.third.size })
+        // 995 -> 1271 (2026-08-21): bes rota yola oturtulurken yeniden
+        // yogunlastirildi. Oturtma noktalari kaydirdigi icin segmentler
+        // uzuyordu; 32 ref-px tavanini geri getirmenin yolu nokta EKLEMEK.
+        assertEquals("toplam waypoint sayisi degisti", 1271, allRoutes().sumOf { it.third.size })
     }
 
     // --------------------------------------------------------------- 2. zemin
@@ -130,15 +133,18 @@ class RouteStaysOnRoadTest {
                 }
             }
         }
-        assertEquals(
-            "CIMDE DURAN WAYPOINT — dusman burada yon degistirirken cimin ustunde olur.\n" +
-                "Bilinen tek istisna harita 10'un kirik kopru gecisidir " +
-                "(GEOMETRY_REPORT §4.2, sanat hatasi).\n" + onGrass.joinToString("\n"),
-            1, onGrass.size
-        )
+        // ⚠ ISTISNA KALKTI (2026-08-21). Eskiden burada "TAM 1 waypoint cimde
+        // olmali, o da harita 10'un bilinen sanat hatasi" yaziyordu — yani test
+        // bir kusuru YASAKLAMIYOR, SAYIYORDU. Harita 10'un us ucu maskede cim
+        // pikseline dusuyordu ve uc noktalar sabit kabul edildigi icin kimse
+        // dokunmamisti; 8 ref-px'lik bir kaydirma yetti (rampa genisliginin cok
+        // altinda, kapi agzi bandi korunuyor).
+        //
+        // Artik sayi degil KURAL: hicbir waypoint cimde duramaz.
         assertTrue(
-            "istisna harita 10'da olmali, bulunan: $onGrass",
-            onGrass.single().startsWith("harita 10 ")
+            "CIMDE DURAN WAYPOINT — dusman burada yon degistirirken cimin " +
+                "ustunde olur: " + onGrass.joinToString(" | "),
+            onGrass.isEmpty()
         )
     }
 
@@ -186,20 +192,47 @@ class RouteStaysOnRoadTest {
      *
      * Sayilar dusukse rota yoldan kaymis, yuksekse maske degismis demektir.
      */
+    /** RAPOR (assert YOK) — hangi rota, yolun ne kadarinda gercekten yolda. */
+    @Test
+    fun reportPerRouteGroundShare() {
+        println()
+        println("=== ROTA BAZINDA ZEMIN DAGILIMI ===")
+        println("rota                     |   yol% |  cim% | diger%")
+        allRoutes().forEach { (label, mapId, route) ->
+            val g = groundShare(mapId, route)
+            val road = (g[MapMaskFixture.CLASS_ROAD] ?: 0.0) * 100
+            val veg = (g[MapMaskFixture.CLASS_VEGETATION] ?: 0.0) * 100
+            val other = 100.0 - road - veg
+            println(
+                label.padEnd(25) + "| " + "%6.2f".format(road) +
+                    " | " + "%5.2f".format(veg) + " | " + "%6.2f".format(other)
+            )
+        }
+        println()
+    }
+
     @Test
     fun almostEveryRouteRunsEntirelyOnPaintedRoadAndNoneOfThemDriftOntoGrass() {
-        val grassFree = allRoutes().filter { (_, mapId, route) ->
-            (groundShare(mapId, route)[MapMaskFixture.CLASS_VEGETATION] ?: 0.0) == 0.0
-        }.map { it.first }
-        assertEquals(
-            "cime hic basmayan rota sayisi degisti: $grassFree",
-            11, grassFree.size
-        )
+        // ⚠ SAYMA -> KURAL (2026-08-21). Eskiden "cime hic basmayan rota sayisi
+        // 11 olmali" deniyordu. Bu, kalan BES rotanin cime basmasina acikca izin
+        // veren bir KAYITTI: test yesil kalirken oyuncu ekranda cimden ve kayadan
+        // yuruyen asker goruyordu ("bu yoldan gelmeyen askerler var ne alaka?",
+        // "hala yolu takip etmeyen rotalar var, bu level 3 ornegin").
+        //
+        // Bes rota yola oturtuldu; kural artik sayi tasimiyor.
+        val grassy = allRoutes().mapNotNull { (label, mapId, route) ->
+            val share = (groundShare(mapId, route)[MapMaskFixture.CLASS_VEGETATION] ?: 0.0) * 100
+            if (share > 0.0) "%s %%%.2f".format(label, share) else null
+        }
+        assertTrue("CIME BASAN ROTA: " + grassy.joinToString(" | "), grassy.isEmpty())
 
         val fullyOnRoad = allRoutes().filter { (_, mapId, route) ->
             (groundShare(mapId, route)[MapMaskFixture.CLASS_ROAD] ?: 0.0) >= 0.9999
         }.map { it.first }
         assertEquals(
+        // "DIGER" (kopru, su, kaya, us rampasi) kusur DEGIL: harita 4'un golu
+        // ustunden iki ahsap kopru geciyor ve rota oradan gecmek ZORUNDA. Bu
+        // yuzden burasi bir kural degil, degisimi gorunur kilan bir SAYAC.
             "tamamen toprak yol uzerinde kosan rota sayisi degisti: $fullyOnRoad",
             10, fullyOnRoad.size
         )
