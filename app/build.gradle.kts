@@ -20,8 +20,16 @@ android {
     // minSdk 24 KORUNUYOR: birincil test cihazi Galaxy S8 / Android 7.0 = API 24.
     minSdk = 24
     targetSdk = 36
-    versionCode = 1
-    versionName = "1.0"
+    // SURUM SAYACI (2026-08-21, kullanici kurali): her APK teslimatinda BIR
+    // artar. Amac dogrudan dogrulama — "dogru surumde miyim" sorusu iki kez
+    // soruldu ve dosya adina bakmak yetmiyordu. Ayarlar ekrani bu iki degeri
+    // zaten yaziyor (settings_version), yani numara UYGULAMANIN ICINDEN
+    // okunabilir.
+    //
+    // Play e HENUZ yuklenmedi; yuklendikten sonra versionCode geri alinamaz
+    // ve denenen her kod tukenir — o noktadan sonra artirmadan once sorulmali.
+    versionCode = 30
+    versionName = "0.30"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
