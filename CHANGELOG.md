@@ -40,6 +40,69 @@ sorunu. `LineOfFireTest` 11 haritanin tam kapsama tablosunu raporluyor;
 dugum sinirlariyla olcuyor.
 
 ---
+## 2026-08-21 — Rota geometrisi v5 · rotalar SANATTAN yeniden uretildi
+
+Cihaz geri bildirimi (tekrar eden): *"bu yoldan gelmeyen askerler var"*,
+*"hala yol olmayan yerlerden geciyorlar, bu level 3 ornegin"*. Ayni sikayet
+farkli cihazlarda (S8, S22, tablet) geldigi icin ekran/en-boy ile ilgisi yok.
+
+### Kok neden — maske dogru soruyu sormuyordu
+`map_masks_v1.bin` UC sinif tasiyordu: yol / bitki / **diger**. Kaya, kopru,
+su, us rampasi ve spawn platformu hepsi ayni "diger" kovasindaydi ve testler
+yalnizca bitkiyi yasakliyordu. Harita 3'un rotasi sag ucta boyali yolu birakip
+**kayaliktan** ussun kuzeyine kesiyordu: maske "%0,00 cim" diyor, test yesil
+yaniyor, oyuncu ekranda kayadan yuruyen asker goruyordu. Ikinci kusur, testin
+kusuru **yasaklamak yerine saymasiydi** ("cime hic basmayan rota sayisi 11
+olmali" = kalan bese acikca izin).
+
+### Yapilanlar
+- **Maske v2** (`map_masks_v2.bin`, sihir `FDMASK02`): kaya artik ayri sinif.
+  Kaynak, uygulamanin gercekten yukledigi `drawable-nodpi/bg_level_XX.webp`
+  (1920x1081); v1 asset-pack'teki 1672x941 PNG kopyalarindan pisirilmisti.
+  Iki goruntunun cercevesi ayni cikti (en iyi kaydirma dx=0 dy=0), yani v1
+  kayik degildi — EKSIKTI. v1 silindi.
+- **16 rota** (11 harita + 5 `ALT_ROUTES`) yol koridorunun uzaklik donusumu
+  uzerinde A* ile yeniden uretildi: koridorun ortasi ucuz, kenari karesel
+  pahali. Uc noktalar koridorun sol/sag ucundan turetildi; mevcut uc 45
+  ref-px'ten yakinsa dokunulmadi (harita 1'in gozle dogrulanmis uclari aynen
+  korundu). Segment tavani 36 -> 32 ref-px (olculen en uzun 30,14).
+- **Testler sayaci degil KURALI kilitliyor**: rota yolu yalnizca boyali yolun
+  KOPUK oldugu yerde terk edebilir ve bu, maske uzerinde yol-only baglanti
+  aranarak KANITLANIR — dondurulmus istisna listesi yok.
+
+### Olcum (pisirilmis v2 maskesine karsi, 4 ref-px adim)
+| | once (v4) | sonra (v5) |
+|---|---|---|
+| tamamen boyali yolda kosan rota | 10/16 | **12/16** |
+| harita 3 A-kolu yol / cim / kaya | 93,3 / 3,4 / 2,9 | **99,6 / 0,4 / 0,0** |
+| harita 4 A-kolu yol / cim / kaya | 92,2 / 0,2 / 6,9 | **100 / 0 / 0** |
+| harita 10 A-kolu yol disi toplam | %9,5 | **%5,7** |
+| en uzun segment | 35,1 ref-px | **30,1 ref-px** |
+| kenar payi 23 ref-pxin altinda kalan yol orani | %9,5 | **%5,4** |
+
+Kalan iki kesinti GERCEK sanat kopuklugudur ve testte kanitlanir: harita 6'nin
+tas koprusu (112 ref-px) ve harita 10'un nehir gecisi (100 ref-px) — her
+ikisinde de boyali yol iki yakada kesiktir.
+
+### Yan etkiler (hepsi olculdu)
+- `OUT_OF_RANGE_PADS[3]`: `[10]` -> `emptyList()`. Yeni rota ussun guney
+  kapisina varip koridorun ortasindan gectigi icin pad 10 327 -> 145 ref-px'e
+  dustu; 12 pad'in 12'si de menzil icinde, gizlemenin mesru gerekcesi kalmadi.
+  Bolum 3'te oyuncunun secenegi 11 -> 12 pad.
+- Harita 6 pad 1 "yalniz-destek" bandina girdi (175 < d <= 270).
+- Cozulebilirlik BOZULMADI: 55/55, 359 dalga, meta 0.
+- Meta yukseltme etki testlerinin olcum evreni 8 sonda bolumden 55 bolume
+  cikarildi: yeni rotalarla kampanya meta 0'da kolaylasti ve 8 bolumluk
+  sondanin toplam sizintisi 18 -> 6'ya dustu; o tabanda tek bir bolumun
+  simulator gurultusu isareti yutuyordu (OPTICS 8 bolumde 6/14/10/11,
+  ayni kosuda 55 bolumde 127/123/98/74).
+
+### Kanit
+`1042 test / 0 basarisiz (2 atlanan)` · `lintDebug BUILD SUCCESSFUL` ·
+gorsel: `docs/level_geometry/overlay/v5_mNN.png` (rota gercek arka planin
+uzerinde) ve `karsilastir_mNN.png` (once kirmizi / sonra cyan, ustte sanat
+altta 4 sinifli maske). Uretici: `docs/level_geometry/build_routes.js`,
+`bake_masks.js`.
 
 ## 2026-08-19 — Faz 20 · ekip toplantisi turu (7 commit)
 

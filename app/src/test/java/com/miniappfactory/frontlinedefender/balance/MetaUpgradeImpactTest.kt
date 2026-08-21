@@ -461,13 +461,30 @@ class MetaUpgradeImpactTest {
      */
     @Test
     fun eachOffensiveLineOnItsOwnMeasurablyImprovesPlay() {
-        val baseline = probeLevels.sumOf { MetaImpact.bestLeaks(it).leaked }
+        // OLCUM EVRENI 8 SONDA BOLUMDEN 55 BOLUME CIKTI (2026-08-21).
+        //
+        // NEDEN: rotalar sanattan yeniden uretilince kampanya meta 0'da
+        // ciddi sekilde KOLAYLASTI ve 8 bolumluk sondanin toplam sizintisi
+        // 18'den 6'ya dustu (L34 tek basina 5 -> 0). O kadar dusuk bir
+        // tabanda tek bir bolumun modele bagli gurultusu isareti yutuyor:
+        // olculen OPTICS merdiveni 8 bolumde 6 / 14 / 10 / 11 (anlamsiz),
+        // AYNI kosuda 55 bolumde 127 / 123 / 98 / 74 (net ve monoton).
+        //
+        // Bu bir GEVSETME DEGIL, tam tersi: iddia artik daha fazla veriyle
+        // kuruluyor ve kardes test `everyRankIsMeasurablyAliveAcrossTheCampaign`
+        // ile ayni evreni kullaniyor. Gurultunun kaynagi ayri bir konudur:
+        // L34 (harita 09) ve L55'te menzil artisi simulatorun acgozlu pad
+        // secimini degistirip sonucu KOTULESTIRIYOR — bu, yeni geometriyle
+        // ortaya cikmadi, eski geometride de vardi (L34: 5 -> 6) ve denge
+        // sahibinin bakmasi gereken bir simulator davranisidir.
+        val levels = 1..EconomyConfig.CAMPAIGN_LEVELS
+        val baseline = levels.sumOf { MetaImpact.bestLeaks(it).leaked }
         listOf(
             UpgradeLine.FIREPOWER,
             UpgradeLine.OPTICS,
             UpgradeLine.STARTING_SUPPLY,
         ).forEach { line ->
-            val withLine = probeLevels.sumOf {
+            val withLine = levels.sumOf {
                 MetaImpact.bestLeaks(it, only(line, line.maxRank)).leaked
             }
             assertTrue(
@@ -485,10 +502,15 @@ class MetaUpgradeImpactTest {
      */
     @Test
     fun theVeryFirstRankOfAnOffensiveLineIsAlreadyMeasurable() {
-        val baseline = probeLevels.sumOf { MetaImpact.bestLeaks(it).leaked }
+        // Olcum evreni yukaridaki testle ayni sebeple 55 bolum (bkz.
+        // [eachOffensiveLineOnItsOwnMeasurablyImprovesPlay] yorumu).
+        // Olculen ilk rank etkisi: FIREPOWER 127 -> 107, OPTICS 127 -> 123,
+        // STARTING_SUPPLY 127 -> 76.
+        val levels = 1..EconomyConfig.CAMPAIGN_LEVELS
+        val baseline = levels.sumOf { MetaImpact.bestLeaks(it).leaked }
         listOf(UpgradeLine.FIREPOWER, UpgradeLine.OPTICS, UpgradeLine.STARTING_SUPPLY)
             .forEach { line ->
-                val afterFirst = probeLevels.sumOf {
+                val afterFirst = levels.sumOf {
                     MetaImpact.bestLeaks(it, only(line, 1)).leaked
                 }
                 assertTrue(

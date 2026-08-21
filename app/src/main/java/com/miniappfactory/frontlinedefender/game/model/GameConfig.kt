@@ -1778,9 +1778,14 @@ object GameConfig {
     private val OUT_OF_RANGE_PADS: Map<Int, List<Int>> = mapOf(
         1 to listOf(1, 3, 5, 7, 9),         // harita 01 · esik 150 · 10 -> 5 pad
         2 to listOf(3, 4, 7, 8, 10, 12),    // harita 02 · esik 150 · 13 -> 7 pad
-        // harita 03 · esik 175 · v4 rota merkezlemesi sonrasi pad 6 artik 173
-        // ref-px (onceden 176) — menzil ICINDE, dolayisiyla gizlenmesi mesru degil.
-        3 to listOf(10),                    // harita 03 · esik 175 · 12 -> 11 pad
+        // harita 03 · esik 175 · v5'te rota SANATTAN yeniden uretildi ve
+        // ONEMLI OLCUDE YER DEGISTIRDI: eski rota sag ucta boyali yolu birakip
+        // kayaliktan ussun KUZEYINE kesiyordu (rampa ucu 318 ref-px yanlis
+        // yerdeydi). Rota artik serpantini sonuna kadar takip edip ussun guney
+        // kapisina variyor ve koridorun ORTASINDAN geciyor. Sonuc: pad 10
+        // 327 -> 145 ref-px'e dustu, pad 6 ise 173'te kaldi. 12 pad'in
+        // 12'si de menzil icinde, yani gizlemenin tek mesru gerekcesi kalmadi.
+        3 to emptyList(),                   // harita 03 · esik 175 · 12 -> 12 pad
         // harita 04 · esik 175 · IKI KOL DA AKTIF (esik 3'e indi) -> olu pad YOK.
         // Eski liste (1,4,6,7,9,11,12) B-kolunun pad'leriydi; o kol artik
         // gercekten kullaniliyor, dolayisiyla gizlemenin tek mesru gerekcesi

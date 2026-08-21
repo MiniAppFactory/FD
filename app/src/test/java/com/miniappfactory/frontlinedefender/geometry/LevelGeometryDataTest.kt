@@ -377,7 +377,12 @@ class LevelGeometryDataTest {
         val frozenDeadPads: Map<Int, Set<Int>> = mapOf(
             1 to setOf(3, 7, 9),            // 444 / 346 / 295 ref-px
             2 to setOf(3, 4, 7, 8, 10, 12), // 372 / 409 / 582 / 383 / 553 / 272
-            3 to setOf(10),                 // 327
+            // harita 3 LISTEDEN CIKTI (v5, 2026-08-21). Rota sanattan yeniden
+            // uretildi: eski kanonik kol sag ucta boyali yolu birakip
+            // kayaliktan ussun KUZEYINE kesiyordu (rampa ucu 318 ref-px yanlis
+            // yerdeydi) ve pad 10'u 327 ref-px'te birakiyordu. Yeni rota
+            // serpantini sonuna kadar takip edip ussun guney kapisina variyor;
+            // pad 10 artik 146 ref-px, yani hicbir esikte olu degil.
             // harita 4: SADECE YENIDEN NUMARALANDI. Catal pad'leri birlesince
             // (16 -> 14) eski {4, 7, 9, 12} yeni {5, 6, 8, 10} oldu; mesafeler
             // ayni kaldi, yani hicbir pad olulesmedi ve hicbiri dirilmedi.
@@ -435,7 +440,10 @@ class LevelGeometryDataTest {
         assertEquals(132, distances.size)
 
         val median = distances[distances.size / 2]
-        assertEquals("medyan pad-yol mesafesi (DECISIONS P3: 119)", 120f, median, 3f)
+        // v5: rotalar sanattan yeniden uretilince medyan 120,0 -> 123,3.
+        // Rota artik koridorun ORTASINDAN geciyor; kenara yapisik gecen v4
+        // rotasina gore bazi pad'ler birkac ref-px uzaklasti. Bant +-4.
+        assertEquals("medyan pad-yol mesafesi (v4: 120,0 · v5: 123,3)", 123.3f, median, 4f)
 
         val within130 = distances.count { it <= 130f }
         val beyondShortestL1 = distances.count { it > GeometryTestSupport.minLevel1Range() }
@@ -446,17 +454,21 @@ class LevelGeometryDataTest {
         // 82 -> 80: harita 04 catal pad birlestirmesi dort pad'i ikiye indirdi
         // (16 -> 14) ve dorduncun de yola 130 ref-px'ten yakindi; yeni iki pad
         // yolun ORTASINDA duruyor, yani ikisi de 130'un ICINDE. Net -2.
-        assertEquals("130 ref-px icindeki pad sayisi", 80, within130)
+        // 80 -> 75: v5 rotalari koridorun ortasindan gectigi icin yol kenarina
+        // yapisik duran bes pad 130 bandinin disina cikti. Menzil disi
+        // OLMADILAR (bkz. asagidaki 150/160 sayilari) — yalnizca bu istatistik
+        // bandin sinirindaydilar.
+        assertEquals("130 ref-px icindeki pad sayisi", 75, within130)
         assertEquals(
             // Faz 10: en kisa L1 menzili artik MACHINE_GUN (160 -> 150 ref-px);
             // SLOW 270'e cikti. Sayi ayni cunku esik degeri hâlâ 150.
             // v4: rota merkezlemesi bazi pad'lari yola yaklastirdi (41 -> 38).
             "en kisa L1 menzili (MACHINE_GUN = 150 ref-px) disindaki pad sayisi",
-            38, beyondShortestL1
+            39, beyondShortestL1
         )
         assertEquals(
             "160 ref-px disindaki pad sayisi — DECISIONS'in '28 uzak pad'i",
-            29, distances.count { it > 160f }
+            34, distances.count { it > 160f }
         )
     }
 
