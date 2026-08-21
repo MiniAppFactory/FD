@@ -190,11 +190,19 @@ internal object GameFeel {
      * dogru olan: "kare sayisi yeterli" bir hesap, "ucagi gordum" bir
      * ALGI. Ikincisini yalnizca oynayan soyleyebilir.
      *
-     * 1,80 sn ~108 kare. Hasar ucusa YAYILI oldugu icin (bkz. PendingStrike)
+     * ⚠ IKINCI YAVASLATMA (2026-08-21): 1,80 -> 3,60 sn, yani gecis hizi
+     * kullanicinin istegiyle bir kez daha YARIYA indi. 1,80'i de ben
+     * secmistim ve yine cihazda yetmedi.
+     *
+     * Ders kayda deger: bu sayiyi UC KEZ tahminle sectim (0,42 -> 1,10 ->
+     * 1,80) ve ucunde de dusuk kaldi. "Kac kare" bir hesap, "ucagi gordum"
+     * bir ALGI; ikincisini yalnizca oynayan soyleyebiliyor.
+     *
+     * 3,60 sn ~216 kare. Hasar ucusa YAYILI oldugu icin (bkz. PendingStrike)
      * pencerenin uzamasi bir ayrisma yaratmiyor: bombalar hala ucak tam
      * ustlerinden gecerken iniyor.
      */
-    const val AIR_STRIKE_RUN_SECONDS = 1.80f
+    const val AIR_STRIKE_RUN_SECONDS = 3.60f
 
     /** Ucagin sahadan cikisi + duman izinin sonme kuyrugu. */
     const val AIR_STRIKE_TAIL_SECONDS = 0.30f

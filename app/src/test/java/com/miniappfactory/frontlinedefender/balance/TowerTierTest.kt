@@ -64,9 +64,16 @@ class TowerTierTest {
             FrozenTier(range = 250f, damage = 110f, fireRate = 3.60f, upgradeCost = 0),
             FrozenTier(range = 290f, damage = 205f, fireRate = 3.10f, upgradeCost = 115)
         ),
+        // ⚠ SLOW hasari 2026-08-21'de KULLANICI KARARIYLA +%50 arttirildi
+        // (3 -> 4,5 · 7 -> 10,5 · kademe 3: 13 -> 19,5).
+        //
+        // Bu tablonun isi "kademe 3 eklenirken 1 ve 2 KAZAYLA degismedi mi"
+        // sorusunu cevaplamak; bilincli bir denge kararini engellemek DEGIL.
+        // O yuzden sayilar guncellendi, kilit KALDIRILMADI: bundan sonraki
+        // kazara bir degisiklik yine yakalanir.
         TowerType.SLOW to listOf(
-            FrozenTier(range = 270f, damage = 3f, fireRate = 1.30f, upgradeCost = 0),
-            FrozenTier(range = 320f, damage = 7f, fireRate = 1.10f, upgradeCost = 85)
+            FrozenTier(range = 270f, damage = 4.5f, fireRate = 1.30f, upgradeCost = 0),
+            FrozenTier(range = 320f, damage = 10.5f, fireRate = 1.10f, upgradeCost = 85)
         )
     )
 
@@ -433,11 +440,23 @@ class TowerTierTest {
         val others = GameConfig.TOWER_SPECS.values.filter { it.role != TowerRole.SUPPORT }
         for (tier in 1..support.maxTier) {
             others.forEach { o ->
+                // ⚠ TAVAN %20 -> %27 (2026-08-21, KULLANICI KARARI).
+                //
+                // Frost hasari acik istekle +%50 arttirildi (3/7/13 ->
+                // 4,5/10,5/19,5) ve bu, kademe 2-3'te eski tavani deldi:
+                // olculen oranlar %18,8 / %23,9 / %25,3 (Top'a gore).
+                //
+                // KIMLIK CIZGISI TASINDI, KALDIRILMADI ve bunu acikca yaziyorum:
+                // eskiden Frost, hasar kulesinin ALTIDA BIRIYDI; artik DORTTE
+                // BIRI. Hala "hasar vermez" tarafinda — isi yavaslatmak — ama
+                // pay daraldi. Tavani tamamen kaldirmak, destek kulesinin
+                // sessizce dorduncu bir hasar kulesine donusmesine kapi acardi;
+                // 0,27 o kapiyi kapali tutuyor.
                 assertTrue(
                     "kademe $tier: destek DPS'i (${support.tier(tier).dps}) ${o.type} " +
-                        "DPS'inin (${o.tier(tier).dps}) %20'sini gecmemeli — hasar " +
+                        "DPS'inin (${o.tier(tier).dps}) %27'sini gecmemeli — hasar " +
                         "vermesi kimligi degil",
-                    support.tier(tier).dps <= o.tier(tier).dps * 0.20f
+                    support.tier(tier).dps <= o.tier(tier).dps * 0.27f
                 )
             }
         }

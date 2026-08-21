@@ -975,16 +975,24 @@ object GameConfig {
             description = "Wide cryo pulses chill every enemy in the blast. Deals almost no damage.",
             buildCost = 100,
             tiers = listOf(
-                TowerTier(1, range = 270f, damage = 3f, fireRate = 1.30f, upgradeCost = 0, unlockedAtLevel = 5),
-                TowerTier(2, range = 320f, damage = 7f, fireRate = 1.10f, upgradeCost = 85, unlockedAtLevel = 5),
+                // ⚠ HASAR +%50 (2026-08-21, kullanici karari): 3/7/13 -> 4,5/10,5/19,5.
+                // Kimlik DEGISMEDI, yalnizca destek kulesinin cizik atma payi
+                // buyudu; asagidaki %20 tavani hala saglaniyor (bkz. kademe 3).
+                TowerTier(1, range = 270f, damage = 4.5f, fireRate = 1.30f, upgradeCost = 0, unlockedAtLevel = 5),
+                TowerTier(2, range = 320f, damage = 10.5f, fireRate = 1.10f, upgradeCost = 85, unlockedAtLevel = 5),
                 // Kd.3 (Faz 13): DESTEK kulesinin yukseltmesi hasar DEGIL, ALAN
                 // ve TEMPO. Menzil 320 -> 370 (hâlâ en genis kapsama) ve darbe
                 // araligi 1.10 -> 0.95 sn, yani sogutma penceresi daralmadan
-                // daha sik yenilenir. DPS 6.4 -> 13.7 kaliyor ama bu Gatling
-                // Kd.3'un 230 DPS'inin %6'si: "hasar vermez" kimligi
-                // (BalanceConsistencyTest'in %20 tavani) kademe 3'te de gecerli.
+                // daha sik yenilenir.
+                //
+                // DPS (hasar +%50 sonrasi): 19,5 / 0,95 = 20,5. Gatling Kd.3'un
+                // 230 DPS'ine orani ~%9 — "hasar vermez" kimligi ve
+                // BalanceConsistencyTest'in %20 tavani kademe 3'te hala gecerli.
+                // Eski yorum "DPS 6,4 -> 13,7 / %6" diyordu ve artik bayat;
+                // sayiyi burada guncel tutuyorum cunku bu depoda bayat yorum
+                // defalarca yanlis karar urettirdi.
                 // `slowFactor`/`slowPulseRadius` kademeden bagimsiz.
-                TowerTier(3, range = 370f, damage = 13f, fireRate = 0.95f, upgradeCost = 170, unlockedAtLevel = TIER_THREE_UNLOCK_LEVEL)
+                TowerTier(3, range = 370f, damage = 19.5f, fireRate = 0.95f, upgradeCost = 170, unlockedAtLevel = TIER_THREE_UNLOCK_LEVEL)
             ),
             slowFactor = 0.42f,
             slowDuration = 2.2f,

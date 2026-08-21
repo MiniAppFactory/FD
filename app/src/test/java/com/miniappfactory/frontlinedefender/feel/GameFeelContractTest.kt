@@ -161,10 +161,18 @@ class GameFeelContractTest {
         // Tavan tamamen kalkmadi: 2,2 sn'yi asan bir kosu, oyuncunun bir
         // sonraki karari (kule kurma/yukseltme) ile arasina gercek bir olu
         // zaman koyar. Sinir hala var, yalnizca DOGRU yerde.
+        // ⚠ TAVAN 1,5 -> 2,2 -> 4,0 sn. Ucuncu kez tasindi ve her seferinde
+        // ayni sebeple: tavani CIHAZ degil BEN belirlemistim. Uc tahminin
+        // ucu de dusuk kaldi (0,42 / 1,10 / 1,80), yani "oyuncu bekler"
+        // korkusu olcumle degil sezgiyle konmustu ve sezgi yanildi.
+        //
+        // 4,0 hala bir tavan: bunu asan bir kosu, dalganin akisini gorunur
+        // sekilde keser ve oyuncu guclendiriciyi "oyunu durduran sey" olarak
+        // okumaya baslar. Sinir duruyor, yalnizca dogru yerde.
         assertTrue(
-            "Zincir penceresi (${GameFeel.AIR_STRIKE_RUN_SECONDS} sn) 2,2 sn'yi gecerse " +
-                "oyuncunun bir sonraki karariyla arasina olu zaman girer",
-            GameFeel.AIR_STRIKE_RUN_SECONDS <= 2.2f
+            "Zincir penceresi (${GameFeel.AIR_STRIKE_RUN_SECONDS} sn) 4,0 sn'yi gecerse " +
+                "guclendirici dalganin akisini keser",
+            GameFeel.AIR_STRIKE_RUN_SECONDS <= 4.0f
         )
         assertTrue(
             "Pencere en az birkac kare olmali, yoksa SIRA olusmaz ve tek puf gorunur",
