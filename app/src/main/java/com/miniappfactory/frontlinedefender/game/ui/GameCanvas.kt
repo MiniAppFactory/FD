@@ -965,6 +965,60 @@ private fun gateFadeAlpha(enemy: EnemyEntity, routeEnd: PointF?, s: Float): Floa
     return min(fadeIn, smoothstep(remaining / fadePx))
 }
 
+// ---------------------------------------------------------------------------
+// YURUYUS DONGUSU  (prosedurel — yeni sprite YOK)
+// ---------------------------------------------------------------------------
+// Cihaz raporu: *"piyadeler yururken tek adimi ileri atar halde ve sabit."*
+// Dogruydu: `spr_enemy_infantry` TEK KARE ve asker o karede adim atmis halde
+// donmus duruyor, yani hareket eden bir HEYKEL gibi kayiyordu.
+//
+// Yurume dongusu icin ikinci/ucuncu kare URETMEDIK. Sebep sadece maliyet
+// degil: kare uretmek bes dusman tipi x bes biyom demek ve APK'ya bayt
+// eklerdi. Bunun yerine govde, kendi ilerlemesine bagli olarak SALINIYOR —
+// tepeden bakista yuruyusu okutan sey zaten ayak degil, agirligin bir
+// yandan digerine gecmesidir.
+//
+// ⚠ DONGU ZAMANA DEGIL, KAT EDILEN YOLA BAGLI. Bu tercih bedava uc dogru
+// davranis veriyor:
+//   · Frost ile yavaslayan dusman adimlarini da yavaslatir (zamana bagli
+//     olsaydi yerinde tepinirdi — yavaslama mekanigi gorsel olarak yalan
+//     soylerdi),
+//   · 2x oyun hizinda dongu de iki kat hizli akar,
+//   · duraklamada donar.
+//
+// YALNIZCA YAYA BIRIMLER. Arac ve tanklarin salinmasi "suspansiyon" degil
+// "kayma" olarak okunur; onlar dokunulmadan birakildi.
+
+@VisibleForTesting
+internal object Gait {
+    /** Bir tam adim dongusu icin kat edilen yol, referans px. */
+    const val STRIDE_REF_PX = 34f
+
+    /** Govdenin yurume yonune DIK salinim genligi, referans px. */
+    const val SWAY_REF_PX = 2.4f
+
+    /** Govde egilmesi, derece. */
+    const val LEAN_DEG = 3.6f
+
+    /** Yaya birimler salinir; araclar salinmaz. */
+    fun isFootUnit(type: GameConfig.EnemyType): Boolean = when (type) {
+        GameConfig.EnemyType.INFANTRY,
+        GameConfig.EnemyType.FAST_SOLDIER,
+        GameConfig.EnemyType.SHIELDED_TROOPER -> true
+        GameConfig.EnemyType.ARMORED_VEHICLE,
+        GameConfig.EnemyType.TANK,
+        GameConfig.EnemyType.COMMAND_TANK -> false
+    }
+}
+
+private const val GAIT_STRIDE_REF_PX = Gait.STRIDE_REF_PX
+
+private const val GAIT_SWAY_REF_PX = Gait.SWAY_REF_PX
+
+/** Salinimla CEYREK dongu faz farkli: agirlik once yana kayar, egilme onu
+  * takip eder. Ayni fazda olsalardi tek parca sallanan bir tabela gorunurdu. */
+private const val GAIT_LEAN_DEG = Gait.LEAN_DEG
+
 private fun DrawScope.drawEnemy(
     enemy: EnemyEntity,
     sprites: GameSprites,
@@ -983,15 +1037,34 @@ private fun DrawScope.drawEnemy(
     val rotation = Math.toDegrees(enemy.rotationAngleRad.toDouble()).toFloat() -
         GameConfig.ENEMY_SPRITE_BASE_ANGLE_DEG
 
-    drawSpriteAt(image, enemy.posX, enemy.posY, width, rotation, spec.pivotYFrac, alpha = gate)
+    // Yuruyus salinimi (bkz. yukaridaki blok). Yaya olmayan birimde faz 0 kalir.
+    var swayX = 0f
+    var swayY = 0f
+    var lean = 0f
+    if (Gait.isFootUnit(enemy.type)) {
+        val phase = enemy.distanceTraveledPx / GAIT_STRIDE_REF_PX * (2.0 * Math.PI).toFloat()
+        val amp = GAIT_SWAY_REF_PX * s
+        // Yurume yonune DIK eksen: heading + 90 derece.
+        val perp = enemy.rotationAngleRad + (Math.PI / 2.0).toFloat()
+        val swing = sin(phase)
+        swayX = cos(perp) * amp * swing
+        swayY = sin(perp) * amp * swing
+        lean = cos(phase) * GAIT_LEAN_DEG
+    }
+    val bodyX = enemy.posX + swayX
+    val bodyY = enemy.posY + swayY
+
+    drawSpriteAt(image, bodyX, bodyY, width, rotation + lean, spec.pivotYFrac, alpha = gate)
 
     // Isabet parlamasi: ayni silueti beyaz olarak ustune bindir (tint yerine
     // SrcIn -> sprite'in sekli korunur, sadece rengi beyazlar).
     if (enemy.hitFlashTimerSeconds > 0f) {
         val a = (enemy.hitFlashTimerSeconds / HIT_FLASH_DURATION_SECONDS)
             .coerceIn(0f, 1f) * 0.75f
+        // Parlama GOVDEYLE ayni yerde ve ayni acida olmali; ayrilirsa vurus
+        // ani "ikinci bir dusman belirdi" gibi okunur.
         drawSpriteAt(
-            image, enemy.posX, enemy.posY, width, rotation, spec.pivotYFrac,
+            image, bodyX, bodyY, width, rotation + lean, spec.pivotYFrac,
             alpha = a * gate,
             colorFilter = enemyHitFlashFilter
         )
