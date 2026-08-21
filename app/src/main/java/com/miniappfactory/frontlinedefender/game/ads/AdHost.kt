@@ -128,7 +128,12 @@ enum class InterstitialReason {
  * ikamesi degil uzantisidir ve ekonomi arbitraji yapisal olarak kapalidir.
  */
 enum class RewardedPlacement {
-    /** R1 — Tedarik Talebi. Bolum secim ekrani. +150 coin, 3/gun. */
+    /**
+     * R1 — Tedarik Talebi. Bolum secim ekraninin ALT SERIDI. +150 coin, 3/gun.
+     *
+     * Ayni odulun ikinci GIRIS NOKTASI icin bkz. [COIN_TOP_UP]; ikisi ayni
+     * gunluk hakki ve ayni gunluk coin butcesini paylasir.
+     */
     SUPPLY_DROP,
 
     /** R2 — Takviye. Yenilgi ekrani. Us cani 5, savas devam. Savas basina 1. */
@@ -152,7 +157,44 @@ enum class RewardedPlacement {
      * Gunluk hakkin sahibi bu katman DEGILDIR; bkz.
      * [AdPolicyConfig.BOOSTER_PER_BATTLE_CEILING].
      */
-    BOOSTER
+    BOOSTER,
+
+    /**
+     * R1b — COIN CIPI. Bolum secim ekraninin BASLIK SATIRI.
+     *
+     * ## Bu YENI BIR COIN MUSLUGU DEGILDIR
+     * Odul yolu [SUPPLY_DROP] ile **birebir aynidir**: ikisi de
+     * `AdRewardBridge.grantSupplyDrop` -> `CampaignProgressImpl.grantSupplyDrop`
+     * cagirir, yani ayni `RequisitionState` uzerinden ayni gunluk tavanlara
+     * tabidir:
+     *
+     *   - `EconomyConfig.R1_COIN_BUDGET_PER_DAY` = 450 coin/gun (KALICI sayac)
+     *   - `EconomyConfig.R1_VIEWS_PER_DAY` = 3 dolu gosterim/gun
+     *
+     * Reklam katmanindaki hak sayaci da PAYLASILIR (bkz.
+     * [InMemoryRewardedQuotaStore]): bu yerlesimden yapilan bir gosterim
+     * [SUPPLY_DROP]'un kalan hakkini da dusurur. Iki ayri kova olsaydi ucak
+     * modunda serit 3 x 50, cip 3 x 50 fallback verir ve gunluk hak fiilen
+     * ikiye katlanirdi — ekonominin 450 tavani yine tutardi ama reklam katmani
+     * ekonomiyle CELISIR hale gelirdi ("hakkin var" deyip 0 coin odemek).
+     *
+     * ## O zaman neden AYRI bir enum degeri
+     * Tek sebep **analitik**: `placement.name` dogrudan olay etiketine gider
+     * (`RewardedAdManager.FORMAT` + `analytics.adRequest/adImpression`). Ayni
+     * odulun iki giris noktasi var ve hangisinin gercekten gosterim urettigi
+     * ancak boyle olculebilir. Aksi halde ikisi tek ortalamanin arkasinda
+     * kaybolurdu — `AdIdsConsistencyTest`in interstitial/rewanded birimleri
+     * icin uyguladigi ayni gerekce.
+     *
+     * ## Sozlesme
+     *  - Teklif yalnizca oyuncunun coin cipine KENDI dokunmasiyla acilir;
+     *    kendiliginden acilan hicbir teklif yoktur.
+     *  - Buton reklam hazir olmadigi icin ASLA pasiflesmez (GDD §G.4).
+     *  - Teklif tukendiginde (gunluk hak veya butce bitti) cip **bakiyeyi
+     *    gostermeye devam eder**, yalnizca "+" isareti kaybolur: hicbir bilgi
+     *    ve hicbir ilerleme yolu kapanmaz.
+     */
+    COIN_TOP_UP
 }
 
 /**

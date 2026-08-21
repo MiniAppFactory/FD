@@ -46,6 +46,13 @@ class GameSprites private constructor(
     val hitSpark: ImageBitmap,
     val smallExplosion: ImageBitmap,
     val largeExplosion: ImageBitmap,
+    /**
+     * HAVA TAARRUZU UCAGI. Sprite BURNU +X'e bakacak sekilde hazirlandi,
+     * yani cizerken taban aci duzeltmesi GEREKMEZ — dogrudan ucus acisi
+     * verilir. Kaynak gorsel tepeden bakis ve burnu asagi bakiyordu; 90
+     * derece cevrilip patlama/nisangah kompozisyonundan ayiklandi.
+     */
+    val airStrikeJet: ImageBitmap,
     val smokePuff: ImageBitmap,
     val buildPad: ImageBitmap,
     val rangeBlue: ImageBitmap,
@@ -264,6 +271,7 @@ class GameSprites private constructor(
             hitSpark = load(res, R.drawable.spr_fx_hit_spark),
             smallExplosion = load(res, R.drawable.spr_fx_small_explosion),
             largeExplosion = load(res, R.drawable.spr_fx_large_explosion),
+            airStrikeJet = load(res, R.drawable.spr_fx_air_strike_jet),
             smokePuff = load(res, R.drawable.spr_fx_smoke_puff),
             buildPad = load(res, R.drawable.spr_fx_build_pad),
             rangeBlue = load(res, R.drawable.spr_fx_range_blue),

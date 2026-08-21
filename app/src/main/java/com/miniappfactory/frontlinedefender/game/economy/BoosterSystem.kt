@@ -19,16 +19,26 @@ package com.miniappfactory.frontlinedefender.game.economy
  * uygular: ucretli yolu olan bir guclendiricide `viaAd = true` cagrisi, ucretli
  * kullanim tukenmeden [BoosterDecision.PaidPathNotExhausted] doner.
  *
- * Tek istisna [BoosterType.EMERGENCY_SUPPLY]: **ucretli yolu HIC YOK** (bkz. 2),
- * dolayisiyla ikame edecek bir sey de yok. Arbitraj imkansiz.
+ * Istisna, ucretli yolu HIC OLMAYAN tiplerdir ([BoosterCurrency.AD_ONLY]):
+ * [BoosterType.EMERGENCY_SUPPLY] ve — 2026-08-21'den beri —
+ * [BoosterType.AIR_SUPPORT]. Ikame edecek bir yol olmadigi icin arbitraj bu
+ * tiplerde yapisal olarak imkansizdir; kalkanin uzerinde calistigi TEK
+ * guclendirici artik [BoosterType.BASE_REPAIR]'dir.
  *
  * ---------------------------------------------------------------------------------
  * 2. PARA BIRIMI KARARLARI (gerekceli)
  * ---------------------------------------------------------------------------------
- * - [BoosterType.AIR_SUPPORT] -> **TEDARIK**. Savas ici taktik karardir: "3. kule mi,
- *   hava destegi mi?" Tedarikle fiyatlanmasi ECONOMY_SPEC A'daki sikilastirmanin
- *   dogal devamidir ve meta zenginligin savas sonucunu satin almasini engeller
- *   (pay-to-win yok). Coin olsaydi zengin oyuncu her bolume hava destegiyle girerdi.
+ * - [BoosterType.AIR_SUPPORT] -> **YALNIZCA REKLAM** (2026-08-21'den beri).
+ *   Eskiden Tedarikle fiyatlanmisti ve "3. kule mi, hava destegi mi" savas ici
+ *   taktik karariydi. O karar KALKTI: guclendirici artik Tedarik harcamiyor,
+ *   bedeli para degil ZAMAN (reklam izleme + 45 sn bekleme). Pay-to-win kalkani
+ *   korunuyor, hatta guclendi — hicbir bakiye bu guclendiriciyi satin alamaz.
+ *
+ *   ⚠ BAYAT VERI: [boosterPrice] hâlâ AIR_SUPPORT icin sifir olmayan bir Tedarik
+ *   fiyati donduruyor ve kendi sozlesmesiyle ("AD_ONLY tipler icin 0") celisiyor.
+ *   Bugun ULASILAMAZ (ucretli yol [BoosterDecision.PaidPathUnavailable] ile
+ *   kapali) ve ulasilamazlik `adOnlyBoostersCanNeverChargeAnyCurrency` testiyle
+ *   kilitli. Fiyati 0'a cekmek ayri bir urun karari.
  *
  * - [BoosterType.BASE_REPAIR] -> **COIN**. Etkisi savas ici Tedarik dongusunun
  *   disindadir (us cani), dolayisiyla Tedarikle fiyatlamak anlamsiz olurdu; ayrica
@@ -115,13 +125,28 @@ enum class BoosterType(
 
     /**
      * **Hava Destegi** — ekrandaki tum dusmanlara agir hasar, uzun bekleme.
-     * Tedarikle alinir: "3. kule mi, hava destegi mi" gercek bir taktik karardir.
+     * Her bolume DEAKTIF baslar; yalnizca rewarded reklamla aktiflesir ve bir
+     * bolumde IKI kez cagrilabilir.
+     *
+     * ⚠ 2026-08-21 — TAMAMEN REKLAM YOLUNA CEVRILDI (kullanici karari).
+     *
+     * Eskiden Tedarikle alinirdi (paid 1 + reklam 1). Yeni kural: her bolume
+     * DEAKTIF baslar, reklam izleyince aktiflesir, ve bir bolumde IKI kez
+     * izlenip iki kez cagrilabilir.
+     *
+     * Gerekce kullanicinin kendi sozu: *"ad izlemeye tesvik etmeliyiz."*
+     * Tedarik yolu acikken oyuncunun reklam izlemek icin sebebi yoktu —
+     * guclendirici gelir getirmiyordu, sadece Tedarik yakiyordu.
+     *
+     * TASARIM ETKISI acikca soylenmeli: hava destegi artik "3. kule mi, hava
+     * destegi mi" TAKTIK KARARI OLMAKTAN CIKTI. Tedarik harcanmadigi icin
+     * savas ici ekonomiye dokunmuyor; bedeli para degil ZAMAN.
      */
     AIR_SUPPORT(
         unlockLevel = EconomyConfig.AIR_SUPPORT_UNLOCK_LEVEL,
-        currency = BoosterCurrency.SUPPLY,
-        paidUsesPerBattle = 1,
-        adUsesPerBattle = 1,
+        currency = BoosterCurrency.AD_ONLY,
+        paidUsesPerBattle = 0,
+        adUsesPerBattle = 2,
     ),
 
     /**
@@ -408,10 +433,13 @@ fun boosterAllowed(
     if (type == BoosterType.BASE_REPAIR && baseRepairAmount(baseHealth, maxBaseHealth) == 0) {
         return BoosterDecision.NoEffect
     }
-    // Hava Destegi ekrandaki dusmanlara vurur; hedef yoksa 96-264 Tedarik HICBIR SEYE
-    // harcanir, savas basina tek ucretli hak yanar ve 45 sn bekleme baslar. Geri alma
-    // yok. Kapi bu yuzden ekonomi katmanindadir (UI'da degil): yeni bir cagiran
-    // eklendiginde kapi sessizce atlanmaz.
+    // Hava Destegi ekrandaki dusmanlara vurur; hedef yoksa savas basina IKI reklam
+    // hakkindan biri ve gunluk reklam butcesinden bir gosterim HICBIR SEYE yanar,
+    // ustune 45 sn bekleme baslar. Geri alma yok. (2026-08-21 oncesinde yanan sey
+    // 96-264 Tedarik'ti; reklam-only modelde bedel Tedarik degil, oyuncunun
+    // izledigi reklam — yani kapinin sebebi ZAYIFLAMADI, guclendi.) Kapi bu yuzden
+    // ekonomi katmanindadir (UI'da degil): yeni bir cagiran eklendiginde sessizce
+    // atlanmaz.
     if (type == BoosterType.AIR_SUPPORT && enemiesOnField == 0) {
         return BoosterDecision.NoEffect
     }

@@ -201,6 +201,13 @@
     <!-- Meta para birimi. Turkcede de "Coin" (DECISIONS). -->
     <string name="level_coin_label" translatable="false">COIN</string>
     <string name="level_coin_amount">%1$d</string>
+    <!--
+      Coin cipindeki odullu reklam rozeti (R1b / COIN_TOP_UP).
+      translatable=false ve TEK KARAKTER: bu rozet baslik satirindaki tek sabit
+      genislikli ogedir. Cevrilebilir bir metin (ornegin "REKLAM IZLE") 740x360
+      dp yatayda saga yasli cip grubunu tasirirdi.
+    -->
+    <string name="level_coin_topup_badge" translatable="false">+</string>
     <string name="level_act_1">ACT I</string>
     <string name="level_act_2">ACT II</string>
     <string name="level_number">%1$d</string>

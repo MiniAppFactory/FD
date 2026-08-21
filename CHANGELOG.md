@@ -6,6 +6,43 @@ yalan soyleyebiliyorlardi; surum notu artik kodla ayni gecmisi paylasiyor.
 
 ---
 
+## 2026-08-21 — COIN CIPINDEN ODULLU REKLAM (R1b, `COIN_TOP_UP`)
+
+Tekrar oynama geliri kaldiriliyor (`replayReward` -> 0). Yerine gelen yol:
+bolum secim ekranindaki **coin cipine dokunmak** odullu reklam teklifini
+aciyor.
+
+- **Yeni bir coin muslugu YOK.** Cip, var olan R1 "Tedarik Talebi" odulunun
+  IKINCI GIRIS NOKTASIDIR: ayni `grantSupplyDrop` yolu, ayni gunluk tavan
+  (`R1_COIN_BUDGET_PER_DAY` = 450 coin, `R1_VIEWS_PER_DAY` = 3). `game/economy/**`
+  DEGISMEDI — tek satir sabit eklenmedi, cunku tavan zaten oradaydi.
+- **Reklam katmani hak kovasi da PAYLASILIR** (`InMemoryRewardedQuotaStore`):
+  cipten yapilan gosterim seridin hakkini da dusurur, arbitraj fallback tavani
+  da ortak. Iki kova olsaydi ucak modunda gunluk azaltilmis odul 3 x 50 yerine
+  6 x 50 olurdu.
+- **Ayri enum degerinin tek sebebi analitik**: `placement.name` dogrudan olay
+  etiketine gidiyor, yani serit mi cip mi gosterim uretiyor artik olculebilir.
+- **Odul buyumedi, GORUNURLUK buyudu.** Hedef gunluk coin miktarini artirmak
+  degil, zaten var olan 450 coin/gun butcesinin daha yuksek oranda talep
+  edilmesi — yani gosterim/gun artisi, coin enflasyonu olmadan.
+- Teklif tukendiginde cip **bakiyeyi gostermeye devam eder**, yalnizca "+"
+  rozeti ve tiklanabilirlik gider. Hicbir ilerleme yolu kapanmaz.
+- Rozet **28 dp** (20 dp daire + 8 dp aralik) ve `translatable=false` tek
+  karakter; 740x360 dp yatayda baslik satirinda ~150 dp pay kaliyor.
+- **YAN DUZELTME — R3 "Cift Odeme" bos teklif acmiyor.** Zafer ekranindaki
+  teklifin kosulu yalnizca `isRewardedOffered` idi, yani `doublableAmount = 0`
+  iken de aciliyor ve oyuncu reklami izleyip **+0 coin** aliyordu. Bugune kadar
+  yalnizca gunun boost'lu tekrar hakki bittikten sonraki tekrarlarda oluyordu;
+  tekrar odulu kaldirilinca HER tekrar zaferinde olurdu. Kosula
+  `doublableAmount > 0` eklendi (R2'deki `reinforcementSupported` ile ayni
+  kural).
+
+Kanit: `testDebugUnitTest lintDebug` yesil — **1.078 test, 0 basarisiz,
+2 atlandi; lint 0 hata**. Yeni testler: `CoinTopUpPlacementTest` (11),
+`CoinChipAdEntryTest` (6, 740x360 dp), `LevelSelectHeaderWidthBudgetTest` (3).
+
+---
+
 ## 2026-08-21 — ATES HATTI SINYALI (build oncesi menzil uyarisi)
 
 Cihaz sikayeti: *"gatling topunun yerlesim yerine gore vurus alanini

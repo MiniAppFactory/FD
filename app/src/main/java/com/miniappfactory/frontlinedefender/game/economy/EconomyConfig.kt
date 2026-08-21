@@ -704,7 +704,26 @@ object EconomyConfig {
      * enflasyon korumasi burada gereksizdir — enflasyona katkisi tam olarak 0'dir.
      * Sinirlayan sey oynanis (savas basina 1 kullanim), para degil.
      */
-    const val BOOSTER_AD_VIEWS_PER_DAY: Int = 4
+    /**
+     * ⚠ 4 -> 12 (2026-08-21). SAYI DEGISMEDI, DAYANAGI DEGISTI.
+     *
+     * Yukaridaki gerekce zaten "enflasyon korumasi gereksiz, sinirlayan sey
+     * OYNANIS: savas basina 1 kullanim" diyordu. O dayanak kirildi — hava
+     * destegi artik savas basina IKI reklam kullanimi tasiyor.
+     *
+     * 4 ile birlikte ortaya cikan celiski su olurdu: hava destegi tek basina
+     * gunluk hakkin YARISINI yiyor, yani gunde en fazla IKI bolumde
+     * cagrilabilirdi. Ucuncu bolumden itibaren — diger iki guclendiricinin
+     * reklami hic izlenmese bile — cevap DailyAdLimitReached olurdu. Reklam-only
+     * bir guclendiricinin gunun buyuk kisminda tamamen erisilemez olmasi,
+     * degisikligin gerekcesiyle ("reklam izlemeye tesvik") DOGRUDAN celisir.
+     *
+     * 12 = uc dolu savas (2 hava + 1 tedarik + 1 tamir = savas basina 4).
+     * Sinir KALDIRILMADI ve kaldirilmamali: sinirin isi artik enflasyon degil
+     * REKLAM YORGUNLUGU — gunde 12'yi asan bir istek, oyunu oynamak degil
+     * reklam izlemek olur.
+     */
+    const val BOOSTER_AD_VIEWS_PER_DAY: Int = 12
 
     // =================================================================================
     // Saat manipulasyonu (GDD E.4)

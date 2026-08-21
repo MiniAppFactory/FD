@@ -290,6 +290,13 @@ fun SupplyDropBar(
 /**
  * R1 Tedarik Talebi.
  *
+ * IKI GIRIS NOKTASI, TEK FONKSIYON: hem [SupplyDropBar] seridi
+ * ([RewardedPlacement.SUPPLY_DROP]) hem de bolum secim ekranindaki coin cipi
+ * ([RewardedPlacement.COIN_TOP_UP]) buraya duser. Kasitli olarak
+ * `result.placement`e BAKMAZ — iki giris noktasinin farkli odul odemesi, ayni
+ * ekranda iki farkli fiyatli buton demek olurdu ve oyuncu her zaman ucuz olani
+ * secip digerini gormezden gelirdi.
+ *
  * MIKTAR BURADA YAZMIYOR — ekonomi ne verdiyse mesaj onu soyler. Eskiden
  * `AdPolicyConfig.SUPPLY_DROP_FULL_COIN` sabiti hem mesaja hem "yatir"
  * cagrisina gidiyordu; ekonominin gunluk butcesi (450) veya adaptif odul

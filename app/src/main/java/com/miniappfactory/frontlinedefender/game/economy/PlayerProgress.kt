@@ -272,14 +272,22 @@ fun starImprovementBonus(level: Int, oldStars: Int, newStars: Int): Int {
  */
 fun replayReward(level: Int, bestStars: Int, boostedReplaysUsedToday: Int): Int {
     require(boostedReplaysUsedToday >= 0) { "negatif tekrar sayaci" }
-    if (bestStars == 0) return 0 // hic gecilmemis bolum "tekrar" edilemez
-    if (boostedReplaysUsedToday >= EconomyConfig.BOOSTED_REPLAYS_PER_DAY) {
-        return EconomyConfig.REPLAY_FLOOR
-    }
-    val boosted = roundToTen(
-        baseLevelReward(level) * starMultiplier(bestStars) * EconomyConfig.REPLAY_RATIO
-    )
-    return maxOf(EconomyConfig.REPLAY_FLOOR, boosted)
+    // ⚠ 2026-08-21 — TEKRAR OYNAMA ARTIK COIN KAZANDIRMIYOR (kullanici karari).
+    //
+    // Eski model: gunun ilk tekrarlarinda R(L) x 0,20, sonrasinda sabit taban
+    // 25 ve GUNLUK TAVAN YOKTU. Iki sorun uretiyordu:
+    //   1. Ogutulebilir gelir — oyuncu en kolay bolumu tekrar tekrar oynayarak
+    //      sinirsiz coin biriktirebiliyordu. Tek fren "verimsizlik"ti, ki bu
+    //      bir tasarim degil bir umuttur.
+    //   2. Coin degerli hale geldigi AN gercek bir sonsuz-ciftlik acigi;
+    //      ECONOMY_AUDIT_2 bunu zaten isaretlemisti.
+    //
+    // Yerine ACIK ve TAVANLI bir reklam yolu geliyor (coin cipi -> odullu
+    // reklam): gelir gizli bir ogutme dongusunden cikip gorunur hale gelir.
+    //
+    // Fonksiyon SILINMEDI, sifir donuyor — cagiranlarin hepsini degistirmek
+    // yerine tek kaynagi sifirlamak kararin NEREDE verildigini gorunur birakir.
+    return 0
 }
 
 /** Bu tekrar odulu R3 "Cift Odeme" ile katlanabilir mi? Taban 25 katlanmaz. */

@@ -124,6 +124,10 @@ object AdIds {
         val specific = when (placement) {
             RewardedPlacement.BOOSTER -> PRODUCTION_REWARDED_BOOSTER_AD_UNIT_ID
             RewardedPlacement.SUPPLY_DROP,
+            // COIN_TOP_UP, SUPPLY_DROP ile AYNI odulun ikinci giris noktasidir;
+            // ayri bir AdMob birimi ISTEMEZ. Ayrim analitik tarafinda
+            // (`placement.name`) zaten var.
+            RewardedPlacement.COIN_TOP_UP,
             RewardedPlacement.REINFORCEMENT,
             RewardedPlacement.DOUBLE_PAYOUT -> ""
         }

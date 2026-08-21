@@ -428,7 +428,12 @@ class InMemoryRewardedQuotaStore(
     override fun remaining(placement: RewardedPlacement): Int {
         rollDayIfNeeded()
         return when (placement) {
-            RewardedPlacement.SUPPLY_DROP ->
+            // TEK KOVA, IKI GIRIS NOKTASI. Serit (SUPPLY_DROP) ve baslik
+            // satirindaki coin cipi (COIN_TOP_UP) ayni gunluk hakki paylasir;
+            // ayri sayilsalardi ekranda "hakkin var" yazan bir butona
+            // dokunuldugunda ekonomi 0 coin oderdi (bkz. RewardedPlacement.COIN_TOP_UP).
+            RewardedPlacement.SUPPLY_DROP,
+            RewardedPlacement.COIN_TOP_UP ->
                 (AdPolicyConfig.SUPPLY_DROP_DAILY_LIMIT - supplyDropUsedToday).coerceAtLeast(0)
             RewardedPlacement.REINFORCEMENT ->
                 (AdPolicyConfig.REINFORCEMENT_PER_BATTLE_LIMIT - reinforcementUsedThisBattle).coerceAtLeast(0)
@@ -447,7 +452,10 @@ class InMemoryRewardedQuotaStore(
     override fun consume(placement: RewardedPlacement) {
         rollDayIfNeeded()
         when (placement) {
-            RewardedPlacement.SUPPLY_DROP -> supplyDropUsedToday++
+            // Paylasilan kova: cipten yapilan dolu gosterim seridin hakkini da
+            // dusurur (ve tersi).
+            RewardedPlacement.SUPPLY_DROP,
+            RewardedPlacement.COIN_TOP_UP -> supplyDropUsedToday++
             RewardedPlacement.REINFORCEMENT -> reinforcementUsedThisBattle++
             RewardedPlacement.DOUBLE_PAYOUT -> doublePayoutUsedThisBattle++
             RewardedPlacement.BOOSTER -> boosterUsedThisBattle++
@@ -457,7 +465,10 @@ class InMemoryRewardedQuotaStore(
     override fun noteFallback(placement: RewardedPlacement): Boolean {
         rollDayIfNeeded()
         return when (placement) {
-            RewardedPlacement.SUPPLY_DROP -> {
+            // Arbitraj tavani da PAYLASILIR: aksi halde ucak modunda serit 3,
+            // cip 3 fallback verir ve tavan sessizce ikiye katlanirdi.
+            RewardedPlacement.SUPPLY_DROP,
+            RewardedPlacement.COIN_TOP_UP -> {
                 if (!AdPolicyConfig.ANTI_ARBITRAGE_FALLBACK_CAP_ENABLED) return true
                 if (supplyDropFallbacksToday >= AdPolicyConfig.SUPPLY_DROP_FALLBACK_DAILY_CAP) {
                     false

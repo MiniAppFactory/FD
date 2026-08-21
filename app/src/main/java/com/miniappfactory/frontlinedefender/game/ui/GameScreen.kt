@@ -320,6 +320,16 @@ fun GameScreen(
     var doublePayoutOfferOpen by remember { mutableStateOf(false) }
     var reinforcementOfferOpen by remember { mutableStateOf(false) }
     var supplyDropOfferOpen by remember { mutableStateOf(false) }
+
+    /**
+     * R1b — coin cipinden acilan teklif (`RewardedPlacement.COIN_TOP_UP`).
+     *
+     * `supplyDropOfferOpen` ile AYRI tutuluyor cunku ikisi ayni anda acilirsa
+     * ust uste iki scrim cizilir; ayri bayrak ile hangisinin acik oldugu tek
+     * bir yerde okunur ve `else if` zinciri ikisini karsilikli disliyor.
+     * Odul yolu ve gunluk tavan ise ORTAK (bkz. RewardedPlacement.COIN_TOP_UP).
+     */
+    var coinTopUpOfferOpen by remember { mutableStateOf(false) }
     var pendingExit by remember { mutableStateOf<PendingBattleExit?>(null) }
 
     // ⛔ GERI TUSU OYUNDAN CIKARIYORDU.
@@ -397,7 +407,23 @@ fun GameScreen(
                     livesLeft = gameEngine.victoryStarHealth,
                     maxLives = gameEngine.levelSpec.maxBaseLives
                 )
-                doublePayoutOfferOpen =
+                // R3 — CARPILACAK TABAN YOKSA TEKLIF DE YOK.
+                //
+                // Eskiden kosul yalnizca `isRewardedOffered` idi, yani zafer
+                // ekraninda "odulunu IKIYE KATLA" teklifi `doublableAmount = 0`
+                // iken de aciliyordu: oyuncu reklami sonuna kadar izliyor ve
+                // +0 coin aliyordu. `AdRewardBridge` KDoc'u bunu zaten
+                // yasakliyor ("calismayan bir odul teklif etmek, oyuncunun bir
+                // daha hicbir reklami izlememesinin en kisa yoludur") ve R2
+                // tarafinda ayni kural `reinforcementSupported` ile
+                // uygulanmisti; R3'te eksikti.
+                //
+                // Bugun bu dal, gunun boost'lu tekrar hakki bittikten sonraki
+                // tekrarlarda calisiyordu (taban 25 katlanmaz — BAYRAK F-7).
+                // Tekrar odulu tamamen kaldirilinca HER tekrar zaferi bu dala
+                // duser, yani hata nadir olmaktan cikip kural haline gelir.
+                val doublable = lastClearResult?.doublableAmount ?: 0
+                doublePayoutOfferOpen = doublable > 0 &&
                     adHost.isRewardedOffered(RewardedPlacement.DOUBLE_PAYOUT)
                 rewardTick++
             }
@@ -604,7 +630,17 @@ fun GameScreen(
                             // DEGISTIRILMEDI.
                             actIntroStore = remember(saveManager) {
                                 SaveManagerActIntroStore(saveManager)
-                            }
+                            },
+                            // R1b — COIN CIPINDEN ODULLU REKLAM.
+                            //
+                            // Kapi `supplyOffered` ile AYNI: iki giris noktasi
+                            // da ayni gunluk hakka ve ayni gunluk coin
+                            // butcesine bakar. Ayri bir kosul yazsaydik biri
+                            // acikken digeri kapali olabilirdi ve oyuncu
+                            // "hakkin var" deyip 0 coin odeyen bir butona
+                            // basardi.
+                            coinAdOffered = supplyOffered,
+                            onCoinAdRequested = { coinTopUpOfferOpen = true }
                         )
                     }
                     // R1 seridi banner ile bolum kartlari ARASINDA: hicbir
@@ -644,6 +680,35 @@ fun GameScreen(
                         applyResult = { applySupplyDrop(context, it, activeRewardBridge) },
                         onDismiss = {
                             supplyDropOfferOpen = false
+                            rewardTick++
+                        }
+                    )
+                } else if (coinTopUpOfferOpen) {
+                    // R1b — AYNI teklif, AYNI odul yolu, AYNI gunluk tavan;
+                    // degisen tek sey giris noktasi ve dolayisiyla analitik
+                    // etiketi (`placement.name`). Metinler de kasitli olarak
+                    // ayni: oyuncu icin bunlar tek bir "tedarik talebi"dir,
+                    // iki farkli odul degil.
+                    //
+                    // `else if`: iki teklif ayni anda acilirsa iki scrim ust
+                    // uste binerdi.
+                    RewardedOfferSheet(
+                        adHost = adHost,
+                        placement = RewardedPlacement.COIN_TOP_UP,
+                        title = stringResource(R.string.ad_sheet_supply_title),
+                        body = stringResource(
+                            R.string.ad_sheet_supply_body,
+                            AdPolicyConfig.SUPPLY_DROP_FULL_COIN,
+                            AdPolicyConfig.SUPPLY_DROP_REDUCED_COIN
+                        ),
+                        remainingLabel = stringResource(
+                            R.string.ad_sheet_supply_remaining,
+                            supplyRemaining,
+                            AdPolicyConfig.SUPPLY_DROP_DAILY_LIMIT
+                        ),
+                        applyResult = { applySupplyDrop(context, it, activeRewardBridge) },
+                        onDismiss = {
+                            coinTopUpOfferOpen = false
                             rewardTick++
                         }
                     )

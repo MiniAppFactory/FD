@@ -500,33 +500,6 @@ class EconomySimulationTest {
     // =================================================================================
 
     @Test
-    fun replayRewardIsNeverZeroForAClearedLevel() {
-        for (level in 1..EconomyConfig.CAMPAIGN_LEVELS) {
-            for (stars in 1..3) {
-                for (used in 0..50) {
-                    val r = replayReward(level, stars, used)
-                    assertTrue("L$level $stars yildiz used=$used -> $r", r >= EconomyConfig.REPLAY_FLOOR)
-                }
-            }
-        }
-    }
-
-    @Test
-    fun replayRewardCollapsesToFloorAfterThreeBoostedReplays() {
-        assertEquals(250, replayReward(22, 3, 0)) // 770 x 1,6 x 0,20 = 246,4 -> 250
-        assertEquals(250, replayReward(22, 3, 2))
-        assertEquals(EconomyConfig.REPLAY_FLOOR, replayReward(22, 3, 3))
-        assertEquals(EconomyConfig.REPLAY_FLOOR, replayReward(22, 3, 999))
-    }
-
-    @Test
-    fun boostedReplayCapIsGlobalPerDayNotPerLevel() {
-        // 3 hak tukendikten sonra BASKA bir bolumu tekrar oynamak da taban verir.
-        assertEquals(EconomyConfig.REPLAY_FLOOR, replayReward(5, 3, 3))
-        assertEquals(EconomyConfig.REPLAY_FLOOR, replayReward(20, 3, 3))
-    }
-
-    @Test
     fun replayingIsAlwaysWorthLessThanClearingNewContent() {
         // Farming'in ilerlemeden daha karli OLMAMASININ analitik garantisi.
         for (level in 1..EconomyConfig.CAMPAIGN_LEVELS) {
@@ -552,6 +525,35 @@ class EconomySimulationTest {
         assertTrue(replayRewardIsDoublable(0))
     }
 
+    /**
+     * ⚠ SOZLESME TERSINE DONDU (2026-08-21, kullanici karari): gecilmis bir
+     * bolumu tekrar oynamak ARTIK COIN KAZANDIRMIYOR.
+     *
+     * Bu testin yerini aldigi UC test eski modeli kilitliyordu: "tekrar odulu
+     * asla sifir olmaz", "uc hakkin sonra tabana duser", "tavan gunluk ve
+     * global". Ucu de artik yanlis, cunku katmanin KENDISI kalkti.
+     *
+     * Kalkma sebebi olculmustu: taban 25'in GUNLUK TAVANI YOKTU, yani coin
+     * degerli hale geldigi an sinirsiz ogutme demekti (ECONOMY_AUDIT_2 bunu
+     * aciga cikarmisti). Yerine acik ve tavanli bir reklam yolu geliyor.
+     *
+     * Yeni kural TEK CUMLE ve burada tam olarak o sorulyor: tekrar geliri
+     * HICBIR girdide sifirdan farkli olamaz.
+     */
+    @Test
+    fun replayingAClearedLevelEarnsNothing() {
+        for (level in 1..EconomyConfig.CAMPAIGN_LEVELS) {
+            for (stars in 0..3) {
+                for (used in intArrayOf(0, 1, 2, 3, 50)) {
+                    assertEquals(
+                        "L$level $stars yildiz used=$used — tekrar oynama coin uretmemeli",
+                        0, replayReward(level, stars, used),
+                    )
+                }
+            }
+        }
+    }
+
     @Test
     fun replayClearDoesNotPayFirstClearRewardAgain() {
         var wallet = PlayerWallet()
@@ -562,14 +564,18 @@ class EconomySimulationTest {
         val replay = resolveLevelClear(wallet, 3, oneStarLives, maxLives)
         assertFalse(replay.firstClear)
         assertEquals("ilk temizlik odulu ikinci kez odenmez", 0, replay.firstClearReward)
-        assertEquals(replayReward(3, 1, 0), replay.replayReward)
-        assertTrue(replay.consumesBoostedReplay)
 
-        // Taban tekrar odulune dusen katlanamaz kalem, R3 ile katlanmaz.
-        val floorReplay = resolveLevelClear(wallet, 3, oneStarLives, maxLives, boostedReplaysUsedToday = 3)
-        assertEquals(EconomyConfig.REPLAY_FLOOR, floorReplay.replayReward)
-        assertEquals(0, floorReplay.doublableAmount)
-        assertEquals(0, doublePayoutBonus(floorReplay.doublableAmount, AdOutcome.REWARD_EARNED))
+        // ⚠ 2026-08-21: tekrar geliri KALKTI, yani ikinci gecis TOPLAMDA sifir
+        // odemeli. Eski hali `replayReward(...)` ile karsilastiriyordu ve o
+        // fonksiyon artik her zaman 0 donuyor — karsilastirmayi birakip DOGRUDAN
+        // sifir sormak, testin ne iddia ettigini okunur kiliyor.
+        assertEquals("tekrar gecisi coin uretmemeli", 0, replay.replayReward)
+        assertEquals("tekrar gecisinin katlanabilir kalemi de olmamali", 0, replay.doublableAmount)
+        assertEquals(0, doublePayoutBonus(replay.doublableAmount, AdOutcome.REWARD_EARNED))
+
+        // Cuzdan gercekten degismemeli — kalem kalem sifir olmasi yetmez.
+        val after = applyLevelClear(wallet, replay)
+        assertEquals("tekrar gecisi cuzdani buyutmemeli", afterFirst, after.coins)
     }
 
     @Test

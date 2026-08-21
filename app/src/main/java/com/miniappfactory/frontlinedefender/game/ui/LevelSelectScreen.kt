@@ -173,7 +173,31 @@ fun LevelSelectScreen(
      * Kalicilik `SaveManager`in var olan ipucu bayragi API'si uzerinden
      * yurur; `SaveManager` DEGISTIRILMEDI (gerekce `ActIntroOverlay.kt`).
      */
-    actIntroStore: ActIntroStore? = null
+    actIntroStore: ActIntroStore? = null,
+    /**
+     * COIN CIPINDEN ODULLU REKLAM (R1b, `RewardedPlacement.COIN_TOP_UP`).
+     *
+     * ## Neden bu ekranda ve neden coin cipinde
+     * Tekrar oynama geliri kaldirildi (`replayReward` -> 0), yani oyuncunun
+     * "coinim bitti, ne yapacagim" sorusuna verilecek acik bir cevap gerekiyor.
+     * O sorunun soruldugu yer **bakiyeye bakilan yerdir**: coin cipi. Ayni
+     * teklif zaten `SupplyDropBar` ile ekranin altinda duruyordu ama oyuncunun
+     * gozu oraya bakmiyordu.
+     *
+     * ## Yeni bir coin muslugu DEGIL
+     * Bu giris noktasi ekonominin ayni gunluk tavanina baglidir
+     * (`R1_COIN_BUDGET_PER_DAY` = 450 coin/gun, `R1_VIEWS_PER_DAY` = 3).
+     * Amac gunluk coin miktarini artirmak degil, **zaten var olan butcenin
+     * gorunur olmasi** — yani gosterim sayisini artirmak, coin sayisini degil.
+     *
+     * @param coinAdOffered teklif bugun hala acik mi. `false` (varsayilan) iken
+     *   cip bugunkuyle **birebir ayni** cizilir: yalnizca "+" isareti yoktur ve
+     *   dokunulamaz. Bakiye her durumda gorunur kalir — hicbir bilgi kapanmaz.
+     * @param onCoinAdRequested oyuncu cipe dokundu. Teklif yuzeyini acmak
+     *   cagiran tarafin isidir; bu ekran reklam SDK'sini TANIMAZ.
+     */
+    coinAdOffered: Boolean = false,
+    onCoinAdRequested: () -> Unit = {}
 ) {
     // Bir sonraki oynanabilir bolum — ekran bunu vurgular.
     //
@@ -328,12 +352,24 @@ fun LevelSelectScreen(
                 Spacer(Modifier.width(8.dp))
 
                 // Coin — SADECE bu ekranda. Savas HUD'inda asla.
+                //
+                // ODULLU REKLAM GIRISI (R1b): teklif acikken cipin kendisi
+                // dokunulabilir olur ve sonuna bir "+" rozeti gelir. Teklif
+                // tukendiginde cip **kaybolmaz veya kucultulmez** — yalnizca
+                // "+" ve tiklanabilirlik gider. Bakiye her zaman okunur kalir.
+                //
+                // Dokunulabilirlik `clickable`in KOSULLU parametresiyle
+                // yapiliyor, iki ayri Row ile degil: aksi halde iki dal
+                // arasinda gecerken cip yeniden olculur ve saga yasli grup
+                // parmagin altinda kayabilirdi.
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
                         .background(Color(0x33FFD54F))
+                        .clickable(enabled = coinAdOffered, onClick = onCoinAdRequested)
                         .padding(horizontal = 12.dp, vertical = 6.dp)
+                        .testTag("coin_chip")
                 ) {
                     // "COIN" translatable=false: meta para birimi adi Turkcede
                     // de "Coin" (DECISIONS — para birimi adlandirmasi).
@@ -342,7 +378,8 @@ fun LevelSelectScreen(
                         color = Color(0xFFFFD54F),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
-                        maxLines = 1
+                        maxLines = 1,
+                        modifier = Modifier.testTag("coin_label")
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
@@ -350,8 +387,34 @@ fun LevelSelectScreen(
                         color = Color(0xFFFFF3C4),
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Black,
-                        maxLines = 1
+                        maxLines = 1,
+                        modifier = Modifier.testTag("coin_amount")
                     )
+                    if (coinAdOffered) {
+                        Spacer(Modifier.width(8.dp))
+                        // "+" tek karakter ve `translatable=false`: bu rozet
+                        // bu satirdaki TEK esnek olmayan ogedir. Metin
+                        // koysaydik ("REKLAM IZLE") Turkce/Italyanca cevirisi
+                        // 740x360 dp yatayda baslik satirini tasirirdi — bu
+                        // depoda dort kez yasanmis hata. Sabit 20 dp daire
+                        // her dilde ayni yeri kaplar.
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(20.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Color(0xFFFFD54F))
+                                .testTag("coin_ad_badge")
+                        ) {
+                            Text(
+                                text = stringResource(R.string.level_coin_topup_badge),
+                                color = Color(0xFF2A2208),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Black,
+                                maxLines = 1
+                            )
+                        }
+                    }
                 }
             }
 
