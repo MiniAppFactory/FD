@@ -48,7 +48,21 @@ android {
   }
 
   buildTypes {
+    // ADMOB APP ID BUILD TIPINE GORE.
+    //
+    // Manifest meta-data'si DERLEME ZAMANINDA sabitlenir, yani `AdIds` gibi
+    // calisma zamaninda dallanamaz. Placeholder olmadan tek bir deger yazmak
+    // zorunda kalirdik ve iki kotu secenekten birini secerdik: release'de test
+    // App ID (gercek birimler calismaz) ya da debug'da gercek App ID
+    // (gelistirici kendi canli reklamina tiklar -> AdMob gecersiz trafik).
+    //
+    // Degerler `AdIds.PRODUCTION_APP_ID` / `TEST_APP_ID` ile AYNI olmak
+    // zorunda; `AdIdsConsistencyTest` bunu kilitliyor.
+    debug {
+      manifestPlaceholders["admobAppId"] = "ca-app-pub-3940256099942544~3347511713"
+    }
     release {
+      manifestPlaceholders["admobAppId"] = "ca-app-pub-8582550349019790~1660929933"
       isCrunchPngs = false
       isMinifyEnabled = false
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")

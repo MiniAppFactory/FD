@@ -57,7 +57,7 @@
              AdIds.PRODUCTION_APP_ID ile AYNI olmak zorundadir. -->
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"
-            android:value="ca-app-pub-3940256099942544~3347511713" />
+            android:value="${admobAppId}" />
 
         <!-- SDK baslatma ve reklam yukleme islerini ana is parcacigindan
              cikarir (acilis jank'i ve ANR riskini azaltir). SDK zaten kendi
