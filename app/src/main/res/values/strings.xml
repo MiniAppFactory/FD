@@ -106,6 +106,21 @@
     <string name="build_msg_in_combat">No new emplacements once the wave starts.</string>
     <string name="build_msg_supply">Not enough supply.</string>
 
+    <!-- ==================== line of fire (GameConfig.coversRoute) ==========
+         Cihaz sikayeti: bolum 8'de pad 7'ye Gatling kuruldu, kule hicbir seye
+         ates edemedi. Pad'in yeri yanlis DEGIL — ayni pad'den Fuze Rampasi
+         haritanin en iyi ikinci kapsamasini veriyor. Eksik olan sinyaldi.
+
+         BU BIR RET DEGIL, BILGIDIR. Insa yine yapilabilir: menzil kalici
+         olarak buyuyor (Gatling 150 -> 180 -> 210) ve meta menzil yukseltmesi
+         var. Bu yuzden cumle "yapamazsin" degil "yetismiyor" der; emir kipi
+         ya da "cannot" kullanilmaz. -->
+    <string name="build_no_line_of_fire">%1$s can\'t reach the road from here.</string>
+    <!-- Kart rozetinin ekran okuyucu adi. Rozet CIZIMDIR (halka + capraz
+         cizgi), metin tasimaz; ses kapali/gorme destekli oynanista tek
+         tasiyici bu ad. -->
+    <string name="build_no_reach_desc">Out of range from this emplacement</string>
+
     <!-- ==================== tower (GameConfig.TowerType) ====================
          KIMLIK DUZELTMESI: ANTI_ARMOR sprite'i spr_tower_missile_launcher
          (fuze rampasi) ve sesi sfx_missile_launch. GameConfig'teki "Railgun /

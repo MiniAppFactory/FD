@@ -64,6 +64,14 @@
     <string name="build_msg_in_combat">Dalga başlayınca yeni mevzi kurulamaz.</string>
     <string name="build_msg_supply">Tedarik yetersiz.</string>
 
+    <!-- ==================== ates hatti ====================
+         RET DEGIL BILGI: kule yine kurulabilir, cunku menzil kalici olarak
+         buyuyor (Gatling 150 -> 180 -> 210). Bu yuzden "kuramazsin" degil
+         "yetismiyor". Serit iki satira sigar; en uzun kule adiyla (Fuze
+         Rampasi) olculdu. -->
+    <string name="build_no_line_of_fire">%1$s buradan yola yetişmiyor.</string>
+    <string name="build_no_reach_desc">Bu mevziden menzil dışı</string>
+
     <!-- ==================== tower ====================
          ANTI_ARMOR: sprite fuze rampasi, ses fuze firlatma -> gorunen metin de
          fuze. "Railgun / isin" metni kaldirildi (kimlik celiskisi). -->

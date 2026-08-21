@@ -1,5 +1,7 @@
 package com.miniappfactory.frontlinedefender.game.model
 
+import kotlin.math.hypot
+
 /**
  * Centralized game balance configuration.
  * All balance values, tower specs, enemy specs, and wave definitions are stored here.
@@ -542,6 +544,95 @@ object GameConfig {
     /** Bos build pad isaretinin bekleme / secili alfasi. */
     const val BUILD_PAD_IDLE_ALPHA = 0.55f
     const val BUILD_PAD_SELECTED_ALPHA = 1.0f
+
+    /**
+     * ATES HATTI OLMAYAN pad'in alfasi — bkz. [coversRoute].
+     *
+     * Bekleme alfasindan (0,55) belirgin sekilde asagida: pad GIZLENMEZ ama
+     * GERI CEKILIR. Renk tek ayrim kanali olamaz, o yuzden isaret ayrica bir
+     * SEKIL tasir (halka + capraz cizgi; `GameCanvas.drawNoLineOfFireMark`).
+     * 0,22 secildi cunku pad'in sekli hala secilebilir kaliyor — oyuncu oraya
+     * yine dokunabilmeli ve yine kurabilmeli: menzil yukseltmesiyle (Gatling
+     * kd.1 150 -> kd.2 180 -> kd.3 210) o mevzi ileride acilir.
+     */
+    const val BUILD_PAD_NO_REACH_ALPHA = 0.22f
+
+    // ------------------------------------------------------------------------
+    // ATES HATTI — "bu kule buradan yola yetisiyor mu?"
+    //
+    // NEDEN VAR: cihazdan gelen sikayet bolum 8 / pad 7'ydi. Gatling (kd.1
+    // menzil 150) o mevziden yola 151 ref-px uzakta kaliyor ve HICBIR SEYE
+    // ates edemiyor. Pad cop DEGIL, yanlis kule icin secilmis: ayni pad'den
+    // Fuze Rampasi (menzil 250) haritanin en iyi ikinci kapsamasini veriyor.
+    // Yani kusur pad'in yerinde degil, KURMADAN ONCE VERILMEYEN SINYALDE.
+    //
+    // NEDEN TEK YERDE: ayni mesafe hesabi iki dosyaya yazilirsa bu depoda
+    // kesinlikle ayrisiyor — "olu build pad" hatasi tam olarak boyle 22 bolum
+    // boyunca testten kacti (bkz. PadReachabilityPerLevelTest KDoc'u). Cizim
+    // (`GameCanvas`), panel (`TowerBuildBar`) ve testler
+    // (`GeometryTestSupport`) hepsi asagidaki iki fonksiyondan gecer.
+    //
+    // BIRIM SOZLESMESI: fonksiyonlar BIRIMSIZDIR. Nokta, rota ve menzil AYNI
+    // uzayda verilmek ZORUNDADIR. Oynanista bu EKRAN pikselidir
+    // (`GameEngine.scaledRoutes` + `previewRangeRef(t) * renderScale`),
+    // testlerde 1920x1080 REFERANS tuvali. Karistirmak sessizce yanlis cevap
+    // uretir, bu yuzden her cagri yerinde birim yorumla yazilidir.
+    //
+    // TAHSIS: cizim yolundan cagriliyor. Indeksli dongu kullanilir; `minOf` /
+    // `forEach` gibi lambda ve iterator YOK — kare basina cop uretmez.
+    // ------------------------------------------------------------------------
+
+    /** Bir noktanin [ax],[ay]-[bx],[by] dogru PARCASINA (sonsuz dogruya degil) uzakligi. */
+    fun pointToSegmentDistance(
+        px: Float,
+        py: Float,
+        ax: Float,
+        ay: Float,
+        bx: Float,
+        by: Float
+    ): Float {
+        val dx = bx - ax
+        val dy = by - ay
+        val len2 = dx * dx + dy * dy
+        // Dejenere parca (ust uste dusen iki waypoint): noktaya uzaklik.
+        if (len2 == 0f) return hypot(px - ax, py - ay)
+        var t = ((px - ax) * dx + (py - ay) * dy) / len2
+        if (t < 0f) t = 0f else if (t > 1f) t = 1f
+        return hypot(px - (ax + t * dx), py - (ay + t * dy))
+    }
+
+    /**
+     * Noktanin, VERILEN rota kumesindeki en yakin yere uzakligi.
+     *
+     * Rota kumesi bos ya da tum rotalar tek noktalik ise [Float.MAX_VALUE]
+     * doner — "hicbir yola yakin degil". Cizim yolu bolum yuklenmeden once de
+     * kosabildigi icin bu bir istisna DEGIL, normal bir cevap olmali.
+     */
+    fun distanceToRoutes(px: Float, py: Float, routes: List<List<PointF>>): Float {
+        var best = Float.MAX_VALUE
+        for (r in routes.indices) {
+            val route = routes[r]
+            for (i in 0 until route.size - 1) {
+                val a = route[i]
+                val b = route[i + 1]
+                val d = pointToSegmentDistance(px, py, a.x, a.y, b.x, b.y)
+                if (d < best) best = d
+            }
+        }
+        return best
+    }
+
+    /**
+     * Bu noktaya kurulan [rangePx] menzilli bir kule rotanin herhangi bir
+     * yerini gorur mu?
+     *
+     * SINIR DAHIL (`<=`): menzil mesafeye TAM esitse motor da hedefi vurur
+     * (`GameEngine` menzil karsilastirmasi `<=`). Burada `<` yazmak paneli
+     * oynanistan bir ref-px kadar ayirirdi — bu depoda tam olarak bu buyuklukte
+     * bir sapma (151 vs 150) sikayete donustu.
+     */
+    fun coversRoute(px: Float, py: Float, rangePx: Float, routes: List<List<PointF>>): Boolean =
+        rangePx > 0f && distanceToRoutes(px, py, routes) <= rangePx
 
     enum class TowerType {
         MACHINE_GUN,

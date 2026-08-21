@@ -158,6 +158,28 @@ private val CALLOUT_BORDER_COLOR = Color(0xFFFFD54F)
 private val CALLOUT_LINK_COLOR = Color(0xB3FFD54F)
 
 // ---------------------------------------------------------------------------
+// "ATES HATTI YOK" ISARETI — renkler (bkz. drawNoLineOfFireMark).
+//
+// RENK SECIMI BIR KISIT PROBLEMIYDI, tercih degil. Haritada zaten uc anlamli
+// renk ailesi var ve dordunculeri onlarin uzerine yazamaz:
+//  · soguk mavi/camgobegi (FriendlyPlate 187-205 derece) = "bu benim",
+//  · haki ton bandi (35,8-60,2 derece) = "bu dusman",
+//  · altin (0xFFFFD54F, ~45 derece) = "bu secili" / kutlama.
+// Kehribar-turuncu uyari (0xFFFFB74D) hem haki bandinin hem altinin icine
+// duser; kirmizi ise hasar/can kaybi rengiyle (0xFFF44336) ayni aile ve bu bir
+// KAYIP degil, bir BILGI. Geriye tek dogru cevap kaliyor: doygunlugu ~0 olan
+// notr gri. Hicbir aileye ait olmadigi icin hicbir anlami bozmaz.
+//
+// Anlami tasiyan asil kanal ZATEN SEKIL (halka + capraz cizgi); renk yalnizca
+// okunabilirlik saglar.
+// ---------------------------------------------------------------------------
+private val NO_LINE_OF_FIRE_MARK_COLOR = Color(0xFFE8EAE6)
+private val NO_LINE_OF_FIRE_SHADE_COLOR = Color(0xB30B0E08)
+
+/** Isaretin cizgi kalinligi, referans px. Pad konturundan kalin — geri planda kalmamali. */
+private const val NO_LINE_OF_FIRE_STROKE_REF_PX = 5f
+
+// ---------------------------------------------------------------------------
 // DOST TABAN PLAKASI  (VISUAL_AUDIT P0-1)
 //
 // OLCUM: kule sprite'larinin renkli piksel ton ortalamalari 37,8 / 50,6 / 57,4
@@ -434,8 +456,10 @@ fun GameCanvas(
             // 2. Yol/spawn/us CIZIMI YOK — yol artik haritada boyali.
             if (GameConfig.DEBUG_DRAW_PATH) drawDebugPath(gameEngine)
 
-            // 3. Bos build pad isaretleri (fx_build_pad)
-            drawBuildSpots(gameEngine, sprites, selectedBuildSpot, s)
+            // 3. Bos build pad isaretleri (fx_build_pad) + "ates hatti yok"
+            //    isareti. Kart basili iken O KULENIN menzili yolu gormeyen
+            //    pad'ler geri ceker; bkz. drawBuildSpots KDoc'u.
+            drawBuildSpots(gameEngine, sprites, selectedBuildSpot, previewTowerType, s)
 
             // 4. Menzil gostergesi kulenin ALTINDA kalir ki sprite'i bogmasin.
             //    Menzil REFERANS tuvalde tanimli -> cizimde s ile olceklenir.
@@ -802,26 +826,101 @@ private fun DrawScope.drawOcclusionCallout(
     }
 }
 
+/**
+ * ===========================================================================
+ * BOS BUILD PAD'LER + "ATES HATTI YOK" ISARETI
+ * ===========================================================================
+ *
+ * OLCULEN SORUN (cihaz): bolum 8'de pad 7'ye Gatling kuruldu ve kule hicbir
+ * seye ates edemedi. Olcum pad'in yerinin YANLIS OLMADIGINI gosterdi — ayni
+ * pad'den Fuze Rampasi haritanin en iyi ikinci kapsamasini veriyor (674
+ * ref-px yol). Eksik olan sey pad degil, **kurmadan onceki sinyal**: oyun
+ * "bu kule buradan yola yetismiyor" demiyordu.
+ *
+ * NEDEN GIZLEMEK/BLOKLAMAK DEGIL: menzil kalici olarak buyuyor (Gatling kd.1
+ * 150 -> kd.2 180 -> kd.3 210) ve meta menzil yukseltmesi de var. Bugun
+ * yetismeyen mevzi yarin en iyi mevzi olabilir; pad'i kaldirmak oyuncunun
+ * elinden bir plani alir. Mesaj "yapamazsin" degil "yetismiyor".
+ *
+ * NE ZAMAN CIZILIR: yalnizca build cubugunda bir kart BASILI iken
+ * (`previewTowerType != null`). Sebep, geri bildirim hiyerarsisi: isaret bir
+ * KULEYE goredir, kule secili degilken cizmek her pad'in yaninda sahibi
+ * olmayan bir uyari birakirdi. Kart basili degilken ayni bilgiyi panel
+ * tarafi tasir (`TowerBuildBar` kart rozeti) — o, secili PAD'e goredir.
+ *
+ * UC KANAL, CUNKU RENK TEK BASINA AYIRMAZ:
+ *  1. DEGER — pad [GameConfig.BUILD_PAD_NO_REACH_ALPHA] ile geri ceker.
+ *  2. SEKIL — halka + capraz cizgi. Sekil, biyom rengi ne olursa olsun ve
+ *     renk korlugunde de okunur.
+ *  3. RENK — notr acik gri. Kasten NOTR: soguk mavi taban plakasi
+ *     ([FriendlyPlate]) "bu benim", haki ton bandi "bu dusman", altin
+ *     "bu secili". Uyariya bu uc aileden bir renk vermek dorduncu bir anlami
+ *     mevcut uc anlamdan birinin uzerine yazardi.
+ */
 private fun DrawScope.drawBuildSpots(
     gameEngine: GameEngine,
     sprites: GameSprites,
     selectedSpot: BuildSpot?,
+    previewTowerType: GameConfig.TowerType?,
     s: Float
 ) {
     val w = GameConfig.FX_BUILD_PAD_REF_PX * s
+    // Menzil EKRAN pikselinde: rotalar da (`scaledRoutes`) ekran pikselinde.
+    // `previewRangeRef` meta menzil yukseltmesini zaten iceriyor, yani isaret
+    // oyuncunun GERCEK menziline gore verilir — panelde bir sey gosterip
+    // sahada baskasini kullanmak bu depoda ayri bir hata sinifi.
+    val previewRangePx = previewTowerType?.let { gameEngine.previewRangeRef(it) * s } ?: 0f
+    val routes = gameEngine.scaledRoutes
     gameEngine.scaledBuildSpots.forEach { spot ->
         val isOccupied = gameEngine.towers.any { it.buildSpotId == spot.id }
         if (isOccupied) return@forEach
         val isSelected = selectedSpot?.id == spot.id
+        val noLineOfFire = previewRangePx > 0f &&
+            !GameConfig.coversRoute(spot.normX, spot.normY, previewRangePx, routes)
         drawSpriteAt(
             image = sprites.buildPad,
             cx = spot.normX,
             cy = spot.normY,
             width = if (isSelected) w * 1.08f else w,
-            alpha = if (isSelected) GameConfig.BUILD_PAD_SELECTED_ALPHA
-            else GameConfig.BUILD_PAD_IDLE_ALPHA
+            alpha = when {
+                noLineOfFire -> GameConfig.BUILD_PAD_NO_REACH_ALPHA
+                isSelected -> GameConfig.BUILD_PAD_SELECTED_ALPHA
+                else -> GameConfig.BUILD_PAD_IDLE_ALPHA
+            }
         )
+        if (noLineOfFire) drawNoLineOfFireMark(spot.normX, spot.normY, w, s)
     }
+}
+
+/**
+ * "ATES HATTI YOK" ISARETI — halka + capraz cizgi.
+ *
+ * Once koyu bir disk, sonra acik gri halka ve cizgi: harita zemini bes biyomda
+ * (kis/col/gece/sonbahar/...) hem cok acik hem cok koyu olabildigi icin tek
+ * renkli bir cizim bazi biyomlarda kaybolurdu. Koyu disk kendi kontrastini
+ * yaninda tasir — ayni cozum `drawOcclusionCallout` plakasinda da kullanildi.
+ *
+ * TAHSIS: `Stroke` cagri basina nesne uretir ve bu fonksiyon kare basina en
+ * fazla pad sayisi kadar (11) kosar, YALNIZCA kart basili iken. Onizleme
+ * kisa omurlu bir etkilesim oldugu icin bu, kule basina her kare kosan
+ * `drawTower` ile ayni butcede degil; yine de stroke tek kez uretilip iki
+ * cizimde paylasilir.
+ */
+private fun DrawScope.drawNoLineOfFireMark(cx: Float, cy: Float, padWidth: Float, s: Float) {
+    val r = padWidth * 0.36f
+    val strokeW = (NO_LINE_OF_FIRE_STROKE_REF_PX * s).coerceAtLeast(1.5f)
+    val stroke = Stroke(width = strokeW)
+    drawCircle(color = NO_LINE_OF_FIRE_SHADE_COLOR, radius = r, center = Offset(cx, cy))
+    drawCircle(color = NO_LINE_OF_FIRE_MARK_COLOR, radius = r, center = Offset(cx, cy), style = stroke)
+    // Capraz cizgi 45 derece: halkanin icinde kalmasi icin yaricap 1/sqrt(2)
+    // ile carpilir, yoksa uclar halkayi disaridan keser ve isaret "kirik" gorunur.
+    val d = r * 0.7071f
+    drawLine(
+        color = NO_LINE_OF_FIRE_MARK_COLOR,
+        start = Offset(cx - d, cy - d),
+        end = Offset(cx + d, cy + d),
+        strokeWidth = strokeW
+    )
 }
 
 private fun DrawScope.drawTower(

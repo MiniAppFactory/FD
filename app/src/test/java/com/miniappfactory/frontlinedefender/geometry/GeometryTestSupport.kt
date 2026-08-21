@@ -5,7 +5,6 @@ import com.miniappfactory.frontlinedefender.game.model.LevelData
 import com.miniappfactory.frontlinedefender.game.model.PointF
 import kotlin.math.hypot
 import kotlin.math.max
-import kotlin.math.min
 
 /**
  * Saf geometri yardimcilari — testler icin.
@@ -27,26 +26,26 @@ internal object GeometryTestSupport {
     /** Normalize noktayi referans tuval piksellerine tasir. */
     fun toRef(p: PointF): PointF = PointF(p.x * refW, p.y * refH)
 
-    /** Bir noktanin [a,b] dogru PARCASINA (sonsuz dogruya degil) uzakligi. */
-    fun pointToSegment(p: PointF, a: PointF, b: PointF): Float {
-        val dx = b.x - a.x
-        val dy = b.y - a.y
-        val len2 = dx * dx + dy * dy
-        if (len2 == 0f) return hypot(p.x - a.x, p.y - a.y)
-        val t = min(1f, max(0f, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2))
-        return hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
-    }
+    /**
+     * Bir noktanin [a],[b] dogru PARCASINA (sonsuz dogruya degil) uzakligi.
+     *
+     * GOVDESI URUN KODUNDA. Buradaki kopya silindi: oyuncunun ekranda gordugu
+     * "ates hatti yok" isareti ile testlerin olctugu mesafe AYNI fonksiyondan
+     * cikmak zorunda, yoksa test yesil kalirken ekran yalan soyler.
+     */
+    fun pointToSegment(p: PointF, a: PointF, b: PointF): Float =
+        GameConfig.pointToSegmentDistance(p.x, p.y, a.x, a.y, b.x, b.y)
 
-    /** Bir noktanin polylinenin en yakin yerine uzakligi (referans px). */
+    /**
+     * Bir noktanin polylinenin en yakin yerine uzakligi (referans px).
+     *
+     * Rota NORMALIZE gelir, nokta REFERANS px'tir; donusum burada yapilir ve
+     * sonra urun fonksiyonuna TEK uzayda verilir (bkz. `GameConfig`
+     * "BIRIM SOZLESMESI").
+     */
     fun pointToPolyline(pRef: PointF, routeNorm: List<PointF>): Float {
         require(routeNorm.size >= 2) { "rota en az 2 nokta icermeli" }
-        val r = routeNorm.map { toRef(it) }
-        var best = Float.MAX_VALUE
-        for (i in 0 until r.size - 1) {
-            val d = pointToSegment(pRef, r[i], r[i + 1])
-            if (d < best) best = d
-        }
-        return best
+        return GameConfig.distanceToRoutes(pRef.x, pRef.y, listOf(routeNorm.map { toRef(it) }))
     }
 
     /**

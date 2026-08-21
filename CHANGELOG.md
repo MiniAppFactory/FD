@@ -6,6 +6,41 @@ yalan soyleyebiliyorlardi; surum notu artik kodla ayni gecmisi paylasiyor.
 
 ---
 
+## 2026-08-21 — ATES HATTI SINYALI (build oncesi menzil uyarisi)
+
+Cihaz sikayeti: *"gatling topunun yerlesim yerine gore vurus alanini
+kapsamiyor"* (bolum 8, pad 7). Olcum pad'i AKLADI — ayni mevziden Fuze
+Rampasi haritanin en iyi ikinci kapsamasini veriyor (674 ref-px yol),
+Gatling ise menzil sinirinda yetisemiyor. Pad yanlis yerde degil, **yanlis
+kule icin secilmis**; kusur KURMADAN ONCE VERILMEYEN SINYALDE.
+
+- **Kapsama hesabi tek yerde**: `GameConfig.pointToSegmentDistance` /
+  `distanceToRoutes` / `coversRoute`. Cizim, panel ve testler ayni
+  fonksiyondan geciyor; `GeometryTestSupport` kendi kopyasini birakip
+  delege etti (bu depoda ikiz hesap "olu build pad" hatasini 22 bolum
+  boyunca gizlemisti).
+- **Harita**: bir kule karti BASILI iken o kulenin menzili yolu gormeyen
+  pad'ler geri ceker (alfa 0,55 -> 0,22) ve halka + capraz cizgi isareti
+  alir. Renk notr gri: soguk mavi "dost", haki "dusman", altin "secili"
+  ailelerinin hicbirine girmez; anlami tasiyan asil kanal SEKIL.
+- **Kart**: secili mevziden yetismeyen kule fiyatinin yanina rozet alir.
+  Cekmece acik oldugu SURECE gorunur — oyuncunun cogu dokunusu basip-bekleme
+  degil kisa tap ve cihazdaki hata da oyle olustu.
+- **Serit**: kart basili iken sebep cumle olarak yazilir
+  ("Gatling Topu buradan yola yetismiyor."). Mevcut ret seridi ikinci gorev
+  aldi; RET her zaman uyariyi bastirir (kirmizi kontur = sonuc yok, notr
+  gri kontur = sonuc bu).
+- **ENGELLEME YOK**: insa yine gerceklesir. Menzil kalici olarak buyuyor
+  (Gatling kd.1 150 -> kd.2 180 -> kd.3 210) ve meta menzil yukseltmesi var;
+  bugun yetismeyen mevzi bilincli bir plan olabilir.
+
+Kanit: `testDebugUnitTest lintDebug` yesil — 1059 test, 0 basarisiz, 0 lint
+sorunu. `LineOfFireTest` 11 haritanin tam kapsama tablosunu raporluyor;
+`LineOfFireUiTest` 740x360 dp'de EN ve TR icin tasma olmadigini kirpilmamis
+dugum sinirlariyla olcuyor.
+
+---
+
 ## 2026-08-19 — Faz 20 · ekip toplantisi turu (7 commit)
 
 Toplanti kapsami: kod, oynanabilirlik, hikaye, oyun ekonomisi, gorseller.

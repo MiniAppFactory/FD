@@ -1,6 +1,7 @@
 package com.miniappfactory.frontlinedefender.game.ui
 
 import androidx.compose.animation.*
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -21,7 +22,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -104,6 +107,36 @@ fun TowerBuildBar(
     val towerCount by gameEngine.towerCount.collectAsState()
     val haptics = rememberHaptics()
 
+    // ATES HATTI: secili mevziden hangi kule yola yetisiyor?
+    //
+    // Neden kart rozeti VE haritadaki isaret birlikte: haritadaki isaret
+    // yalnizca kart BASILI iken cizilir (bkz. `GameCanvas.drawBuildSpots`), ama
+    // oyuncunun cogu dokunusu basip-birakma degil KISA TAP — cihazdaki hata da
+    // oyle olustu. Rozet cekmece acik oldugu SURECE durur, yani "bu kule
+    // buradan yola yetismiyor" bilgisi kurma anindan ONCE ekranda olur.
+    //
+    // BIRIM: `selectedBuildSpot` ve `scaledRoutes` EKRAN pikselinde, menzil de
+    // `previewRangeRef * renderScale` ile ekran pikseline cevriliyor
+    // (`GameConfig` "BIRIM SOZLESMESI").
+    val selectedSpotId = selectedBuildSpot?.id
+    val noReach: Set<GameConfig.TowerType> =
+        remember(selectedSpotId, levelId, gameEngine.renderScale) {
+            val spot = selectedBuildSpot
+            val routes = gameEngine.scaledRoutes
+            if (spot == null || routes.isEmpty()) {
+                emptySet()
+            } else {
+                GameConfig.TowerType.values().filterNotTo(mutableSetOf()) { type ->
+                    GameConfig.coversRoute(
+                        spot.normX,
+                        spot.normY,
+                        gameEngine.previewRangeRef(type) * gameEngine.renderScale,
+                        routes
+                    )
+                }
+            }
+        }
+
     AnimatedVisibility(
         visible = selectedBuildSpot != null,
         enter = slideInVertically { it } + fadeIn(),
@@ -153,6 +186,7 @@ fun TowerBuildBar(
                     TowerBuildCard(
                         spec = spec,
                         rejection = rejection,
+                        noLineOfFire = towerType in noReach,
                         onBuild = {
                             if (rejection == null) {
                                 // HAPTIK, SES VE GORSEL AYNI KAREDE. Titresim
@@ -217,10 +251,19 @@ fun TowerBuildBar(
     }
 }
 
+/**
+ * @param noLineOfFire Bu kule SECILI mevziden yola yetismiyor mu? Bir RET
+ *   DEGILDIR — kart tiklanabilir kalir ve insa gerceklesir. Sebep: menzil
+ *   kalici olarak buyuyor (Gatling kd.1 150 -> kd.2 180 -> kd.3 210) ve meta
+ *   menzil yukseltmesi var; bugun yetismeyen mevzi bilincli bir plan olabilir.
+ *   Bu yuzden rozet bir engel etiketi ([rejection]) gibi ikinci satiri
+ *   GASPETMEZ, fiyatin yanina oturur: fiyat da gorunur kalir.
+ */
 @Composable
 private fun TowerBuildCard(
     spec: GameConfig.TowerStats,
     rejection: GameEngine.BuildRejection?,
+    noLineOfFire: Boolean,
     onBuild: () -> Unit,
     onPreview: (Boolean) -> Unit,
     modifier: Modifier = Modifier
@@ -335,6 +378,12 @@ private fun TowerBuildCard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
+                    // ATES HATTI ROZETI — fiyatin SOLUNDA, fiyati ITMEDEN.
+                    // Ikinci satiri gaspetmedigi icin kart yuksekligi
+                    // degismez; `BUILD_DRAWER_HEIGHT_DP` capasi kayarsa
+                    // GameCanvas'in ortulen-secim hayaleti sessizce yanlis
+                    // yere duserdi (bkz. Surface KDoc'u).
+                    if (noLineOfFire) NoLineOfFireBadge()
                     // TEDARIK glifi, COIN degil: insa bedeli savas ici TEDARIK
                     // ile odeniyor. Buraya kadar coin glifi cizildigi icin
                     // oyuncuya yanlis para birimi gosteriliyordu. (Meta para
@@ -359,6 +408,58 @@ private fun TowerBuildCard(
 }
 
 /**
+ * ATES HATTI ROZETI — halka + capraz cizgi.
+ *
+ * SEKIL, HARITADAKI ISARETIN AYNISI (`GameCanvas.drawNoLineOfFireMark`). Panel
+ * ile harita ayni sekli kullanmasaydi oyuncunun iki ayri sembolu ayri ayri
+ * ogrenmesi gerekirdi; simdi karttaki rozet ile haritada geri cekilen pad
+ * tek bir cumleyi soyluyor.
+ *
+ * METIN DEGIL CIZIM: dar kartta metin icin yer yok (4 kart 740x360 dp'de
+ * weight(1f) ile bolusuyor) ve rozet 12 dp'de her yazi olceginde ayni
+ * kaliyor — sistem yazi olcegi buyudugunde tasan bir etiket olmaz. Anlam
+ * ekran okuyucuya `build_no_reach_desc` ile ayrica veriliyor.
+ *
+ * RENK NOTR GRI: soguk mavi "bu benim" (kule taban plakasi), haki "bu dusman",
+ * altin "bu secili". Uyariya bu uc aileden bir renk vermek mevcut bir anlami
+ * bozardi; doygunlugu ~0 olan gri hicbir aileye ait degil.
+ */
+@Composable
+private fun NoLineOfFireBadge() {
+    val desc = stringResource(R.string.build_no_reach_desc)
+    Canvas(
+        modifier = Modifier
+            .size(12.dp)
+            .semantics { contentDescription = desc }
+            .testTag("build_no_reach_badge")
+    ) {
+        val r = size.minDimension / 2f - NO_REACH_BADGE_STROKE_PX / 2f
+        val c = Offset(size.width / 2f, size.height / 2f)
+        drawCircle(
+            color = NoLineOfFireGray,
+            radius = r,
+            center = c,
+            style = Stroke(width = NO_REACH_BADGE_STROKE_PX)
+        )
+        // 45 derece capraz; uclar halkanin ICINDE kalsin diye yaricap
+        // 1/sqrt(2) ile carpilir, yoksa isaret kirik gorunur.
+        val d = r * 0.7071f
+        drawLine(
+            color = NoLineOfFireGray,
+            start = Offset(c.x - d, c.y - d),
+            end = Offset(c.x + d, c.y + d),
+            strokeWidth = NO_REACH_BADGE_STROKE_PX
+        )
+    }
+}
+
+/** Rozetin cizgi kalinligi (px). 12 dp'lik cizimde 1,6 px okunur en ince deger. */
+private const val NO_REACH_BADGE_STROKE_PX = 1.6f
+
+/** Rozet ve serit konturunun notr grisi — GameCanvas isaretiyle AYNI aile. */
+private val NoLineOfFireGray = Color(0xFFE8EAE6)
+
+/**
  * ---------------------------------------------------------------------------
  * INSA RET SERIDI — "reddedilen bir insa sessiz olamaz"
  * ---------------------------------------------------------------------------
@@ -376,6 +477,23 @@ private fun TowerBuildCard(
  *
  * Yerlesim `GameConfig.BUILD_DRAWER_HEIGHT_DP`den turetilir: cekmece bir gun
  * buyurse serit onunla birlikte yukari kayar, altinda kalmaz.
+ *
+ * ---------------------------------------------------------------------------
+ * IKINCI GOREV — ATES HATTI UYARISI (bir RET DEGIL)
+ * ---------------------------------------------------------------------------
+ * Bir kart BASILI tutuldugunda, o kule secili mevziden yola yetismiyorsa
+ * ayni serit sebebi YAZAR: *"Gatling Topu buradan yola yetismiyor."*
+ * Karttaki rozet ve haritadaki isaret "bir sey var" der; cumleyi soyleyen yer
+ * burasi.
+ *
+ * NEDEN AYRI BIR SERIT DEGIL: ayni ekran yerine iki ayri kutu koymak, ikisi
+ * ayni anda acildiginda ust uste binerdi. Tek kutu ayrica onceligi ZORUNLU
+ * kilar — asagida ret her zaman kazanir.
+ *
+ * ONCELIK (geri bildirim hiyerarsisi): RET > UYARI. Ret, dokunusun SONUCSUZ
+ * kaldigini soyler ve cevapsiz birakilamaz; uyari ise gerceklesecek bir
+ * eylemin sonucunu anlatir. Ikisi ayni agirlikta gosterilirse hicbiri
+ * okunmaz. Kontur rengi de ayrisir: ret kirmizi, uyari notr gri.
  */
 @Composable
 fun BuildRejectionStrip(
@@ -384,6 +502,8 @@ fun BuildRejectionStrip(
 ) {
     val notice by gameEngine.buildRejection.collectAsState()
     val levelId by gameEngine.currentLevelId.collectAsState()
+    val selectedSpot by gameEngine.selectedBuildSpot.collectAsState()
+    val previewType by gameEngine.previewTowerType.collectAsState()
 
     // Gorunurluk `notice`in KENDISINDEN degil yerel bir bayraktan gelir:
     // ayni sebep ust uste geldiginde serit yeniden acilmali (notice.serial
@@ -400,7 +520,37 @@ fun BuildRejectionStrip(
     LaunchedEffect(levelId) { shownSerial = 0L }
 
     val current = notice?.takeIf { it.serial == shownSerial && shownSerial != 0L }
-    val text = current?.let { rejectionMessage(it, gameEngine.levelSpec) }
+    val rejectionText = current?.let { rejectionMessage(it, gameEngine.levelSpec) }
+
+    // ATES HATTI UYARISI — yalnizca RET YOKKEN. Ayni mevzide bir kart basili
+    // tutuluyorsa ve o kule yola yetismiyorsa cumleyi yazar.
+    //
+    // ONBELLEKLENMEZ (`remember` YOK): serit yalnizca kart basili oldugu kisa
+    // sure boyunca yasar ve hesap birkac yuz mesafe carpimidir — kare
+    // dongusunde degil, RECOMPOSITION'da kosar. Onbellege alsaydik anahtara
+    // `renderScale`i de koymak gerekirdi (cihaz donunce ekran pikseli olcegi
+    // degisir) ve bayat bir cevap gosterme riski dogardi. BIRIM: pad + rota
+    // ekran pikseli, menzil de oyle.
+    val reachText: String? = run {
+        val spot = selectedSpot
+        val type = previewType
+        if (rejectionText != null || spot == null || type == null) return@run null
+        val routes = gameEngine.scaledRoutes
+        if (routes.isEmpty()) return@run null
+        val covers = GameConfig.coversRoute(
+            spot.normX,
+            spot.normY,
+            gameEngine.previewRangeRef(type) * gameEngine.renderScale,
+            routes
+        )
+        if (covers) null else type
+    }?.let { stringResource(R.string.build_no_line_of_fire, stringResource(it.nameRes())) }
+
+    val text = rejectionText ?: reachText
+    // KONTUR RENGI SEBEBI AYIRIR: kirmizi = dokunusun sonucu YOK (ret),
+    // notr gri = dokunus calisir ama sonucu bu (uyari). Ayni kutu iki farkli
+    // agirlikta konusabilmeli, yoksa oyuncu ikisini de ayni sekilde okur.
+    val isAdvisory = rejectionText == null && reachText != null
 
     AnimatedVisibility(
         visible = text != null,
@@ -411,12 +561,21 @@ fun BuildRejectionStrip(
         Box(
             modifier = Modifier
                 .padding(bottom = GameConfig.BUILD_DRAWER_HEIGHT_DP.dp + 10.dp)
+                // 300 dp tavan: 740x360 dp yatayda ekranin %40'i. Metin buna
+                // sigmazsa AutoShrinkText once punto dusurur, sonra IKINCI
+                // SATIRA sarar — kirpma yok, tasma yok. En uzun ceviri
+                // ("Fuze Rampasi buradan yola yetismiyor.") bu tavanda
+                // olculdu, bkz. LineOfFireUiTest.
                 .widthIn(max = 300.dp)
                 .clip(RoundedCornerShape(10.dp))
                 .background(SleekSurfaceHeader.copy(alpha = 0.94f))
-                .border(1.dp, SleekRedBorder, RoundedCornerShape(10.dp))
+                .border(
+                    1.dp,
+                    if (isAdvisory) NoLineOfFireGray else SleekRedBorder,
+                    RoundedCornerShape(10.dp)
+                )
                 .padding(horizontal = 12.dp, vertical = 7.dp)
-                .testTag("build_rejection_caption")
+                .testTag(if (isAdvisory) "build_reach_caption" else "build_rejection_caption")
         ) {
             AutoShrinkText(
                 text = text.orEmpty(),
