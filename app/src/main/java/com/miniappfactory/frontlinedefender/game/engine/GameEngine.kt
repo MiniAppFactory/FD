@@ -182,10 +182,19 @@ internal object GameFeel {
      * ANDA. Pencerenin buyumesi bu sayede bir hataya degil, gercek bir
      * bombardiman kosusuna donusuyor.
      *
-     * 1,10 sn ~66 kare: ucak sahayi gozle takip edilebilir bir hizda geciyor,
-     * bombalar sirayla iniyor ve olay bir "kosu" olarak okunmaya devam ediyor.
+     * ⚠ 1,10 -> 1,80 sn (2026-08-21). 1,10 MASA BASINDA yeterli gorunuyordu
+     * (~66 kare) ama cihazda degildi: *"geldi ama hala cok hizli gecti ucak,
+     * biraz yavaslatmak lazim oyuncu gorsun ucagi."*
+     *
+     * Sayiyi ikinci kez de OLCUMLE degil GERI BILDIRIMLE seciyorum ve bu
+     * dogru olan: "kare sayisi yeterli" bir hesap, "ucagi gordum" bir
+     * ALGI. Ikincisini yalnizca oynayan soyleyebilir.
+     *
+     * 1,80 sn ~108 kare. Hasar ucusa YAYILI oldugu icin (bkz. PendingStrike)
+     * pencerenin uzamasi bir ayrisma yaratmiyor: bombalar hala ucak tam
+     * ustlerinden gecerken iniyor.
      */
-    const val AIR_STRIKE_RUN_SECONDS = 1.10f
+    const val AIR_STRIKE_RUN_SECONDS = 1.80f
 
     /** Ucagin sahadan cikisi + duman izinin sonme kuyrugu. */
     const val AIR_STRIKE_TAIL_SECONDS = 0.30f

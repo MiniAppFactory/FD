@@ -175,7 +175,18 @@ fun BoosterRail(
     // ekranlarinda yok: acceptsBattlefieldInput() ile ayni kapi, cunku
     // GameEngine.applyBoosterActivation da tam olarak bu kapiya bakiyor.
     val visible = gameState == GameState.PREPARATION || gameState == GameState.WAVE_RUNNING
-    val types = remember(levelId) { boostersAvailableAt(levelId) }
+    // ⛔ ESKIDEN `boostersAvailableAt(levelId)` IDI: kilitli guclendirici HIC
+    // cizilmiyordu. Gerekce "konumsal kararlilik"ti — Hava Destegi bolum 4'te
+    // acilinca Acil Tedarik'in yeri kipirdamasin.
+    //
+    // Amac dogruydu, yontem degildi. Cihaz raporu: *"hava destegi calismiyor,
+    // ucak ikonu cikmadi"* — oyuncu bolum 4'ten once o seyin VAR OLDUGUNU bile
+    // bilmiyordu ve ozelligi BOZUK sandi. Gizlemek, ogretmenin ziddi.
+    //
+    // Kilitli kutucuk artik CIZILIYOR (sonuk, "BOLUM 4" yazili). Bu, konumsal
+    // kararliligi de DAHA IYI sagliyor: yuva bolum 1'den beri orada duruyor,
+    // yani acildiginda hicbir sey kaymiyor — eskiden liste buyuyordu.
+    val types = remember { BoosterType.entries.filter { it.enabled } }
     if (!visible || types.isEmpty()) return
 
     val haptics = rememberHaptics()
@@ -393,6 +404,8 @@ private fun blockedMessage(decision: BoosterDecision, type: BoosterType): String
     // Rezerv kilidi ile "coin yetmiyor" AYNI gorunmez: biri bakiye sorunu,
     // digeri soft-lock garantisinin bilincli korumasi.
     is BoosterDecision.ReserveLocked -> stringResource(R.string.booster_msg_reserve)
+    is BoosterDecision.Locked ->
+        stringResource(R.string.booster_msg_locked, decision.requiredLevel)
     is BoosterDecision.NoEffect -> when (type) {
         BoosterType.AIR_SUPPORT -> stringResource(R.string.booster_msg_no_targets)
         else -> stringResource(R.string.booster_msg_no_repair)
@@ -584,6 +597,9 @@ private fun chipText(
     decision is BoosterDecision.InsufficientCoins ->
         stringResource(R.string.booster_chip_short, decision.shortfall)
     decision is BoosterDecision.ReserveLocked -> stringResource(R.string.booster_chip_reserve)
+    // Kilit: oyuncu NE ZAMAN acilacagini gormeli, yoksa kutucuk "bozuk" okunur.
+    decision is BoosterDecision.Locked ->
+        stringResource(R.string.booster_chip_locked, decision.requiredLevel)
     // ⛔ BURASI "BITTI" YAZIYORDU VE OYUNCUYA YALAN SOYLUYORDU.
     //
     // Cihaz raporu: *"hava destegi calismiyor, butonu gelmiyor"*. Sebep bu

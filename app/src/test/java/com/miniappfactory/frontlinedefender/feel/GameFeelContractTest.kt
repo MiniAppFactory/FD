@@ -140,19 +140,31 @@ class GameFeelContractTest {
      * Fark: sinir gevsetilmedi, sinirin OLCTUGU SEY degisti. Onceki premiste
      * 0,6 dogru sayiydi; premis dusunce sinirin de dusmesi gerekirdi.
      *
-     * UST SINIR YINE DE VAR ve baska bir seyi koruyor: oyuncu bedelini oder
-     * odemez sonucu gormeli. 1,5 sn'yi asan bir kosu, satin alma ile sonuc
-     * arasina oyuncunun bekledigi bir bosluk koyar.
+     * UST SINIR YINE DE VAR ama NE KORUDUGU 21 Agustos'ta bir kez daha
+     * degisti; guncel gerekce ve sayi testin GOVDESINDE yaziyor.
+     *
+     * Buraya sayi YAZILMIYOR: ayni deger iki yerde durursa biri bayatlar ve
+     * bu depoda tam o kalip defalarca cikti (actLabelRes, BOSS_LEVEL_IDS,
+     * L19 pad sayisi, guclendirici cipi...).
      *
      * ALT SINIR DEGISMEDI: birkac kareden kisa bir pencere SIRA olusturmaz,
      * tek puf gorunur — kullanicinin "bir sey gelmedi sanki" dedigi durum.
      */
     @Test
     fun airStrikeChainWindowReadsAsOneRunWithoutMakingThePlayerWait() {
+        // ⚠ TAVAN 1,5 -> 2,2 sn (2026-08-21). 1,5'i ben tahminle koymustum
+        // ("odeme ile sonuc arasina bekleme girmesin") ve cihaz onu curuttu:
+        // 1,10 sn'de oyuncu ucagi HALA goremiyordu. Yani gercek risk
+        // "beklemek" degil, GORMEMEKTI — bir guclendiriciye odeme yapip
+        // hicbir sey olmadigini sanmak.
+        //
+        // Tavan tamamen kalkmadi: 2,2 sn'yi asan bir kosu, oyuncunun bir
+        // sonraki karari (kule kurma/yukseltme) ile arasina gercek bir olu
+        // zaman koyar. Sinir hala var, yalnizca DOGRU yerde.
         assertTrue(
-            "Zincir penceresi (${GameFeel.AIR_STRIKE_RUN_SECONDS} sn) 1,5 sn'yi gecerse " +
-                "oyuncu odedigi seyin sonucunu beklemeye baslar",
-            GameFeel.AIR_STRIKE_RUN_SECONDS <= 1.5f
+            "Zincir penceresi (${GameFeel.AIR_STRIKE_RUN_SECONDS} sn) 2,2 sn'yi gecerse " +
+                "oyuncunun bir sonraki karariyla arasina olu zaman girer",
+            GameFeel.AIR_STRIKE_RUN_SECONDS <= 2.2f
         )
         assertTrue(
             "Pencere en az birkac kare olmali, yoksa SIRA olusmaz ve tek puf gorunur",

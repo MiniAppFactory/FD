@@ -73,7 +73,9 @@ class BoosterChipStringsTest {
             // NoEffect ayristirildi (cihaz raporu: "hava destegi butonu gelmiyor").
             // Ayni yuvayi paylastiklari icin genislik butcesi bunlara da isler.
             "booster_chip_no_target",
-            "booster_chip_base_full"
+            "booster_chip_base_full",
+            // Kilitli kutucuk artik ciziliyor; ayni yuvayi paylasiyor.
+            "booster_chip_locked"
         )
 
         /**

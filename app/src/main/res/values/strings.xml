@@ -327,6 +327,8 @@
     <string name="booster_chip_no_target">NO TARGET</string>
     <string name="booster_chip_base_full">FULL HP</string>
     <string name="booster_chip_reserve">RESERVE</string>
+    <string name="booster_chip_locked">LVL %1$d</string>
+    <string name="booster_msg_locked">Unlocks at level %1$d</string>
 
     <string name="booster_msg_armed">Tap again to confirm</string>
     <string name="booster_msg_need_supply">Need %1$d more supply</string>
