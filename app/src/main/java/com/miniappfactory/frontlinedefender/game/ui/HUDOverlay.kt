@@ -66,7 +66,20 @@ fun HUDOverlay(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 10.dp),
+                // DIKEY BOSLUK 10 -> 6 dp (cihaz geri bildirimi: "oyun alani
+                // kucuk"). HUD 56 -> 48 dp.
+                //
+                // Neden bedeli buyuk: `GameScreen` bu Surface'in OLCULEN
+                // yuksekligini `topInsetPx` olarak `GameCanvas`'a veriyor ve
+                // harita orada FIT + letterbox yerlesiyor. Yani cubuktan
+                // kirpilan her dp yalnizca tepeden kazanilmiyor — harita
+                // en-boy oranini korudugu icin TAMAMI buyuyor ve yanlardaki
+                // siyah bantlar daraliyor.
+                //
+                // Dokunma hedeflerine DOKUNULMADI (dugmeler 36 dp): bosluk
+                // kirpmak geri alinabilir bir yerlesim karari, dokunma hedefi
+                // kucultmek ise erisilebilirlik borcudur.
+                .padding(horizontal = 16.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -130,6 +143,28 @@ fun HUDOverlay(
                             id = R.drawable.spr_ic_supply_crate,
                             size = 16.dp,
                             contentDescription = stringResource(R.string.hud_supply_icon_desc)
+                        )
+                        // KELIMEYLE "TEDARIK" — cihaz geri bildirimi: oyuncu bu
+                        // sayiyi COIN sandi ("oyun disinda 1420 coin yaziyor,
+                        // oyun icinde ayri bir para isliyor neden?").
+                        //
+                        // Ikon ayrimi (sandik vs coin) TEK BASINA yetmedi ve
+                        // yetmemesi sasirtici degil: iki para birimi de sari,
+                        // ikisi de ayni kosede, ve oyuncu 16 dp'lik bir glifi
+                        // incelemiyor. Bolum secim ekranindaki cip zaten
+                        // "COIN 1420" diye YAZIYOR (`level_coin_label`); savas
+                        // rozetinin yalin sayi olmasi asimetrikti.
+                        //
+                        // `SUPPLY`/`TEDARIK` cevrilebilir (COIN'in aksine):
+                        // "Coin" bir marka/para birimi adi, "Tedarik" ise bir
+                        // kaynak adi ve Turkcesi var.
+                        Text(
+                            text = stringResource(R.string.hud_supply_label),
+                            color = SleekGold,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 10.sp,
+                            maxLines = 1,
+                            modifier = Modifier.testTag("supply_label")
                         )
                         Text(
                             text = stringResource(R.string.hud_supply_amount, gold),

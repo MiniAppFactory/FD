@@ -15,6 +15,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.miniappfactory.frontlinedefender.game.ads.AdMobAdHost
 import com.miniappfactory.frontlinedefender.game.ui.BiomeBackgroundCache
 import com.miniappfactory.frontlinedefender.game.ui.GameScreen
@@ -80,6 +82,41 @@ class MainActivity : ComponentActivity() {
             statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT)
         )
+
+        // TAM EKRAN (immersive) — SISTEM CUBUKLARI GIZLENIR.
+        //
+        // ## Neden bu, "insetleri kaldiralim" DEGIL
+        // Yukaridaki `windowInsetsPadding(safeDrawing)` gercek bir hatayi
+        // kapatti: cubuklar HUD'in USTUNE biniyordu (cihazda goruldu — saat
+        // "DALGA 1/6" rozetinin, wifi/pil simgeleri "1x" dugmesinin uzerine
+        // dusuyordu ve ikisi de okunmuyordu). O padding'i geri almak, kazanilan
+        // yerin bedelini OKUNAMAYAN HUD olarak oderdi.
+        //
+        // Cubuklari GIZLEMEK ise ayni yeri kazandirir ve carpismayi geri
+        // getirmez: gizli cubugun ineti sifirdir, yani `safeDrawing` kendi
+        // kendine kuculur ve `MainActivity` disindaki hicbir dosya bu karardan
+        // haberdar olmak zorunda kalmaz. Ekran KESIGI insetleri ise `safeDrawing`
+        // icinde DURMAYA devam eder — kesik gizlenemez, HUD onun altina
+        // girmemeli.
+        //
+        // ## Neden yatay oyunda kazanc buyuk
+        // Oyun `sensorLandscape` ve yuzey ~360 dp yuksekliginde. Durum cubugu
+        // tek basina bunun ~%7'si; yanda gezinme cubugu da var. Harita
+        // `GameCanvas` icinde FIT + letterbox yerlesiyor, yani kaybedilen her
+        // dp yalnizca tepeden kirpmiyor, haritanin TAMAMINI kucultup yanlarda
+        // siyah bant aciyor.
+        //
+        // ## BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        // Cubuklar yok olmaz, ERISILEBILIR kalir: kenardan kaydirinca gecici
+        // olarak gelir ve kendiliginden tekrar gizlenir. Oyuncu saate/pile
+        // bakabilir, geri gidebilir. Kalici gizleme (`BEHAVIOR_DEFAULT`)
+        // kullanilmadi cunku gezinme cubugunu kalici gizlemek geri hareketini
+        // ogrenilmesi gereken bir sirra cevirir.
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            hide(WindowInsetsCompat.Type.systemBars())
+            systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
 
         // UMP riza + SDK baslatma + on-yukleme. Oyunu BLOKLAMAZ: bu cagri
         // aninda doner, sonuc callback ile gelir ve `setContent` beklemez.
@@ -147,6 +184,35 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+        }
+    }
+
+    /**
+     * TAM EKRANI GERI AL — bu override OLMADAN kazanc TEK SEFERLIK olur.
+     *
+     * `hide()` kalici bir mod degil, tek seferlik bir emirdir. Pencere odagi
+     * kaybedip geri aldiginda sistem cubuklari GERI GELIR. Bu oyunda odagin
+     * kaybedildigi yer istisna degil KURAL:
+     *
+     *   - her odullu/gecis reklami (tam ekran, ayri Activity),
+     *   - UMP riza formu,
+     *   - bildirim panelini acip kapatma,
+     *   - uygulama degistirip geri donme.
+     *
+     * Yani bu satirlar olmasaydi ilk reklamdan sonra cubuklar temelli geri
+     * gelir ve oyuncu "duzeltme calismiyor" derdi — depodaki "kod var, cagiran
+     * yok" hatasinin odak-olayli akrabasi.
+     *
+     * `hasFocus` kapisi bilincli: odak YOKKEN gizlemeye calismak (ornegin
+     * reklam onde iken) reklamin kendi pencere ayarlariyla yarisir.
+     */
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (!hasFocus) return
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            hide(WindowInsetsCompat.Type.systemBars())
+            systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
     }
 

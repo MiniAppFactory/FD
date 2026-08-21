@@ -18,6 +18,7 @@
     <string name="hud_wave_label">DALGA %1$d/%2$d</string>
     <string name="hud_prep_timer">(%1$d sn)</string>
     <string name="hud_supply_icon_desc">Tedarik</string>
+    <string name="hud_supply_label">TEDARİK</string>
     <string name="hud_supply_amount">%1$d</string>
     <string name="hud_lives_icon_desc">Üs bütünlüğü</string>
     <string name="hud_lives_value">%1$d/%2$d</string>

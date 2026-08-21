@@ -53,13 +53,51 @@ class AudioManager(context: Context) {
         @RawRes val res: Int,
         val gain: Float = 1f,
         val minIntervalMs: Long = 0L,
-        val pitchVary: Boolean = true
+        val pitchVary: Boolean = true,
+        /**
+         * SABIT hiz carpani — [pitchVary]'nin rastgele sapmasinin USTUNE biner.
+         *
+         * Ayni ornegi farkli bir OLAY olarak duyurmak icin var: 1'in altindaki
+         * bir deger sesi kalinlastirip yavaslatir. `SoundPool` gecerli araligi
+         * 0,5..2,0 oldugu icin [pitchVary] ile carpimi da o aralikta kalmali.
+         */
+        val baseRate: Float = 1f
     ) {
         MACHINE_GUN(R.raw.sfx_machine_gun, gain = 0.9f, minIntervalMs = 70L),
         CANNON_BOOM(R.raw.sfx_cannon),
         MISSILE_LAUNCH(R.raw.sfx_missile_launch),
         FROST_PULSE(R.raw.sfx_energy_zap, gain = 0.8f, minIntervalMs = 90L),
         ENEMY_HIT(R.raw.sfx_enemy_hit, gain = 0.9f, minIntervalMs = 60L),
+
+        /**
+         * PIYADE OLUMU — kendi sesi.
+         *
+         * ## Duzeltilen hata (cihaz geri bildirimi 2026-08-21)
+         * `onEnemyKilled` HER olumde KOSULSUZ [COIN_EARNED] caliyordu, yani
+         * piyade olumunun sesi coin "ding"iydi. Ustune [pitchVary] binince
+         * saniyede 4-6 kez calan, perdesi rastgele oynayan parlak bir tinlama
+         * cikiyordu; oyuncunun tarifi: "cocuk sesi veya ziplama gibi".
+         *
+         * Bu, bu depodaki "ayni ses iki farkli olayi anlatiyor" hatasinin
+         * UCUNCU tekrari — `WAVE_CLEARED` ayni sebeple COIN_EARNED'dan
+         * ayrilmisti (bkz. GameEngine, "Faz 14 SES AYRIMI").
+         *
+         * ## Neden yeni dosya degil
+         * Ornek [ENEMY_HIT] ile AYNI (`sfx_enemy_hit`) ama [baseRate] 0,82 ile
+         * kalinlastirilmis ve kisilmis: isabet "tak", olum "tok" olur. Ayni
+         * ailenin iki uyesi gibi duyulmalari DOGRU — ikisi de ayni dusmana ait
+         * fiziksel bir olay. Ayri bir asset uretmek de gecerli bir karardi;
+         * kullanici mevcut sesle cozulmesini secti.
+         *
+         * `minIntervalMs` [ENEMY_HIT]'inkinden (60) DUSUK degil: olum isabetten
+         * daha seyrek ama daha onemli, kisilmasi gereken taraf isabet.
+         */
+        INFANTRY_DOWN(
+            R.raw.sfx_enemy_hit,
+            gain = 0.75f,
+            minIntervalMs = 55L,
+            baseRate = 0.82f
+        ),
         EXPLOSION(R.raw.sfx_explosion_medium, minIntervalMs = 55L),
         EXPLOSION_HEAVY(R.raw.sfx_explosion_heavy, minIntervalMs = 90L),
         VEHICLE_DESTROYED(R.raw.sfx_vehicle_destroyed, minIntervalMs = 80L),
@@ -397,7 +435,13 @@ class AudioManager(context: Context) {
         }
 
         val v = effect.gain.coerceIn(0f, 1f)
-        val rate = if (effect.pitchVary) 0.94f + Random.nextFloat() * 0.12f else 1f
+        // Sabit carpan (kimlik) x rastgele sapma (dogallik). `coerceIn`
+        // SoundPool'un gecerli araligini garanti eder: aralik disi bir hiz
+        // sessizce hicbir sey CALMAZ, yani hata duyulmaz ve fark edilmezdi.
+        val rate = (
+            effect.baseRate *
+                if (effect.pitchVary) 0.94f + Random.nextFloat() * 0.12f else 1f
+            ).coerceIn(0.5f, 2.0f)
         pool.play(sampleId, v, v, 1, 0, rate)
     }
 

@@ -21,9 +21,17 @@
 
     ISTISNA (Faz 12): Us Tamiri guclendiricisi savas ICINDE Coin harcar,
     dolayisiyla fiyati savas ekraninda gorunur. Karismamasi icin o fiyat
-    IKONLA DEGIL "COIN" kelimesiyle yazilir (bkz. booster_chip_price_coin);
-    savas HUD'indaki Tedarik rozeti zaten bir coin glifi (spr_ic_coins)
-    kullaniyor ve iki para birimi ayni ikonla gosterilemez.
+    IKONLA DEGIL "COIN" kelimesiyle yazilir (bkz. booster_chip_price_coin).
+
+    DUZELTME (2026-08-21): bu notun onceki hali "savas HUD'indaki Tedarik
+    rozeti zaten bir coin glifi (spr_ic_coins) kullaniyor" diyordu. BAYATTI —
+    rozet artik `spr_ic_supply_crate` (sandik) cizer ve gerekcesi
+    HUDOverlay.kt'de yazili. Yorum, ikonun degistigi commit'te guncellenmedi.
+
+    AYRICA (2026-08-21, cihaz geri bildirimi): ikon ayrimi tek basina
+    yetmiyordu — oyuncu savastaki Tedarik sayisini Coin sandi. Iki rozet de
+    artik KELIMEYLE etiketli: menude "COIN" (level_coin_label), savasta
+    "TEDARIK" (hud_supply_label).
 -->
 <resources>
     <!-- Uygulama adi bir MARKA adidir, cevrilmez: launcher'da, Play kaydinda ve
@@ -43,6 +51,10 @@
     <!-- Hazirlik geri sayimi, saniye -->
     <string name="hud_prep_timer">(%1$ds)</string>
     <string name="hud_supply_icon_desc">Supply</string>
+    <!-- Savas ici kaynagin ADI. Coin DEGIL — bkz. dosya basindaki not.
+         KISA TUTULMALI: HUD satiri 740x360 dp yatayda zaten dolu ve ortadaki
+         dalga onizleme seridi ARTAN yeri aliyor. -->
+    <string name="hud_supply_label">SUPPLY</string>
     <string name="hud_supply_amount">%1$d</string>
     <string name="hud_lives_icon_desc">Base integrity</string>
     <!-- %1$d = kalan can, %2$d = azami can -->

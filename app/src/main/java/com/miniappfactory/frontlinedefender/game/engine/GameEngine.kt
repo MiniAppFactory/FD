@@ -2472,8 +2472,33 @@ class GameEngine(
                     else -> GameFeel.HIT_STOP_VEHICLE_KILL
                 }
             )
+        } else {
+            // PIYADE OLUMU — kendi sesi (bkz. SoundEffect.INFANTRY_DOWN).
+            audioManager.playSound(AudioManager.SoundEffect.INFANTRY_DOWN)
         }
-        audioManager.playSound(AudioManager.SoundEffect.COIN_EARNED)
+
+        // ⚠ BURADA COIN_EARNED CALINMAZ — ve bu bir eksiklik DEGIL, duzeltme.
+        //
+        // Eskiden bu satirda kosulsuz `COIN_EARNED` vardi: her dusman olumu
+        // coin "ding"i cikariyordu. Iki ayri sey yanlisti:
+        //
+        //  1. YANLIS OLAY. Olum bir CARPISMA; coin sesi bir KAZANC bildirimi.
+        //     Ustelik olumun verdigi sey Tedarik, Coin DEGIL (iki ayri para
+        //     birimi, bkz. EconomyConfig) — yani ses oyuncuya yanlis kesenin
+        //     doldugunu soyluyordu.
+        //  2. YANLIS HIS. Saniyede 4-6 kez calan, `pitchVary` ile perdesi
+        //     oynayan parlak bir tinlama. Cihaz geri bildirimi: "cocuk sesi
+        //     veya ziplama gibi bir ses cikiyor neden?"
+        //
+        // Ayni hata bu dosyada UCUNCU kez: `WAVE_CLEARED` de ayni sebeple
+        // COIN_EARNED'dan ayrilmisti ("bir dusman oldu" ile "dalga temizlendi"
+        // kulakta AYNI olaydi). Desen net — COIN_EARNED yalnizca GERCEKTEN
+        // coin girdiginde calmali.
+        //
+        // Kazanc geri bildirimi kaybolmadi: yuzen "+Ng" yazisi ve zincir
+        // (kill-streak) kademeleri asagida duruyor, ve zincir kademe
+        // atladiginda COMBO_UP_* calar. Yani tirmanan bir ses var, sabit bir
+        // ding degil.
 
         // --------------------------------------------------------------------
         // ZINCIR (kill-streak).

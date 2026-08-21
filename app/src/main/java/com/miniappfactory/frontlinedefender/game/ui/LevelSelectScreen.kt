@@ -525,10 +525,43 @@ private fun LevelCard(
     isNext: Boolean,
     onClick: () -> Unit
 ) {
+    // TAMAMLANMIS BOLUM ARTIK KENDI RENGINDE.
+    //
+    // ## Duzeltilen hata (cihaz geri bildirimi 2026-08-21)
+    // "Bitirdigim bolumler koyu, haritada nerede oldugumuz tam belli olmuyor."
+    // Haklıydi: kart yalnizca IKI durum ayirt ediyordu — kilitli / acik. Yani
+    // 30 bolum bitirmis bir oyuncunun bitirdigi 30 kart ile daha hic
+    // dokunmadigi ama acik olan kart AYNI koyu zemini (0xCC1E2A18) ve AYNI
+    // soluk yesil cercevesi paylasiyordu. "Nerede kaldim" sorusunun cevabi
+    // yalnizca altin renkli TEK "siradaki" kartta duruyordu; ondan onceki
+    // ilerleme gorunmuyordu.
+    //
+    // Artik UC durum var ve ucu de OYUNUN yesil ailesinden:
+    //   kilitli      -> neredeyse siyah, soluk         (gecilmemis)
+    //   TAMAMLANMIS  -> DOLU YESIL, parlak cerceve     (geride kalan yol)
+    //   siradaki     -> altin                          (tek vurgu)
+    //   acik/oynanmamis -> koyu yesil, soluk cerceve   (ileride)
+    //
+    // Boylece liste bir "yesil iz" olusturur: yesil biter, altin baslar. Kac
+    // yildiz alindigi zaten yildiz satirinda yaziyor, bu yuzden zemin
+    // yildiz sayisina gore TONLANMADI — uc kademeli bir yesil, ilerleme
+    // cizgisini okunmaz yapardi.
+    val completed = unlocked && stars > 0
+
     val borderColor = when {
         isNext -> Color(0xFFFFD54F)
+        completed -> Color(0xCC9CD65B)
         unlocked -> Color(0x66A8C48C)
         else -> Color(0x33FFFFFF)
+    }
+
+    // Zemin: tamamlanan kart belirgin sekilde daha yesil ve daha acik.
+    // Metin rengi (0xFFE8F0DC / 0xFFDCE8CC) bu zeminde de yuksek kontrast
+    // birakir — zemin hala koyu, yalnizca yesil tarafa kaydirildi.
+    val cardBackground = when {
+        !unlocked -> Color(0xCC15170F)
+        completed -> Color(0xE62E4A1E)
+        else -> Color(0xCC1E2A18)
     }
 
     Column(
@@ -536,7 +569,7 @@ private fun LevelCard(
         modifier = Modifier
             .width(126.dp)
             .clip(RoundedCornerShape(10.dp))
-            .background(if (unlocked) Color(0xCC1E2A18) else Color(0xCC15170F))
+            .background(cardBackground)
             .clickable(enabled = true, onClick = onClick)
             .padding(10.dp)
             .alpha(if (unlocked) 1f else 0.62f)
@@ -547,7 +580,19 @@ private fun LevelCard(
             modifier = Modifier
                 .size(38.dp)
                 .clip(RoundedCornerShape(19.dp))
-                .background(borderColor.copy(alpha = if (isNext) 0.9f else 0.25f))
+                // Tamamlanan kartin numara madalyonu da yesil okunur (0.55):
+                // 0.25'te zemin degisikligi madalyonu yutuyordu ve kart
+                // "bitmis" gorunmuyordu. Altin siradaki kart tek basina en
+                // parlak (0.9) kalmaya devam eder.
+                .background(
+                    borderColor.copy(
+                        alpha = when {
+                            isNext -> 0.9f
+                            completed -> 0.55f
+                            else -> 0.25f
+                        }
+                    )
+                )
         ) {
             Text(
                 text = stringResource(R.string.level_number, spec.levelId),

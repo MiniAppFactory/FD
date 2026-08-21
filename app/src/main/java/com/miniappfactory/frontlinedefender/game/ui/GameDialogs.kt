@@ -60,6 +60,16 @@ fun MainMenuOverlay(
     // Uzerine KOYU PERDE biner: kamuflaj kasitli olarak dusuk kontrast ve
     // koyu tutuldu ki baslik ve butonlar okunur kalsin. Dekor, oynanis
     // okunabilirliginin onune gecmez.
+    //
+    // ⚠ PERDE INCELTILDI (cihaz geri bildirimi 2026-08-21: "ana sayfadaki
+    // kamuflaj deseni belli olmuyor"). Eski degerler 0,82 -> 0,94 idi; yani
+    // desen en acik yerinde bile %82 ortuluyordu ve pratikte duz bir zeminden
+    // ayirt edilemiyordu — cizilen ama gorunmeyen bir dekor.
+    //
+    // Okunabilirlik NEDEN bozulmuyor: bu ekrandaki her metin kendi `Surface`
+    // karti icinde duruyor (SleekSurfaceCard, opak). Perde yalnizca kartlarin
+    // ARASINDAKI bos alani etkiliyor, hicbir yazinin arkasinda degil. Yine de
+    // tam seffaf birakilmadi: desen zeminde kalmali, one cikmamali.
     val camo = ImageBitmap.imageResource(R.drawable.bg_camo)
     val camoBrush = remember(camo) {
         ShaderBrush(ImageShader(camo, TileMode.Repeated, TileMode.Repeated))
@@ -72,8 +82,8 @@ fun MainMenuOverlay(
             .background(
                 Brush.verticalGradient(
                     colors = listOf(
-                        SleekSurfaceHeader.copy(alpha = 0.82f),
-                        SleekDarkBg.copy(alpha = 0.94f)
+                        SleekSurfaceHeader.copy(alpha = 0.58f),
+                        SleekDarkBg.copy(alpha = 0.80f)
                     )
                 )
             ),
