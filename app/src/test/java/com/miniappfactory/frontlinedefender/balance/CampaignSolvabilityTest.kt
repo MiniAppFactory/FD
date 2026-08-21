@@ -487,6 +487,53 @@ class CampaignSolvabilityTest {
      * bunun erken olmasini sart kosuyor. Boylece sermaye bir daha degistiginde
      * ders sessizce ortadan kaybolamaz.
      */
+    /**
+     * RAPOR (assert YOK) — acilis bolumlerinde IYI ile KOTU yerlestirme
+     * arasindaki fark.
+     *
+     * `carelessPlacementStartsCostingLivesEarlyInTheCampaign` yalnizca "bir
+     * yerde isiriyor mu" diye sorar; bu rapor ISIRMANIN BUYUKLUGUNU gosterir.
+     *
+     * OLCUM (2026-08-21): L1..L8'de iyi ve kotu yerlestirme AYNI sonucu
+     * veriyor — hepsi 19-20/20 can, 3 yildiz, sizinti farki 0-2. Yani acilis
+     * perdesinde "kuleyi nereye koydugum" yildiza HIC yansimiyor.
+     *
+     * ⚠ BU RAKAMLARA BAKIP DALGA BASKISINI YUKSELTMEK YANLIS OLUR ve bu depoda
+     * ayni tuzaga iki kez dusuldu. Simulator MUKEMMEL oynar: dogru pad, dogru
+     * an, hedeflemeyi bilir, yukseltmeyi kacirmaz. Gercek oyuncu L1'i tek
+     * Gatling ile KAYBETMISTI — yani ayni bolum icin simulator "rahat" derken
+     * insan "gecilmez" diyordu. Bu tablodan turetilen bir zorluk artisi,
+     * gercek oyuncuda kolayca iki katina cikar.
+     *
+     * Dogru sira: once INSAN oynanisi (L1-L11), sonra bu tablo o oynanisin
+     * yaninda okunur. Rapor o yuzden burada duruyor ve assert TASIMIYOR.
+     */
+    @Test
+    fun reportEarlyPlacementGap() {
+        val range = GameConfig.TOWER_SPECS.getValue(TowerType.MACHINE_GUN).level1Range
+        println()
+        println("=== ACILIS BOLUMLERI — IYI vs KOTU YERLESTIRME ===")
+        println("bolum | en iyi: can/yildiz | en kotu: can/yildiz | sizinti farki")
+        for (level in 1..8) {
+            val pads = padsFor(level)
+            val path = sample(routeFor(level))
+            val best = playLevel(level, greedyPads(level, range, pads.size))
+            val worstFirst = pads
+                .map { it.first to coveredLength(path, it.second, it.third, range) }
+                .filter { it.second > 1f }
+                .sortedBy { it.second }
+                .map { it.first }
+            val worst = playLevel(level, worstFirst)
+            println(
+                "L$level".padEnd(6) + "| " +
+                    "${best.livesLeft}/${best.stars}".padEnd(19) + "| " +
+                    "${worst.livesLeft}/${worst.stars}".padEnd(20) + "| " +
+                    (worst.leaked - best.leaked)
+            )
+        }
+        println()
+    }
+
     @Test
     fun carelessPlacementStartsCostingLivesEarlyInTheCampaign() {
         val tower = GameConfig.TOWER_SPECS.getValue(TowerType.MACHINE_GUN)

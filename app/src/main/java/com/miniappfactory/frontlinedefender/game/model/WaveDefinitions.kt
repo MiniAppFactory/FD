@@ -179,8 +179,10 @@ object WaveDefinitions {
     /** L1 · Harita 01 · Öğretici-A · yalnızca MACHINE_GUN mevcut. */
     private val LEVEL_01: List<WaveData> = listOf(
         // W1-W3 ogretici temposunda BIRAKILDI: ilk temas hâlâ nazik olmali
-        // (baski 0.7-1.0 kule = tek Gatling yetisir, ki L1 Tedariki 80 ile
-        // oyuncunun elinde tam bir kule var).
+        // (baski 0.7-1.0 kule = tek Gatling yetisir). NOT: L1 Tedariki 2026-08-19'da
+        // 80 -> 120 oldu, yani oyuncu artik IKI kule ile basliyor; W1-W3 bu yuzden
+        // eskisinden de nazik. Acilis baskisi yeniden konusulacaksa once insan
+        // oynanisi gerekiyor (bkz. CampaignSolvabilityTest.reportEarlyPlacementGap).
         mix(1, "L01-W1 first-contact", inf = 6, lightGap = 1.15f),
         mix(2, "L01-W2 probing-patrol", inf = 10, lightGap = 0.90f),
         mix(3, "L01-W3 scout-trickle", fast = 10, lightGap = 0.75f),
