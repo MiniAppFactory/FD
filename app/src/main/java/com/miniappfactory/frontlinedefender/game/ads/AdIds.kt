@@ -170,7 +170,14 @@ object AdIds {
         // hicbir seye TIKLANMADI, yani gecersiz trafik riski olusmadi:
         //   Use RequestConfiguration.Builder().setTestDeviceIds(...)
         "4EC2D32786F16937AF9963145EA0E233",
-        // Galaxy S22 Ultra icin kimlik HENUZ YOK. Ayni adim o cihazda
-        // tekrarlanmali; Kaboom'daki S22 kimligi bu uygulamada calismaz.
+
+        // Samsung Galaxy S22 Ultra (SM-S908E) — proje sahibinin gunluk telefonu.
+        // Ayni yontemle BU UYGULAMADAN okundu (2026-08-22).
+        //
+        // KANIT, "uygulama bazli kimlik" iddiasinin son parcasi: Kaboom ayni
+        // telefonda "F83812BB...", Kron Drive "B5BD61FF...", Frontline Defender
+        // ise asagidakini bildirdi. Uc uygulama, tek cihaz, uc ayri kimlik —
+        // yani baska bir uygulamadan kopyalamak HICBIR ISE YARAMAZDI.
+        "3D6218ECF2E6DAE3560DBB528ACE6B68",
     )
 }
