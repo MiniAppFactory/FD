@@ -157,5 +157,20 @@ object AdIds {
      * Galaxy S8 (SM-G950F) ve S22 Ultra kimlikleri BU UYGULAMADAN okunup
      * buraya yazilmali — yoksa ilk gercek tiklamada politika ihlali riski var.
      */
-    val developerTestDeviceIds: List<String> = emptyList()
+    val developerTestDeviceIds: List<String> = listOf(
+        // Samsung Galaxy S8 (SM-G950F) — birincil cihaz testi telefonu.
+        //
+        // BU UYGULAMADAN okundu (2026-08-22, imzali release build, adb logcat).
+        // Kaboom'un kimligi (F83812BB...) buraya YAZILAMAZ ve yazilmadi: ayni
+        // cihazda bile her uygulama farkli kimlik bildiriyor (Boom-Blocks
+        // AdIds.kt'deki olculmus not: Kaboom F83812BB..., Kron Drive B5BD61FF...).
+        //
+        // Nasil okundu: release APK kuruldu, uygulama acildi, reklam ON-YUKLEME
+        // istegi logcat'e su satiri dusurdu — HICBIR REKLAM GOSTERILMEDI ve
+        // hicbir seye TIKLANMADI, yani gecersiz trafik riski olusmadi:
+        //   Use RequestConfiguration.Builder().setTestDeviceIds(...)
+        "4EC2D32786F16937AF9963145EA0E233",
+        // Galaxy S22 Ultra icin kimlik HENUZ YOK. Ayni adim o cihazda
+        // tekrarlanmali; Kaboom'daki S22 kimligi bu uygulamada calismaz.
+    )
 }
