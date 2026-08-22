@@ -226,15 +226,15 @@
     <string name="shop_short">%1$d COIN EKSİK</string>
     <string name="shop_reserve_blocked">REZERV</string>
     <string name="shop_gated">BÖLÜM %1$d GEREKLİ</string>
-    <string name="shop_line_firepower">Ateş Gücü</string>
+    <string name="shop_line_firepower">Ateş Gücü (Hasar)</string>
     <string name="shop_line_firepower_fx">Tüm kule hasarı +%%%1$d</string>
-    <string name="shop_line_optics">Optik</string>
-    <string name="shop_line_optics_fx">Tüm kule menzili +%%%1$d</string>
+    <string name="shop_line_optics">Optik (Menzil)</string>
+    <string name="shop_line_optics_fx">Tüm kulelerin atış mesafesi +%%%1$d</string>
     <string name="shop_line_supply">Başlangıç Tedariki</string>
     <string name="shop_line_supply_fx">Savaşa %1$d Tedarik ile başla</string>
-    <string name="shop_line_fortification">Üs Tahkimi</string>
-    <string name="shop_line_fortification_fx">Üs bütünlüğü %1$d</string>
-    <string name="shop_line_salvage">Hurda</string>
+    <string name="shop_line_fortification">Üs Tahkimi (Can)</string>
+    <string name="shop_line_fortification_fx">Üs %1$d cana dayanır</string>
+    <string name="shop_line_salvage">Hurda (Satış İadesi)</string>
     <string name="shop_line_salvage_fx">Satış geri ödemesi %%%1$d</string>
 
     <!-- Faz 12: SAVAS ICI GUCLENDIRICILER. translatable="false" olan uc fiyat

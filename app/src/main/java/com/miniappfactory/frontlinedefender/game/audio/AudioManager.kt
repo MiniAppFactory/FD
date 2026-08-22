@@ -125,7 +125,29 @@ class AudioManager(context: Context) {
         WAVE_CLEARED(R.raw.sfx_wave_cleared, pitchVary = false),
 
         /**
-         * Faz 14 — OLDURME ZINCIRI kademe atlama riser'i (esikler 3/6/10/16).
+         * OLDURME ZINCIRI kademe sesi (esikler 3/6/10/16).
+         *
+         * ⚠ 2026-08-21: ORNEKLER DEGISTI, "riser" DEGILLER ARTIK.
+         *
+         * Eski set perdesi YUKSELEN tonal seslerdi. Cihaz raporu: "adam
+         * olunce cocuk sesi veya ziplama gibi bir ses cikiyor". Spektrogram
+         * dogruladi — armonik merdiven 0,36 sn boyunca yukari kiviriliyordu,
+         * yani akustik olarak bir "boing"di. Ustelik mix'te cok ondeydi
+         * (tepe -1,5..-4,9 dBFS, ortalama -13,4).
+         *
+         * Yeni set BOGUK VURUS: alcak ve ASAGI kayan sinus govdesi + 900 Hz'de
+         * kesilmis kisa gurultu tokati. Tirmanma PERDEYLE degil AGIRLIKLA
+         * yapiliyor — kademe buyudukce f0 duser (175 -> 112 Hz), sure uzar
+         * (0,22 -> 0,43 sn), govde dolar. Boylece "tirmaniyor" bilgisi durur,
+         * "ziplama" karakteri gider.
+         *
+         * Seviye de dusuruldu: tepe -9,0 dBFS (skill mix tablosu, tek atis),
+         * ortalama ~-20,7. Sebep sıklık: bu ses dalga basina birkac kez calar,
+         * yani tek seferlik bir jingle kadar onde olmamali.
+         *
+         * Uretici korunuyor: docs/tools/combo_thump.py (sabit seed).
+         *
+         * Eski ornekler: incoming/combo_yedek/ (geri donmek istenirse).
          *
          * DORT AYRI ORNEK; tek ornegi pitch'lemek DEGIL. `SoundPool` rate
          * araligi (0.5-2.0) dort kademe icin yeterli olurdu ama pitch kaydirma
