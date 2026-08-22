@@ -715,7 +715,31 @@ object GameConfig {
         val damage: Float,
         val fireRate: Float,
         val upgradeCost: Int,
-        val unlockedAtLevel: Int
+        val unlockedAtLevel: Int,
+        /**
+         * KADEMEYE OZEL zirh delme. `null` = kulenin kendi
+         * [TowerStats.armorPierce] degeri kullanilir (eski davranis).
+         *
+         * ⚠ 2026-08-22 — NEDEN EKLENDI (gercek insan oynanisi):
+         * Kullanici *"dusman araba cok gucsuz"* dedi. Olcum sucluyu buldu ve
+         * suclu ARACIN KENDISI DEGILDI:
+         *
+         *   Zirhli Araca karsi etkin DPS (kademe 2)
+         *     Gatling    23,8   <- zirh CALISIYOR, %78 kesiyor
+         *     Agir Top   40,0   <- patlama zirhi tamamen bypass eder
+         *     Fuze       58,4   <- zirh yalnizca %12 kesiyor
+         *
+         * Sebep: `armorPierce = 0,85` KULE seviyesinde tanimliydi, yani Fuze
+         * daha ILK kademesinde zirhin %85'ini deliyordu. Zirhli Aracin 0,78'lik
+         * zirhi, fuzeye karsi etkin 0,78 x 0,15 = 0,117'ye dusuyordu.
+         *
+         * En kotusu ZAMANLAMASI: Fuze Rampasi `unlockedAtLevel = 7`, yani
+         * zirhin "duvar" kimligi tam da kullanicinin sikayet ettigi bolumde
+         * cokuyordu. Tank bile (zirh 0,86) fuzeden neredeyse zirhsiz hasar
+         * aliyordu (66,1 -> 57,6), oysa kodun kendi yorumu "yalnizca
+         * patlama/delici ise yarar" diyordu.
+         */
+        val armorPierce: Float? = null
     ) {
         /** Sürekli hasar (hasar/sn) — rol karsilastirmalarinin olcum birimi. */
         val dps: Float get() = damage / fireRate
@@ -798,6 +822,18 @@ object GameConfig {
 
         /** 1-tabanli kademe erisimi; aralik disi degerler siniri asmaz (motor asla cokmez). */
         fun tier(tier: Int): TowerTier = tiers[(tier - 1).coerceIn(0, tiers.lastIndex)]
+
+        /**
+         * Bu kademede gecerli zirh delme.
+         *
+         * Kademe kendi degerini bildirmisse o, aksi halde kulenin nominal
+         * [armorPierce] degeri. Boylece zirh delmesi OLMAYAN kuleler
+         * (Gatling/Agir Top/Buz, hepsi 0) hicbir sey yazmadan eski
+         * davranislarini surdurur; yalnizca Fuze Rampasi kademeye yayilmis
+         * degerler tasir (bkz. [TowerTier.armorPierce]).
+         */
+        fun armorPierceAt(tier: Int): Float =
+            tier(tier).armorPierce ?: armorPierce
 
         /**
          * [tier] kademesindeki bir kuleyi BIR SONRAKI kademeye yukseltmenin
@@ -1036,15 +1072,21 @@ object GameConfig {
             description = "Armour-piercing missile. Devastating on heavies, wasted on swarms.",
             buildCost = 115,
             tiers = listOf(
-                TowerTier(1, range = 250f, damage = 110f, fireRate = 3.60f, upgradeCost = 0, unlockedAtLevel = 7),
-                TowerTier(2, range = 290f, damage = 205f, fireRate = 3.10f, upgradeCost = 115, unlockedAtLevel = 7),
+                // ZIRH DELME ARTIK KADEMEYE YAYILDI (0,35 / 0,55 / 0,85).
+                // Eskiden uc kademede de 0,85 idi ve zirhli birimlerin kimligi
+                // Fuze'nin acildigi bolumde (L7) cokuyordu. Kademe 3
+                // TIER_THREE_UNLOCK_LEVEL = 12'de aciliyor, yani "tam delici"
+                // rolu Perde II'ye tasindi: L7-L11'de zirh gercek bir duvar,
+                // L12'den sonra fuze eski gucune kavusuyor.
+                TowerTier(1, range = 250f, damage = 110f, fireRate = 3.60f, upgradeCost = 0, unlockedAtLevel = 7, armorPierce = 0.35f),
+                TowerTier(2, range = 290f, damage = 205f, fireRate = 3.10f, upgradeCost = 115, unlockedAtLevel = 7, armorPierce = 0.55f),
                 // Kd.3 (Faz 13): DPS 66.1 -> 133.3 (x2.02). Atis basina hasar
                 // (360) butun kademelerin en yukseği olmaya devam eder ve atis
                 // araligi (2.70 sn) hâlâ en yavasi: kalabaliga karsi bilincli
                 // verimsizlik kademe 3'te de duruyor. `armorPierce` ve carpma
                 // alani degismedi — fuze hâlâ havada yol alir ve hedefi olurse
                 // ISRAF olur (ANTI_TANK rolunun bedeli).
-                TowerTier(3, range = 335f, damage = 360f, fireRate = 2.70f, upgradeCost = 230, unlockedAtLevel = TIER_THREE_UNLOCK_LEVEL)
+                TowerTier(3, range = 335f, damage = 360f, fireRate = 2.70f, upgradeCost = 230, unlockedAtLevel = TIER_THREE_UNLOCK_LEVEL, armorPierce = 0.85f)
             ),
             armorPierce = 0.85f,
             missileImpactRadius = 40f,
@@ -1124,7 +1166,7 @@ object GameConfig {
      * (SupplyBudgetModel.WAVE_CLEAR_SUPPLY_BONUS ile ayni olmasi
      * BalanceConsistencyTest'te kilitli).
      */
-    const val WAVE_CLEAR_SUPPLY_BONUS = 18
+    const val WAVE_CLEAR_SUPPLY_BONUS = 12
 
     // ========================================================================
     // Faz 10 — DUSMAN ODULLERI x1/3 (ECONOMY_SPEC 9 madde 2)

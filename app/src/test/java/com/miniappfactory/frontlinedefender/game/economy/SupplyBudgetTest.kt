@@ -255,8 +255,10 @@ class SupplyBudgetTest {
             // ediyordu, oyuncu ilk dalga baslamadan tam gucune ulasiyordu).
             // Baslangic 215 -> 247, butce 1029 -> 953, SPI 2,37 -> 2,19 (bant korundu).
             // L1/L2 sermayesi 80/90 -> 120/130 olunca butce de +40 kaydi.
-            1 to 542, 2 to 636, 3 to 719, 4 to 953,
-            5 to 929, 6 to 1078, 7 to 1172, 8 to 1131,
+            // 2026-08-22: WAVE_CLEAR_SUPPLY_BONUS 18 -> 12 (dalga basina -6).
+            // Butun bolumlerin butcesi bu kadar dalga sayisi kadar dustu.
+            1 to 518, 2 to 612, 3 to 695, 4 to 929,
+            5 to 899, 6 to 1048, 7 to 1136, 8 to 1095,
         )
         expected.forEach { (level, budget) ->
             assertEquals("L$level butce", budget, SupplyBudgetModel.supplyBudget(level))
@@ -333,8 +335,11 @@ class SupplyBudgetTest {
             // L4: 2,12 -> 2,37 -> 2,19. Sebep yukaridaki butce satiri; bant 1,5-2,6 KORUNDU.
             // L1 2,01 -> 2,168 ve L2 1,59 -> 1,74: sermaye artisi SPI'yi
             // YUKARI tasidi ama ikisi de 1,5-2,6 bandinin ICINDE kaldi.
-            1 to 2.168, 2 to 1.696, 3 to 1.65, 4 to 2.19,
-            5 to 1.88, 6 to 2.18, 7 to 1.62, 8 to 1.56,
+            // 2026-08-22: dalga ikramiyesi 18 -> 12; SPI genel olarak DUSTU
+            // (hedeflenen etki: fazla Tedarik azalsin). Bant 1,5-2,6 KORUNDU,
+            // en sikisi L8 = 1,510 ile tam sinirda.
+            1 to 2.072, 2 to 1.632, 3 to 1.598, 4 to 2.136,
+            5 to 1.816, 6 to 2.117, 7 to 1.567, 8 to 1.510,
         )
         expected.forEach { (level, spi) ->
             assertEquals(

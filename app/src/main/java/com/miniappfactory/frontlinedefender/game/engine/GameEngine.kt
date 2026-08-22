@@ -2274,7 +2274,11 @@ class GameEngine(
                 damage = tower.damage,
                 speed = projSpeed,
                 splashRadius = tower.stats.splashRadius * s,
-                armorPierce = tower.stats.armorPierce,
+                // KADEMEYE OZEL zirh delme (2026-08-22). Eskiden burada
+                // `tower.stats.armorPierce` vardi ve kule KADEMESINDEN bagimsiz
+                // tek bir deger (0,85) tasiyordu — Fuze ilk kademesinde bile
+                // zirhin %85'ini deliyordu. Gerekce: TowerTier.armorPierce.
+                armorPierce = tower.stats.armorPierceAt(tower.level),
                 slowFactor = tower.stats.slowFactor,
                 slowDuration = tower.stats.slowDuration,
                 towerType = tower.type,

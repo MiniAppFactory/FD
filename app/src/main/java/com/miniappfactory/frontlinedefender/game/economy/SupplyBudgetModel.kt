@@ -159,7 +159,7 @@ object SupplyBudgetModel {
      * 3,06'ya indiriyor (dosya basi tablosu) ama L7'yi 1,70'ten 1,55'e itiyor — yani
      * bandin bol ucundan neredeyse hicbir sey almadan sert ucundan pay aliyor.
      */
-    const val WAVE_CLEAR_SUPPLY_BONUS: Int = 18
+    const val WAVE_CLEAR_SUPPLY_BONUS: Int = 12
 
     /**
      * **OGRETICI SERMAYE — yalnizca L1 ve L2.**

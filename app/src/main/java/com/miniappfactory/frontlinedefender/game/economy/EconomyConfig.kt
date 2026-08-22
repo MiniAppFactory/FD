@@ -687,7 +687,7 @@ object EconomyConfig {
      * ECONOMY_SPEC A sikilastirmasini geri alir; daha azi butona basmaya deger olmaz.
      */
     const val EMERGENCY_SUPPLY_BASE: Int = 60
-    const val EMERGENCY_SUPPLY_STEP: Int = 4
+    const val EMERGENCY_SUPPLY_STEP: Int = 6
 
     const val EMERGENCY_SUPPLY_COOLDOWN_MS: Long = 0L
 

@@ -92,9 +92,9 @@ class BoosterEconomyTest {
 
         assertEquals(0, boosterPrice(BoosterType.EMERGENCY_SUPPLY, 2))
 
-        assertEquals(60, emergencySupplyAmount(2))
-        assertEquals(80, emergencySupplyAmount(6))
-        assertEquals(140, emergencySupplyAmount(22))
+        assertEquals(70, emergencySupplyAmount(2))
+        assertEquals(90, emergencySupplyAmount(6))
+        assertEquals(190, emergencySupplyAmount(22))
     }
 
     @Test
