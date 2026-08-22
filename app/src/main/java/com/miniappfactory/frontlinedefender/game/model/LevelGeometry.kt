@@ -413,7 +413,25 @@ object LevelGeometry {
         // En kisa pad-pad mesafesi 177 ref-px; taban plakasi capi 138
         // (FriendlyPlate.RADIUS_FRAC) -> komsu plakalar cakismiyor.
         buildSpots = listOf(
-            BuildSpot(id = 1, normX = 0.1712f, normY = 0.6093f),   // Z1  A 193 / B  95
+            // SPAWN KAMPI DUZELTMESI (2026-08-22, cihaz raporu).
+            //
+            // Kullanici: *"4. levelde onlarin base onune iki gatling koydum,
+            // levellerini max yaptim, kendi baselerinden bile cikamadan
+            // oldüler."* Ve devaminda: *"dusman cikis mevzisinin tam onunde
+            // pad olmasi dogru olmuyor, uzaklasmali."*
+            //
+            // OLCULDU: bu pad spawn agzina **149,6 ref-px** mesafedeydi ve
+            // Gatling'in kademe-1 menzili **150**. Yani 0,4 piksel farkla
+            // spawn'i vurabiliyordu — kil payi, yani kaza. Tum kampanyada
+            // spawn'i vurabilen TEK pad buydu (SpawnCampPadAuditTest).
+            //
+            // En yakin spawn'dan UZAKLASAN yonde 45 ref-px kaydirildi:
+            //   spawn'a  149,6 -> 194,6   (Gatling 150 ve Agir Top 175 artik
+            //                              spawn agzini goremiyor, 15 px pay)
+            //   yola     113,8 -> 110,7   (hala Gatling menzilinde; mevzi
+            //                              OLMEDI, sadece kamp olmaktan cikti)
+            //   zemin    3 -> 3           (kayalik, degismedi)
+            BuildSpot(id = 1, normX = 0.1792f, normY = 0.6484f),   // Z1  A 193 / B  95
             BuildSpot(id = 2, normX = 0.1812f, normY = 0.2352f),   // Z1  A 121 / B 260
             BuildSpot(id = 3, normX = 0.2255f, normY = 0.4530f),   // A  60 / B  67  <- IKI KOL (eski 5+6)
             BuildSpot(id = 4, normX = 0.2579f, normY = 0.1385f),   // Z2  A 126 / B 400

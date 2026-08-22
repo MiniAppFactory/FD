@@ -176,8 +176,19 @@ class SupplyBudgetTest {
             val tierOneCost = (0 until roster).sumOf {
                 GameConfigCampaignFacts.towerBuildCost.getValue(order[it % order.size])
             }
+            // Kapsama telafisi carpani BOLUME GORE: erken bolumlerde daha
+            // kucuk (2026-08-22). Gerekce
+            // `SupplyBudgetModel.EARLY_COVERAGE_SCARCITY_SUPPLY_FACTOR`
+            // KDoc'unda: 1,5 iken L4 sermayesi 323 cikiyordu ve iki MAKSIMUM
+            // Gatling 250 tutuyordu, yani oyuncu ilk dalga baslamadan tam
+            // gucune ulasabiliyordu (gercek insan oynanisi).
             val expected = if (GameConfigCampaignFacts.hasScarceCoverage(level)) {
-                Math.round(tierOneCost * SupplyBudgetModel.COVERAGE_SCARCITY_SUPPLY_FACTOR)
+                val factor = if (level <= SupplyBudgetModel.EARLY_COVERAGE_SCARCITY_MAX_LEVEL) {
+                    SupplyBudgetModel.EARLY_COVERAGE_SCARCITY_SUPPLY_FACTOR
+                } else {
+                    SupplyBudgetModel.COVERAGE_SCARCITY_SUPPLY_FACTOR
+                }
+                Math.round(tierOneCost * factor)
             } else {
                 tierOneCost
             }
@@ -238,10 +249,13 @@ class SupplyBudgetTest {
         // Yeniden olculdu: bolumler 5-7 dalgaya indi (gelir dustu) ve sermaye
         // kadrodan turetilir oldu (L3+ arttı). Net etki asagida.
         val expected = mapOf(
-            // L4: 921 -> 1029. Catallanma esigi 9 -> 3 indi, L4 artik iki kollu ve
-            // kapsama telafisi (x1,5) devreye girdi: baslangic 215 -> 323.
+            // L4: 921 -> 1029 -> 953. Catallanma esigi 9 -> 3 indi, L4 iki kollu oldu ve
+            // kapsama telafisi devreye girdi. 2026-08-22: erken bolum carpani 1,5 -> 1,15
+            // (gercek insan oynanisi: 323 iki MAKSIMUM Gatling"i (250) finanse
+            // ediyordu, oyuncu ilk dalga baslamadan tam gucune ulasiyordu).
+            // Baslangic 215 -> 247, butce 1029 -> 953, SPI 2,37 -> 2,19 (bant korundu).
             // L1/L2 sermayesi 80/90 -> 120/130 olunca butce de +40 kaydi.
-            1 to 542, 2 to 636, 3 to 719, 4 to 1029,
+            1 to 542, 2 to 636, 3 to 719, 4 to 953,
             5 to 929, 6 to 1078, 7 to 1172, 8 to 1131,
         )
         expected.forEach { (level, budget) ->
@@ -316,10 +330,10 @@ class SupplyBudgetTest {
         // YENIDEN OLCULDU (tek ritim + kadrodan turetilen sermaye).
         // Once: 2,28 / 1,85 / 1,88 / 2,03 / 1,70 / 2,22 / 1,62 / 1,76.
         val expected = mapOf(
-            // L4: 2,12 -> 2,37. Sebep yukaridaki butce satiri; bant 1,5-2,6 KORUNDU.
+            // L4: 2,12 -> 2,37 -> 2,19. Sebep yukaridaki butce satiri; bant 1,5-2,6 KORUNDU.
             // L1 2,01 -> 2,168 ve L2 1,59 -> 1,74: sermaye artisi SPI'yi
             // YUKARI tasidi ama ikisi de 1,5-2,6 bandinin ICINDE kaldi.
-            1 to 2.168, 2 to 1.696, 3 to 1.65, 4 to 2.37,
+            1 to 2.168, 2 to 1.696, 3 to 1.65, 4 to 2.19,
             5 to 1.88, 6 to 2.18, 7 to 1.62, 8 to 1.56,
         )
         expected.forEach { (level, spi) ->
@@ -804,10 +818,11 @@ class SupplyBudgetTest {
         // assert duz bir tabloda da gecerdi). L1/L2 ogretici sabitleri, L3+
         // kadronun kademe-1 maliyeti.
         val early = (1..6).map { GameConfig.levelSpec(it).startingSupply }
-        // L4 = 323: kadro tabani 215 x kapsama telafisi 1,5 (bolum iki kollu).
+        // L4 = 247: kadro tabani 215 x ERKEN kapsama telafisi 1,15 (bolum iki kollu).
+        // 1,5 iken 323 cikiyordu ve bu iki maksimum Gatling (250) demekti.
         // L5-L6 tek kollu oldugu icin telafi almaz; monotonluk TABAN uzerinde
         // olculur (bkz. GameConfig.startingSupplyBaseFor).
-        assertEquals("ilk alti bolum butcesi", listOf(120, 130, 215, 323, 255, 255), early)
+        assertEquals("ilk alti bolum butcesi", listOf(120, 130, 215, 247, 255, 255), early)
         // L7'de Fuze Bataryasi aciliyor ve tasarlanan kadroya giriyor; sermaye
         // dort kulelik kademe-1 maliyetini (370) karsilar. Eskiden burada
         // "L7+ taban Tedarige (150) donmeli" yaziyordu — o taban, kadro bes

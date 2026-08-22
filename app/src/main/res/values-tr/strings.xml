@@ -105,6 +105,9 @@
     <string name="inspector_target_weakest">EN ZAYIF</string>
     <string name="inspector_upgrade_icon_desc">Yükselt</string>
     <string name="inspector_upgrade_cost">%1$d</string>
+    <!-- Ilk dalga temizlenmeden yukseltme kapali (GameEngine.upgradeLockedUntilFirstWave).
+         KISA: buton 40 dp yuksekliginde ve ikonla ayni satirda. -->
+    <string name="inspector_upgrade_after_wave">1. DALGA SONRA</string>
     <string name="inspector_max_level">MAKS</string>
     <string name="inspector_sell_icon_desc">Sat</string>
     <string name="inspector_sell_value">+%1$d</string>

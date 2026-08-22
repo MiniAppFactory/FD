@@ -405,11 +405,17 @@ object SupplyBudgetModel {
         val order = facts.unlockedTowersInOrder(level)
         val roster = DESIGNED_ROSTER_SIZE[level - 1]
         val base = (0 until roster).sumOf { facts.towerBuildCost.getValue(order[it % order.size]) }
-        return if (facts.hasScarceCoverage(level)) {
-            Math.round(base * COVERAGE_SCARCITY_SUPPLY_FACTOR)
+        if (!facts.hasScarceCoverage(level)) return base
+        // Erken bolumlerde DAHA KUCUK carpan (2026-08-22, cihaz raporu).
+        // `GameConfig.startingSupplyFor` ile AYNI dallanma; ikisinin ayni
+        // sonucu vermesini `SupplyBudgetTest` kilitliyor. Bu kopya kaza degil,
+        // bilincli CIFT KAYIT: iki bagimsiz hesap + anlasma testi.
+        val factor = if (level <= EARLY_COVERAGE_SCARCITY_MAX_LEVEL) {
+            EARLY_COVERAGE_SCARCITY_SUPPLY_FACTOR
         } else {
-            base
+            COVERAGE_SCARCITY_SUPPLY_FACTOR
         }
+        return Math.round(base * factor)
     }
 
     /**
@@ -426,6 +432,20 @@ object SupplyBudgetModel {
      * bicimiyle gecilebilen bolum" olcumunden geldi (L33 / L46 / L53).
      */
     const val COVERAGE_SCARCITY_SUPPLY_FACTOR: Float = 1.5f
+
+    /**
+     * ERKEN BOLUM CARPANI — `GameConfig.EARLY_COVERAGE_SCARCITY_SUPPLY_FACTOR`
+     * ile AYNI deger olmak ZORUNDA (`SupplyBudgetTest` kilitler).
+     *
+     * 2026-08-22, gercek insan oynanisi: L4 sermayesi 215 x 1,5 = 323 idi ve
+     * iki maksimum Gatling 250 tutuyordu — oyuncu ilk dalga baslamadan tam
+     * gucune ulasabiliyordu. Gec oyunda 1,5 GEREKLI ASGARI oldugu icin
+     * (gecilemeyen bolum 11 -> 2) global dusurulmedi; ayrim bolum esigiyle.
+     */
+    const val EARLY_COVERAGE_SCARCITY_SUPPLY_FACTOR: Float = 1.15f
+
+    /** [EARLY_COVERAGE_SCARCITY_SUPPLY_FACTOR] bu bolume kadar (dahil). */
+    const val EARLY_COVERAGE_SCARCITY_MAX_LEVEL: Int = 11
 
     // KALDIRILDI: perde basina duz sermaye (`LATE_ACT_STARTING_SUPPLY =
     // [220, 270, 320]`, CAMPAIGN_55.md 8.2). Bolum 5-7 dalgaya inince yetmedi;

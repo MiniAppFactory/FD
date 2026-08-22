@@ -176,7 +176,12 @@ fun SelectedTowerInspector(
                                     telemetry.noteTowerUpgraded()
                                 }
                             },
-                            enabled = gold >= upgradeCost,
+                            // ILK DALGA KILIDI de butonu kapatir. Kilitliyken
+                            // ETIKET DEGISIR (asagida): "ret sessiz olamaz" —
+                            // gri bir fiyat, oyuncuya "paran yetmiyor" der ve
+                            // yanlis hedef gosterirdi.
+                            enabled = gold >= upgradeCost &&
+                                !gameEngine.upgradeLockedUntilFirstWave,
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = SleekPrimaryGreen,
                                 contentColor = Color.White,
@@ -197,13 +202,18 @@ fun SelectedTowerInspector(
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = stringResource(
-                                    R.string.inspector_upgrade_cost,
-                                    upgradeCost
-                                ),
+                                text = if (gameEngine.upgradeLockedUntilFirstWave) {
+                                    stringResource(R.string.inspector_upgrade_after_wave)
+                                } else {
+                                    stringResource(
+                                        R.string.inspector_upgrade_cost,
+                                        upgradeCost
+                                    )
+                                },
                                 color = SleekGold,
                                 fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1
                             )
                         }
                     } else {

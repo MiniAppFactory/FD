@@ -1950,6 +1950,49 @@ object GameConfig {
     private const val COVERAGE_SCARCITY_SUPPLY_FACTOR = 1.5f
 
     /**
+     * ERKEN BOLUMLER ICIN AYRI (ve daha kucuk) kapsama carpani.
+     *
+     * ⚠ 2026-08-22, GERCEK INSAN OYNANISI (bu depoda ilk kez; simulasyon
+     * degil): *"1-5 level fazla kolay... 4. levelde onlarin base onune iki
+     * gatling koydum, levellerini max yaptim, ki armory'den yukseltme
+     * yapmadim daha. Kendi baselerinden bile cikamadan oldüler."*
+     *
+     * OLCUM: L4 catallanan bir harita oldugu icin sermayesi 215 x 1,5 = **323**
+     * Tedarik. Bir maksimum (kademe-2) Gatling 60 + 65 = 125; **ikisi 250**.
+     * 323 >= 250, yani oyuncu ILK DALGA BASLAMADAN, hic reklam izlemeden ve
+     * hic oldurme geliri kazanmadan iki tam yukseltilmis kule dikebiliyordu.
+     * Tasarlanan kadro L4 icin 3 kule/kademe-1 idi.
+     *
+     * NEDEN GLOBAL CARPAN DUSURULMEDI: 1,5 degeri gec oyunda **gerekli
+     * asgari** olarak olculmus — kapsama-farkindali simulasyonda gecilemeyen
+     * bolum sayisini 11'den 2'ye indiren sey o (L29/31/32/33/39/41/42/43/49/
+     * 51/53, hepsi catallanan harita). Global dusurmek gec oyunda soft-lock
+     * riskini geri getirirdi. Bu yuzden ayrim BOLUM ESIGIYLE yapildi.
+     *
+     * ⚠ DURUST SINIR: bu carpan TEK BASINA sorunu cozmez. L4 sermayesi
+     * 323 -> 258 olur ve 258 hala 250'nin ustundedir, yani iki maks Gatling
+     * teorik olarak hala alinabilir. Asil kilit [UPGRADE_UNLOCK_AFTER_WAVES]:
+     * yukseltme ilk dalga temizlenene kadar kapali oldugu icin "aninda maks"
+     * yolu kapaniyor. Bu carpan yalnizca fazla sermayeyi kirpar — ikisi
+     * BIRLIKTE calisir, ayri ayri degil.
+     */
+    private const val EARLY_COVERAGE_SCARCITY_SUPPLY_FACTOR = 1.15f
+
+    /** [EARLY_COVERAGE_SCARCITY_SUPPLY_FACTOR] bu bolume kadar (dahil) gecerli. */
+    private const val EARLY_COVERAGE_SCARCITY_MAX_LEVEL = 11
+
+    /**
+     * Kule yukseltmesi kac dalga temizlendikten SONRA acilir.
+     *
+     * 1 = "ilk dalgayi gormeden yukseltemezsin". Gerekce ve olcum
+     * `GameEngine.upgradeLockedUntilFirstWave` KDoc'unda.
+     *
+     * 0 yazilirsa kural TAMAMEN kapanir ve davranis 2026-08-22 oncesine doner
+     * — yumusatmak gerekirse once burasi denenmeli, kural silinmeden.
+     */
+    const val UPGRADE_UNLOCK_AFTER_WAVES: Int = 1
+
+    /**
      * Tahta "dar" sayilir: acik pad <= kadro + bu kadar yedek.
      *
      * K-5 zaten `acik >= R + 2` istiyor; 3, o tabanin hemen ustudur, yani
@@ -1986,11 +2029,15 @@ object GameConfig {
     fun startingSupplyFor(levelId: Int): Int {
         val base = startingSupplyBaseFor(levelId)
         val early = levelId <= EARLY_STARTING_SUPPLY.size
-        return if (!early && hasScarceCoverage(levelId)) {
-            Math.round(base * COVERAGE_SCARCITY_SUPPLY_FACTOR)
+        if (early || !hasScarceCoverage(levelId)) return base
+        // Erken bolumlerde daha kucuk carpan — gerekcesi
+        // EARLY_COVERAGE_SCARCITY_SUPPLY_FACTOR KDoc'unda (cihaz raporu).
+        val factor = if (levelId <= EARLY_COVERAGE_SCARCITY_MAX_LEVEL) {
+            EARLY_COVERAGE_SCARCITY_SUPPLY_FACTOR
         } else {
-            base
+            COVERAGE_SCARCITY_SUPPLY_FACTOR
         }
+        return Math.round(base * factor)
     }
 
     /**

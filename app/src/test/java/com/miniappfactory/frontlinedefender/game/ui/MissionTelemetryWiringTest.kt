@@ -178,6 +178,11 @@ class MissionTelemetryWiringTest {
         engine.startNewGame(LATE_LEVEL)
         engine.selectBuildSpot(engine.scaledBuildSpots.first())
         assertTrue("kurulum: kule kurulamadi", engine.buildTower(GameConfig.TowerType.MACHINE_GUN))
+        // ILK HAZIRLIK FAZINDA YUKSELTME KAPALI (2026-08-22, "oynamadan maks"
+        // duzeltmesi — bkz. GameEngine.upgradeLockedUntilFirstWave). Bu test
+        // yukseltmenin TELEMETRIYE haber verdigini olcuyor, kilidi degil;
+        // dolayisiyla dalgayi baslatip kilidi aciyoruz.
+        engine.startNextWaveNow()
         engine.selectTower(engine.towers.first())
 
         composeRule.setContent {

@@ -167,6 +167,8 @@
     <string name="inspector_target_weakest">WEAKEST</string>
     <string name="inspector_upgrade_icon_desc">Upgrade</string>
     <string name="inspector_upgrade_cost">%1$d</string>
+    <!-- Upgrades unlock after the first wave is cleared. -->
+    <string name="inspector_upgrade_after_wave">AFTER WAVE 1</string>
     <string name="inspector_max_level">MAX</string>
     <string name="inspector_sell_icon_desc">Sell</string>
     <string name="inspector_sell_value">+%1$d</string>

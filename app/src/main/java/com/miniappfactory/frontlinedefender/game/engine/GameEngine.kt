@@ -1336,8 +1336,53 @@ class GameEngine(
         return true
     }
 
+    /**
+     * ILK DALGA TEMIZLENMEDEN YUKSELTME YOK.
+     *
+     * ⚠ 2026-08-22, gercek insan oynanisindan gelen duzeltme: *"4. levelde
+     * onlarin base onune iki gatling koydum, levellerini max yaptim, ki
+     * armory'den yukseltme yapmadim daha. Kendi baselerinden bile cikamadan
+     * oldüler."*
+     *
+     * OLCUM: L4 sermayesi 323 Tedarik, iki maksimum (kademe-2) Gatling 250.
+     * Yani oyuncu daha HIC OYNAMADAN tam gucune ulasabiliyordu; bolumun geri
+     * kalani bir formalitede bitiyordu.
+     *
+     * Kural sermayeyi degil ZAMANI kisitliyor, ve bu bilincli: para kirpmak
+     * (bkz. EARLY_COVERAGE_SCARCITY_SUPPLY_FACTOR) tek basina yetmiyor cunku
+     * oyuncu yine de birkac saniye icinde ayni noktaya varir. Burada kurulan
+     * sey bir TEMPO: once kur, dalgayi gor, sonra yukselt. Klasik TD ogrenme
+     * dongusu de zaten budur.
+     *
+     * ## KAPSAM BILEREK DAR: yalnizca ILK HAZIRLIK FAZI
+     * Kilit "1. dalga temizlenene kadar" DEGIL, "1. dalga BASLAYANA kadar".
+     * Sebep, `LevelModifierEngineTest`te yazili ve dogru olan ilke:
+     *
+     *   *"Yukseltme ve satis serbest kalir; aksi halde dalga icinde kazanilan
+     *   Tedarik OLU PARAYA donerdi."*
+     *
+     * Dalga boyunca yukseltmeyi kapatsaydik, o dalgada kazanilan Tedarik
+     * harcanamaz olurdu ve oyuncu tepki veremezdi. Ilk hazirlik fazinda ise
+     * HENUZ GELIR YOK — orada kilitlemek kimsenin parasini olduremez, yalnizca
+     * "oynamadan maks" yolunu kapatir.
+     *
+     * Sermaye kirpmasiyla BIRLIKTE calisir
+     * ([GameConfig.EARLY_COVERAGE_SCARCITY_SUPPLY_FACTOR]): kirpilmis sermaye
+     * iki kuleyi birden maksa cikarmaya zaten yetmiyor, bu kilit de o denemeyi
+     * dalga baslamadan yapmayi engelliyor.
+     *
+     * Gec oyunu ETKILEMEZ: kilit her bolumun ilk hazirliginda birkac saniye
+     * surer ve dalga baslar baslamaz acilir.
+     */
+    val upgradeLockedUntilFirstWave: Boolean
+        get() = GameConfig.UPGRADE_UNLOCK_AFTER_WAVES > 0 &&
+            _currentWaveIndex.value == 0 &&
+            _gameState.value == GameState.PREPARATION
+
     fun upgradeSelectedTower(): Boolean {
         if (!acceptsBattlefieldInput()) return false
+        // Motor son sozu soyler: UI butonu cizse bile buradan doner.
+        if (upgradeLockedUntilFirstWave) return false
         val tower = _selectedTower.value ?: return false
         // Faz 13: `upgradeCost` null ise BU KULE ICIN yukseltme YOKTUR — ya
         // merdivenin sonundadir ya da kademe bu bolumde henuz acilmamistir.
