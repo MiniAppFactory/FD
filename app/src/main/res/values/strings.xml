@@ -233,7 +233,11 @@
     </plurals>
     <string name="level_night_badge">NIGHT</string>
     <!-- %1$d = Coin bedeli -->
-    <string name="level_unlock_cost">UNLOCK %1$d</string>
+    <!-- Bedel COIN cinsindendir ve bu KELIMEYLE yazilir (cihaz raporu
+         2026-08-22: "buradaki 110/120 coin mi? coinse yanina coin isareti
+         gelmeli"). Yalin sayi hangi para birimi oldugunu soylemiyordu.
+         Dosya basindaki kural: Coin ikonla DEGIL kelimeyle gosterilir. -->
+    <string name="level_unlock_cost">UNLOCK · %1$d COIN</string>
     <string name="level_locked">LOCKED</string>
     <string name="level_deploy">DEPLOY</string>
     <string name="level_replay">REPLAY</string>

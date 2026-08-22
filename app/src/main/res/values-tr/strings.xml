@@ -154,7 +154,9 @@
         <item quantity="other">%d harekâtın tümünü görmek için yana kaydır</item>
     </plurals>
     <string name="level_night_badge">GECE</string>
-    <string name="level_unlock_cost">KİLİDİ AÇ %1$d</string>
+    <!-- "KİLİDİ AÇ 350" (13 karakter) -> "AÇ · 350 COIN" (13 karakter):
+         para birimi görünür oldu, satır UZAMADI. -->
+    <string name="level_unlock_cost">AÇ · %1$d COIN</string>
     <string name="level_locked">KİLİTLİ</string>
     <string name="level_deploy">SEVK ET</string>
     <string name="level_replay">TEKRAR</string>

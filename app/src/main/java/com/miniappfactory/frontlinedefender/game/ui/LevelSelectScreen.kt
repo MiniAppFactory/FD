@@ -204,9 +204,27 @@ fun LevelSelectScreen(
     // Bilincli olarak `remember` YOK: `starsFor` SharedPreferences okuyor, yani
     // Compose snapshot state degil. remember edilse zaferden sonra bayat kalirdi.
     // 22 ogelik tarama kare dongusunde degil, yalnizca composition'da kosar.
-    val nextLevel = GameConfig.CAMPAIGN.firstOrNull {
+    // ⚠ `?: 1` GERI DUSUSU KALDIRILDI (cihaz raporu 2026-08-22: "level 1'i
+    // bitirmeme ragmen hala SEVK ET diyor").
+    //
+    // Arama "acik VE hic yildizi olmayan ilk bolum" diyor. Oyuncu acik olan
+    // butun bolumleri bitirdiginde bu arama BOS doner — ve eski kod o durumda
+    // sessizce **1. bolume** dusuyordu. Sonuc: uc yildizla bitirilmis L1 altin
+    // renkte "SEVK ET" diye parliyor, yani oyuncuya YANLIS hedef gosteriliyordu.
+    // Ustelik hata tam da ilerlemenin tikandigi anda ciktigi icin, oyuncunun
+    // gercekten gormesi gereken sey (bir sonraki bolumun KILIDINI ac) gizleniyordu.
+    //
+    // Artik iki asamali:
+    //   1. Acik ve oynanmamis ilk bolum (normal ilerleme).
+    //   2. Yoksa: acilabilecek ilk KILITLI bolum — oyuncunun gitmesi gereken
+    //      yer odur ve kart zaten "KILIDI AC <bedel>" yaziyor.
+    //   3. O da yoksa `null` — kampanya bitmis demektir ve HICBIR kart
+    //      vurgulanmaz. Yanlis bir karti vurgulamaktansa hicbirini vurgulamamak
+    //      dogrudur; `isNext` zaten Int? ile karsilastiriliyor.
+    val nextLevel: Int? = GameConfig.CAMPAIGN.firstOrNull {
         progress.isUnlocked(it.levelId) && progress.starsFor(it.levelId) == 0
-    }?.levelId ?: 1
+    }?.levelId
+        ?: GameConfig.CAMPAIGN.firstOrNull { !progress.isUnlocked(it.levelId) }?.levelId
 
     // Faz 14 — gorev paneli. Tam ekran KATMAN: aciken bolum kartlari ve alttaki
     // R1 seridi erisilemez olur, boylece kazara sevk/reklam olmaz (Cephanelik
