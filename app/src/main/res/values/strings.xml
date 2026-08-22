@@ -241,6 +241,17 @@
          Dosya basindaki kural: Coin ikonla DEGIL kelimeyle gosterilir. -->
     <string name="level_unlock_cost">UNLOCK · %1$d COIN</string>
     <string name="level_locked">LOCKED</string>
+    <!-- KILIT ACMA ONAYI (cihaz raporu 2026-08-22). Geri alinamaz bir
+         harcama tek dokunusla yapilmaz; once onay, sonra sevk. -->
+    <string name="level_unlock_title">CONFIRM DEPLOYMENT</string>
+    <!-- %1$d = bolum no, %2$s = harita adi, %3$d = coin bedeli -->
+    <string name="level_unlock_body">Unlocking level %1$d — %2$s.\nThis will cost %3$d coin.</string>
+    <!-- %1$d = mevcut bakiye, %2$d = harcamadan sonraki bakiye -->
+    <string name="level_unlock_balance">Balance: %1$d → %2$d</string>
+    <!-- %1$d = eksik coin. Ret sessiz olamaz: pencere yine acilir. -->
+    <string name="level_unlock_short">%1$d coin short</string>
+    <string name="level_unlock_confirm">UNLOCK</string>
+    <string name="level_unlock_cancel">CANCEL</string>
     <string name="level_deploy">DEPLOY</string>
     <string name="level_replay">REPLAY</string>
     <string name="level_star_filled_glyph" translatable="false">*</string>

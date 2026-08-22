@@ -1,11 +1,14 @@
 package com.miniappfactory.frontlinedefender.game.ui
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -240,6 +243,15 @@ fun LevelSelectScreen(
     var pendingIntroLevel by remember { mutableStateOf<Int?>(null) }
 
     /**
+     * KILIT ACMA ONAYI BEKLEYEN BOLUM. `null` = pencere yok.
+     *
+     * `LevelSpec` tutuluyor, sadece id degil: pencere aciken listede bir sey
+     * degisse bile gosterilen ad ve bedel, DOKUNULAN kartin degerleri kalir.
+     * (`deploy` kapisinda ayni desen kullanildi.)
+     */
+    var pendingUnlock by remember { mutableStateOf<GameConfig.LevelSpec?>(null) }
+
+    /**
      * Sevk kapisi: perde acilisiysa ve kart daha once gorulmediyse ONCE kart,
      * sonra savas. Diger her durumda dogrudan savas — yani bu kapi kampanya
      * bolumlerinin 50'sinde hicbir sey yapmaz.
@@ -459,8 +471,20 @@ fun LevelSelectScreen(
                         onClick = {
                             if (progress.isUnlocked(spec.levelId)) {
                                 deploy(spec.levelId)
-                            } else if (progress.tryUnlock(spec.levelId)) {
-                                deploy(spec.levelId)
+                            } else {
+                                // ⚠ ARTIK DOGRUDAN HARCAMIYOR (cihaz raporu
+                                // 2026-08-22: "level acarken coin harcandigi
+                                // pop up cikmali... onayliyor musunuz olmali").
+                                //
+                                // Eskiden kilitli karta TEK DOKUNUS coin'i
+                                // dusurup bolumu baslatiyordu. Geri alinamaz
+                                // bir harcama icin onay adimi yoktu ve yanlis
+                                // karta dokunmanin telafisi de yoktu.
+                                //
+                                // Yetersiz bakiye dali da buraya dusar: eskiden
+                                // `tryUnlock` sessizce false donuyordu ve
+                                // hicbir sey olmuyordu ("ret sessiz olamaz").
+                                pendingUnlock = spec
                             }
                         }
                     )
@@ -508,6 +532,152 @@ fun LevelSelectScreen(
                     onPlayLevel(levelId)
                 }
             )
+        }
+
+        pendingUnlock?.let { spec ->
+            UnlockConfirmOverlay(
+                spec = spec,
+                balance = progress.coins,
+                onCancel = { pendingUnlock = null },
+                onConfirm = {
+                    // Harcama SADECE burada olur. `tryUnlock` bakiyeyi bir kez
+                    // daha kontrol eder (pencere aciken bakiye degismis
+                    // olabilir); false donerse hicbir sey degismez.
+                    val ok = progress.tryUnlock(spec.levelId)
+                    pendingUnlock = null
+                    if (ok) deploy(spec.levelId)
+                }
+            )
+        }
+    }
+}
+
+/**
+ * KILIT ACMA ONAYI.
+ *
+ * Cihaz raporu (2026-08-22): *"Level acarken coin harcandigi pop up cikmali,
+ * yani 'level 8'i aciyorsunuz, bakiyenizden xx coin dusecektir, onayliyor
+ * musunuz' olmali. Sonra deploy acilmali."*
+ *
+ * Eskiden kilitli karta TEK DOKUNUS coin'i dusuruyor ve bolumu baslatiyordu.
+ * Geri alinamaz bir harcamanin onay adimi yoktu.
+ *
+ * ## Yetersiz bakiye de BURADA gorunur
+ * Eskiden `tryUnlock` sessizce `false` donuyordu ve dokunusa hicbir tepki
+ * verilmiyordu — oyuncu kartin bozuk oldugunu sanabilirdi. Artik pencere yine
+ * acilir, ne kadar eksik oldugu yazar ve onay dugmesi kapalidir. ("Ret sessiz
+ * olamaz" — bu deponun insa cubugunda zaten uyguladigi ilke.)
+ */
+@Composable
+private fun UnlockConfirmOverlay(
+    spec: GameConfig.LevelSpec,
+    balance: Int,
+    onCancel: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    val cost = spec.deploymentCost
+    val affordable = balance >= cost
+    val shortfall = (cost - balance).coerceAtLeast(0)
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xD9000000))
+            // Scrim girdiyi YUTAR: pencere aciken arkadaki kartlara
+            // dokunulamaz, yani kazara ikinci bir kilit acilmaz.
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onCancel
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = Color(0xFF1E2A18),
+            border = BorderStroke(1.dp, Color(0x66A8C48C)),
+            modifier = Modifier
+                .widthIn(max = 340.dp)
+                .padding(24.dp)
+                // Kartin kendisine dokunmak pencereyi KAPATMAZ.
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = {}
+                )
+                .testTag("unlock_confirm")
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = stringResource(R.string.level_unlock_title),
+                    color = Color(0xFFE8F0DC),
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Black,
+                    maxLines = 1
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = stringResource(
+                        R.string.level_unlock_body,
+                        spec.levelId,
+                        stringResource(mapNameRes(spec.mapId)),
+                        cost
+                    ),
+                    color = Color(0xFFDCE8CC),
+                    fontSize = 12.sp,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    text = if (affordable) {
+                        stringResource(R.string.level_unlock_balance, balance, balance - cost)
+                    } else {
+                        stringResource(R.string.level_unlock_short, shortfall)
+                    },
+                    color = if (affordable) Color(0xFFFFD54F) else Color(0xFFE59B9B),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(Modifier.height(16.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color(0xFF2A3320),
+                        modifier = Modifier
+                            .clickable(onClick = onCancel)
+                            .testTag("unlock_cancel")
+                    ) {
+                        Text(
+                            text = stringResource(R.string.level_unlock_cancel),
+                            color = Color(0xFFC5D6B4),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp)
+                        )
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = if (affordable) Color(0xFF4C7A2E) else Color(0xFF2A3320),
+                        modifier = Modifier
+                            .clickable(enabled = affordable, onClick = onConfirm)
+                            .testTag("unlock_confirm_button")
+                    ) {
+                        Text(
+                            text = stringResource(R.string.level_unlock_confirm),
+                            color = if (affordable) Color(0xFFF2FFE4) else Color(0x66C5D6B4),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp)
+                        )
+                    }
+                }
+            }
         }
     }
 }
