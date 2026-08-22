@@ -740,6 +740,12 @@ class GameEngine(
     // Current wave spawn queue
     private val pendingWaveSpawns = mutableListOf<GameConfig.WaveEnemySpawn>()
     private var timeUntilNextSpawn = 0f
+    /**
+     * Bu savasta ilk dalga baslatildi mi? Yukseltme kilidinin TEK dogruluk
+     * kaynagi — duraklama/modal/reklam durumu bunu DEGISTIREMEZ.
+     */
+    private var firstWaveStarted: Boolean = false
+
     private var screenShakeDuration = 0f
 
     /**
@@ -1034,6 +1040,9 @@ class GameEngine(
         _lives.value = levelSpec.maxBaseLives + metaLivesBonus
         _score.value = 0
         _currentWaveIndex.value = 0
+        // Yeni savas -> yukseltme kilidi yeniden kurulur (bkz.
+        // upgradeLockedUntilFirstWave). "Tekrar dene" yolu da buradan gecer.
+        firstWaveStarted = false
         _gameSpeed.value = 1.0f
         _selectedBuildSpot.value = null
         _selectedTower.value = null
@@ -1168,6 +1177,9 @@ class GameEngine(
     fun startNextWaveNow() {
         if (_gameState.value == GameState.PREPARATION) {
             _gameState.value = GameState.WAVE_RUNNING
+            // Yukseltme kilidinin TEK dogruluk kaynagi (bkz.
+            // upgradeLockedUntilFirstWave). Bir kez acilir, bir daha kapanmaz.
+            firstWaveStarted = true
             audioManager.playSound(AudioManager.SoundEffect.WAVE_START)
         }
     }
@@ -1373,11 +1385,27 @@ class GameEngine(
      *
      * Gec oyunu ETKILEMEZ: kilit her bolumun ilk hazirliginda birkac saniye
      * surer ve dalga baslar baslamaz acilir.
+     * ## ⚠ DURUMA DEGIL OLAYA BAGLI (2026-08-22, ayni gun duzeltildi)
+     * Ilk hali soyle yaziyordu:
+     *
+     *     _currentWaveIndex.value == 0 && _gameState.value == PREPARATION
+     *
+     * Cihaz raporu bunu kirdi: *"Gatling yukseltmesi '1. dalga sonra' diyor
+     * ama reklam izleyince 1. dalgada da yukseltmeye izin veriyor."*
+     *
+     * Sebep: reklam akisi oyunu DURAKLATIYOR. `BoosterRail` teklif acilmadan
+     * once `togglePause()` cagiriyor, `applyBoosterAd` da sonuc mesaji
+     * okunurken oyunu bilerek yeniden duraklatiyor. O anda durum PREPARATION
+     * DEGIL **PAUSED**, dolayisiyla kosul false donuyor ve kilit sessizce
+     * aciliyordu.
+     *
+     * Ders: bir kural "su fazdayiz" diye sorulursa, o fazi gecici olarak
+     * degistiren HER yol (duraklama, modal, reklam) kurali delen bir arka
+     * kapiya donusur. Artik tek dogruluk kaynagi bir OLAY: ilk dalga
+     * baslatildi mi?
      */
     val upgradeLockedUntilFirstWave: Boolean
-        get() = GameConfig.UPGRADE_UNLOCK_AFTER_WAVES > 0 &&
-            _currentWaveIndex.value == 0 &&
-            _gameState.value == GameState.PREPARATION
+        get() = GameConfig.UPGRADE_UNLOCK_AFTER_WAVES > 0 && !firstWaveStarted
 
     fun upgradeSelectedTower(): Boolean {
         if (!acceptsBattlefieldInput()) return false

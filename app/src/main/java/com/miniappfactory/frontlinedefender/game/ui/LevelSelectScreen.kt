@@ -893,8 +893,29 @@ private fun LevelCard(
                 statusText = stringResource(R.string.level_deploy)
                 statusColor = Color(0xFFFFD54F)
             }
-            else -> {
+            // ⚠ 2026-08-22: "TEKRAR" ARTIK YILDIZA BAGLI (cihaz raporu:
+            // *"resetliyor ama yine de bolumlerde replay yaziyor"*).
+            //
+            // Eskiden son dal KOSULSUZ "TEKRAR" yaziyordu: acik VE siradaki
+            // olmayan her kart, HIC OYNANMAMIS olsa bile "tekrar" diyordu.
+            // Ilerleme sifirlandiktan sonra L1-L6 acik ve hepsi 0 yildiz
+            // oluyor; L1 "siradaki" oldugu icin SEVK ET diyor, L2-L6 ise bu
+            // dala dusup "TEKRAR" diyordu — oyuncuya hic yapmadigi bir seyi
+            // yapmis gibi gosteriyordu.
+            //
+            // Ayni hata ailesinden: kart durumu OYNANMIS ile OYNANMAMIS'i
+            // hic ayirt etmiyordu, yalnizca "siradaki mi" diye soruyordu.
+            // (Kardesi `nextLevel`in `?: 1` geri dususuydu, ayni gun duzeltildi.)
+            stars > 0 -> {
                 statusText = stringResource(R.string.level_replay)
+                statusColor = Color(0xFFA8C48C)
+            }
+            else -> {
+                // Acik ama hic oynanmamis ve "siradaki" de degil: dogru fiil
+                // yine SEVK ET. Altin vurgu YALNIZCA siradaki kartta kalir,
+                // yani oneri sinyali bulanmaz — degisen tek sey yanlis fiilin
+                // dogruyla yer degistirmesi.
+                statusText = stringResource(R.string.level_deploy)
                 statusColor = Color(0xFFA8C48C)
             }
         }

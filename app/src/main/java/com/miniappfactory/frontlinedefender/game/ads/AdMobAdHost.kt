@@ -19,6 +19,14 @@ import com.google.android.gms.ads.RequestConfiguration
  * bile oyun tam oynanir (offline oynanabilir bir oyundur).
  */
 class AdMobAdHost(
+    /**
+     * ⚠ Varsayilan hala bellek-ici, ama URETIM bunu KULLANMAMALI —
+     * `MainActivity` `SaveManagerAdProgressStore` gecirir.
+     *
+     * Varsayilanin bellek-ici kalmasi bilincli: bu sinif `Context` almiyor ve
+     * almasi da istenmiyor (reklam katmani saf kalsin). Testler varsayilanla
+     * calismaya devam eder.
+     */
     private val progressStore: AdProgressStore = InMemoryAdProgressStore(),
     private val quota: RewardedQuotaStore = InMemoryRewardedQuotaStore(),
     private val analytics: AdAnalytics = LogcatAdAnalytics

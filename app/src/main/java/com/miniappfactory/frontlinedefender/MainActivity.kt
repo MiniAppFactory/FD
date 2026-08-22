@@ -18,6 +18,8 @@ import androidx.compose.ui.Modifier
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.miniappfactory.frontlinedefender.game.ads.AdMobAdHost
+import com.miniappfactory.frontlinedefender.game.ads.SaveManagerAdProgressStore
+import com.miniappfactory.frontlinedefender.game.data.SaveManager
 import com.miniappfactory.frontlinedefender.game.ui.BiomeBackgroundCache
 import com.miniappfactory.frontlinedefender.game.ui.GameScreen
 import com.miniappfactory.frontlinedefender.game.ui.LocalAdHost
@@ -33,7 +35,24 @@ class MainActivity : ComponentActivity() {
      * Composable icinde `remember` edilseydi her yapilandirma degisikliginde
      * (donme, dil, karanlik mod) yeni bir host uretme riski olurdu.
      */
-    private val adHost = AdMobAdHost()
+    /**
+     * Reklam sayaci KALICI depoya baglandi (2026-08-22).
+     *
+     * Eskiden `AdMobAdHost()` varsayilan `InMemoryAdProgressStore`u
+     * kullaniyordu ve sayac her acilista sifirlaniyordu — yani
+     * `ONBOARDING_FREE_BATTLES` (3) ve `FIRST_SESSION_WARMUP_MS` (3 dk) HER
+     * OTURUMDA bastan uygulaniyordu. Cihaz raporu: *"level 1 bitirdim, next
+     * level dedigimde reklam gelmedi."*
+     *
+     * `SaveManager` burada `by lazy`: `Context` Activity olusturulurken hazir
+     * degil, `onCreate`ta hazir. `adHost` da lazy olmak zorunda cunku ona
+     * bagimli.
+     */
+    private val saveManager by lazy { SaveManager(applicationContext) }
+
+    private val adHost by lazy {
+        AdMobAdHost(progressStore = SaveManagerAdProgressStore(saveManager))
+    }
 
     /**
      * Faz 14 — ARKA PLANDA BITMAP IADESI.

@@ -260,7 +260,17 @@ interface AdProgressStore {
     val adsRemoved: Boolean
 }
 
-/** Kalicilik baglanana kadarki varsayilan — surec olumunde sifirlanir. */
+/**
+ * Kalicilik baglanana kadarki varsayilan — surec olumunde sifirlanir.
+ *
+ * ⚠ URETIMDE ARTIK KULLANILMIYOR. Uzun sure `AdMobAdHost`in varsayilani buydu
+ * ve sonucu su oldu: sayac her uygulama acilisinda 0'a donuyor, dolayisiyla
+ * `ONBOARDING_FREE_BATTLES` (ilk 3 savas reklamsiz) ve `FIRST_SESSION_WARMUP_MS`
+ * (3 dakika) HER OTURUMDA bastan uygulaniyordu — yani "yeni oyuncu muafiyeti"
+ * hic bitmiyordu. Uretim yolu artik `SaveManagerAdProgressStore`.
+ *
+ * Testler icin duruyor; oradan silinmesi gereken bir sey degil.
+ */
 class InMemoryAdProgressStore(
     override var lifetimeBattlesCompleted: Int = 0,
     override val adsRemoved: Boolean = false

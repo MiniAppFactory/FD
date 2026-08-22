@@ -79,6 +79,8 @@ class SaveManager internal constructor(private val store: KeyValueStore) {
 
         // ---- Ilk oturum onboarding (game/ui/TutorialOverlay.kt) ---------------
         private const val KEY_TUTORIAL_STATUS = "tutorial_status"
+        /** Reklam politikasi: kurulumdan beri tamamlanan savas sayisi. */
+        private const val KEY_LIFETIME_BATTLES = "ads_lifetime_battles"
 
         /** [tutorialStatus] alfabesi. Aralik disi deger [TUTORIAL_UNSEEN]e kirpilir. */
         const val TUTORIAL_UNSEEN = 0
@@ -409,6 +411,38 @@ class SaveManager internal constructor(private val store: KeyValueStore) {
     fun resetTutorial() {
         store.putInt(KEY_TUTORIAL_STATUS, TUTORIAL_UNSEEN)
     }
+
+    // =================================================================================
+    // Reklam politikasi sayaci (GDD §G.2/1)
+    // =================================================================================
+
+    /**
+     * Kurulumdan bu yana SONUNA KADAR oynanmis savas sayisi.
+     *
+     * ⚠ 2026-08-22 — BU ALAN KALICI DEGILDI ve bu gercek bir hataydi.
+     *
+     * `AdProgressStore`in KDoc'u *"Kaliciligi bu katman yapmaz —
+     * DataStore/SaveManager tarafina Faz 6'da baglanir"* diyordu. Faz 6 geldi
+     * gecti, baglanmadi: uretimde `AdMobAdHost` varsayilan
+     * `InMemoryAdProgressStore`u kullaniyordu ve o sinifin kendi yorumu
+     * *"surec olumunde sifirlanir"* diyordu.
+     *
+     * Sonuc: sayac HER UYGULAMA ACILISINDA 0'a donuyordu, dolayisiyla
+     *   - `ONBOARDING_FREE_BATTLES = 3` (ilk uc savas reklamsiz) her oturumda
+     *     bastan uygulaniyordu,
+     *   - `isFirstSession` hep `true` oldugu icin `FIRST_SESSION_WARMUP_MS`
+     *     (3 dakika) da her oturumda uygulaniyordu.
+     * Yani "yeni oyuncu muafiyeti" HIC BITMIYORDU. Cihaz raporu: *"level 1
+     * bitirdim, next level dedigimde reklam gelmedi."*
+     *
+     * Bu deponun 4 numarali tekrar eden hatasi: **kod var, cagiran yok.**
+     *
+     * `resetProgress` bunu da siler (PRESERVED_ON_RESET disinda) — dogru
+     * davranis: ilerlemesini sifirlayan oyuncu muafiyeti yeniden hak eder.
+     */
+    var lifetimeBattlesCompleted: Int
+        get() = store.getInt(KEY_LIFETIME_BATTLES, 0).coerceAtLeast(0)
+        set(value) = store.putInt(KEY_LIFETIME_BATTLES, value.coerceAtLeast(0))
 
     /**
      * Bayrak eklenmeden ONCE olusmus kayitlar icin bir kerelik tohumlama.

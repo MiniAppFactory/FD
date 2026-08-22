@@ -2,36 +2,70 @@ package com.miniappfactory.frontlinedefender.geometry
 
 import com.miniappfactory.frontlinedefender.game.model.GameConfig
 import com.miniappfactory.frontlinedefender.game.model.LevelData
+import com.miniappfactory.frontlinedefender.game.model.PointF
 import org.junit.Test
 import kotlin.math.hypot
 
 /**
  * SPAWN KAMPI DENETIMI — olcum araci.
  *
- * Cihaz raporu (2026-08-22): *"4. levelde onlarin base onune iki gatling
- * koydum, levellerini max yaptim, kendi baselerinden bile cikamadan
- * oldüler."* Kullanici bunun yanlis oldugunu soyledi: dusman cikisinin tam
- * onunde mevzi olmamali.
+ * ## Soru DEGISTI (2026-08-22, ikinci cihaz raporu)
+ * Ilk surum yanlis soruyu soruyordu: *"mevzi, rotanin ILK NOKTASINA kac
+ * ref-px uzakta?"*. O olcumle tum kampanyada tek bir mevzi cikti (harita 04
+ * pad 1) — ama kullanici L2 ve L3'te de *"rakip karargah onunde pad var"*
+ * dedi ve ekran goruntusuyle gosterdi.
  *
- * Burada "cikisin onunde" tanimi GOZLE degil MENZILLE yapilir: bir mevzi,
- * uzerine kurulan EN KISA menzilli kule (Gatling, 150 ref-px) ile rotanin
- * BASLANGIC noktasini vurabiliyorsa, o mevzi bir spawn kampidir — dusman
- * daha yurumeye baslamadan olur ve haritanin geri kalani anlamsizlasir.
+ * Neden yanilmisti: rotanin ilk noktasi ile ekranda gorunen dusman yapisinin
+ * agzi ayni yer degil, ve asil onemli olan mesafe degil **KAPSAMA BASLANGICI**.
+ * Bir kule spawn noktasindan 200 px uzakta olabilir ama rotanin 0. metresini
+ * hala menzilinde tutuyorsa dusman daha yurumeye baslamadan olur.
  *
- * Bu dosya once SAYIYI uretir. Kural testi ayri yazilir (bu depoda "test
- * kusuru yasaklamaz, SAYAR" hatasi yedi kez tekrarlandi).
+ * ## Dogru olcum
+ * Rota ~10 ref-px araliklarla orneklenir ve her ornegin YAY UZUNLUGU (spawn'dan
+ * itibaren yurunen mesafe) tutulur. Bir mevzi icin sorulan sey:
+ *
+ *   "Uzerine kurulan EN KISA menzilli kule (Gatling, 150) rotayi ilk kez
+ *    KACINCI metrede goruyor?"
+ *
+ * Bu sayi 0'a yakinsa mevzi bir spawn kampidir: dusman cikis agzindan
+ * itibaren ates altindadir.
+ *
+ * Bu dosya SAYI uretir; esik ve duzeltme karari kullanicinin.
  */
 class SpawnCampPadAuditTest {
 
+    /** Rotayi ~10 ref-px adimlarla ornekler; her ornek (yayUzunlugu, nokta). */
+    private fun sampleWithArcLength(routeNorm: List<PointF>): List<Pair<Float, PointF>> {
+        val ref = routeNorm.map { GeometryTestSupport.toRef(it) }
+        val out = ArrayList<Pair<Float, PointF>>()
+        if (ref.isEmpty()) return out
+        var acc = 0f
+        out.add(0f to ref.first())
+        for (i in 0 until ref.size - 1) {
+            val seg = hypot(ref[i + 1].x - ref[i].x, ref[i + 1].y - ref[i].y)
+            val steps = maxOf(1, (seg / 10f).toInt())
+            for (k in 1..steps) {
+                val t = k.toFloat() / steps
+                val p = PointF(
+                    ref[i].x + (ref[i + 1].x - ref[i].x) * t,
+                    ref[i].y + (ref[i + 1].y - ref[i].y) * t
+                )
+                acc += seg / steps
+                out.add(acc to p)
+            }
+        }
+        return out
+    }
+
     @Test
-    fun `spawn noktasini vurabilen mevzileri raporla`() {
+    fun `her mevzinin rotayi kacinci metreden gordugunu raporla`() {
         val gatlingRange = GameConfig.TOWER_SPECS
             .getValue(GameConfig.TowerType.MACHINE_GUN).level1Range
 
         println("=== Gatling kademe-1 menzili: $gatlingRange ref-px ===")
-        println("=== SPAWN'I VURABILEN MEVZILER ===")
+        println("=== KAPSAMA BASLANGICI (rotanin kacinci metresi) ===")
+        println("   0'a yakin = spawn kampi · buyuk = guvenli")
 
-        var total = 0
         val seenMaps = HashSet<Int>()
         for (spec in GameConfig.CAMPAIGN) {
             val mapId = spec.mapId
@@ -39,69 +73,38 @@ class SpawnCampPadAuditTest {
 
             val data = LevelData.forMapId(mapId)
             val routes = GeometryTestSupport.activeRoutesFor(mapId, spec.levelId)
+            if (routes.isEmpty()) continue
+            val sampled = routes.map { sampleWithArcLength(it) }
 
-            // Her rotanin ILK noktasi bir spawn agzidir. Cift kollu haritada
-            // iki ayri spawn olabilir; hepsi kontrol edilir.
-            val spawns = routes.mapNotNull { it.firstOrNull() }
-                .map { GeometryTestSupport.toRef(it) }
-            if (spawns.isEmpty()) continue
-
+            // Her mevzi icin: kule menzilindeki EN KUCUK yay uzunlugu.
+            val rows = ArrayList<Triple<Int, Float, Float>>()
             for (spot in data.buildSpots) {
                 val px = spot.normX * GeometryTestSupport.refW
                 val py = spot.normY * GeometryTestSupport.refH
-                val dMin = spawns.minOf { hypot(it.x - px, it.y - py) }
-                if (dMin <= gatlingRange) {
-                    total++
-                    val mask = MapMaskFixture.maskFor(mapId)
-                    println(
-                        "  harita %02d · pad %-2d · spawn'a %.1f · yola %.1f · zemin=%d".format(
-                            mapId, spot.id, dMin,
-                            GeometryTestSupport.padToNearestOfRoutes(
-                                spot.normX, spot.normY, routes
-                            ),
-                            mask.classAt(spot.normX, spot.normY)
-                        )
-                    )
-
-                    // ADAY TARAMASI: spawn'dan UZAKLASAN yonde kucuk adimlarla
-                    // ilerle; ilk gecerli konumu bildir.
-                    //
-                    // GECERLILIK UC KOSUL:
-                    //   1. spawn'a >= 190 ref-px  (Gatling 150 ve Agir Top 175
-                    //      artik spawn agzini goremez, 15 px guvenlik payiyla)
-                    //   2. yola <= 150 ref-px     (mevzi HALA ise yarar; yoksa
-                    //      olu pad uretmis oluruz — dun tam bunu duzelttik)
-                    //   3. maske sinifi ROAD DEGIL (kule yolun ustune kurulamaz)
-                    val nearestSpawn = spawns.minByOrNull { hypot(it.x - px, it.y - py) }!!
-                    val ux = (px - nearestSpawn.x) / dMin
-                    val uy = (py - nearestSpawn.y) / dMin
-                    var found = false
-                    var step = 5f
-                    while (step <= 160f && !found) {
-                        val nx = px + ux * step
-                        val ny = py + uy * step
-                        val nnx = nx / GeometryTestSupport.refW
-                        val nny = ny / GeometryTestSupport.refH
-                        val dSpawn = spawns.minOf { hypot(it.x - nx, it.y - ny) }
-                        val dRoute = GeometryTestSupport.padToNearestOfRoutes(nnx, nny, routes)
-                        val cls = mask.classAt(nnx, nny)
-                        if (dSpawn >= 190f && dRoute <= gatlingRange &&
-                            cls != MapMaskFixture.CLASS_ROAD
-                        ) {
-                            println(
-                                "      -> ADAY normX %.5f normY %.5f · spawn %.1f · yol %.1f · zemin=%d · kaydirma %.0f px".format(
-                                    nnx, nny, dSpawn, dRoute, cls, step
-                                )
-                            )
-                            found = true
-                        }
-                        step += 5f
+                var firstCovered = Float.MAX_VALUE
+                var nearest = Float.MAX_VALUE
+                for (route in sampled) {
+                    for ((arc, p) in route) {
+                        val d = hypot(p.x - px, p.y - py)
+                        if (d < nearest) nearest = d
+                        if (d <= gatlingRange && arc < firstCovered) firstCovered = arc
                     }
-                    if (!found) println("      -> UYGUN ADAY YOK (elle bakilmali)")
+                }
+                if (firstCovered != Float.MAX_VALUE) {
+                    rows.add(Triple(spot.id, firstCovered, nearest))
                 }
             }
+
+            // En erken kapsayan UC mevziyi bas — ilgilendigimiz uc bunlar.
+            val worst = rows.sortedBy { it.second }.take(3)
+            println("  --- harita %02d ---".format(mapId))
+            worst.forEach { (id, arc, near) ->
+                val flag = if (arc <= 60f) "  <<< SPAWN KAMPI" else ""
+                println(
+                    "     pad %-2d · rotayi %6.1f. metreden gorur · yola %5.1f%s"
+                        .format(id, arc, near, flag)
+                )
+            }
         }
-        println()
-        println("TOPLAM spawn kampi mevzisi: $total")
     }
 }
