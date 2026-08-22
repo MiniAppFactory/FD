@@ -519,7 +519,13 @@ object LevelGeometry {
         buildSpots = listOf(
             BuildSpot(id = 1, normX = 0.2351f, normY = 0.3033f),  // Z1  yola 108 ref-px
             BuildSpot(id = 2, normX = 0.2810f, normY = 0.5378f),  // Z1  yola 153 ref-px
-            BuildSpot(id = 3, normX = 0.2884f, normY = 0.6803f),  // Z3  yola 259 ref-px
+            // YALNIZ-BUZ DUZELTMESI (2026-08-22). Olculen mesafe 262,6 ref-px
+            // idi: Buz Alani (270) yetisiyor, hasar veren UC kule de
+            // yetismiyordu (Gatling 150 / Agir Top 175 / Fuze 250). Kullanici
+            // bunun KAZA oldugunu dogruladi. Pad en yakin rota noktasina dogru
+            // 17,6 ref-px kaydirildi -> 245,0 (Fuze esiginin 5 px altinda).
+            // Zemin DEGISMEDI: maske sinifi 3 (kayalik), oncesi de sonrasi da.
+            BuildSpot(id = 3, normX = 0.2969f, normY = 0.6741f),  // Z3  yola 245 ref-px
             BuildSpot(id = 4, normX = 0.2885f, normY = 0.2057f),  // Z1  yola 140 ref-px
             BuildSpot(id = 5, normX = 0.3977f, normY = 0.3328f),  // Z2  yola 102 ref-px
             BuildSpot(id = 6, normX = 0.4729f, normY = 0.5808f),  // Z3  yola 101 ref-px
@@ -710,7 +716,10 @@ object LevelGeometry {
             BuildSpot(id = 6, normX = 0.4658f, normY = 0.8069f),  // Z2  yola 344 ref-px
             BuildSpot(id = 7, normX = 0.5041f, normY = 0.6153f),  // Z2  yola 206 ref-px
             BuildSpot(id = 8, normX = 0.6465f, normY = 0.3974f),  // Z4  yola 108 ref-px
-            BuildSpot(id = 9, normX = 0.7079f, normY = 0.7345f),  // Z4  yola 252 ref-px
+            // YALNIZ-BUZ DUZELTMESI (2026-08-22). Olculen 252,7 ref-px — Fuze
+            // esigini yalnizca 2,7 px asiyordu, yani kil payi kaciran bir pad.
+            // 7,7 px kaydirildi -> 245,0. Maske sinifi 3 (kayalik), degismedi.
+            BuildSpot(id = 9, normX = 0.7066f, normY = 0.7278f),  // Z4  yola 245 ref-px
             BuildSpot(id = 10, normX = 0.7192f, normY = 0.2113f),  // Z5  yola 127 ref-px
             BuildSpot(id = 11, normX = 0.7602f, normY = 0.4414f),  // Z5  yola 109 ref-px
         )
@@ -984,9 +993,15 @@ object LevelGeometry {
             BuildSpot(id = 1, normX = 0.1797f, normY = 0.3294f),  // Z1  yola 114 ref-px
             BuildSpot(id = 2, normX = 0.2217f, normY = 0.5959f),  // Z1  yola 93 ref-px
             BuildSpot(id = 3, normX = 0.2223f, normY = 0.7431f),  // Z2  yola 107 ref-px
-            BuildSpot(id = 4, normX = 0.2776f, normY = 0.2352f),  // Z1  yola 253 ref-px
+            // YALNIZ-BUZ DUZELTMESI (2026-08-22). Olculen 267,7 ref-px (yandaki
+            // yorum 253 diyordu — BAYATTI, rota v5'te sanattan yeniden
+            // uretilince pad uzakta kaldi ve yorum guncellenmedi). 22,7 px
+            // kaydirildi -> 245,0. Maske sinifi 3 (kayalik), degismedi.
+            BuildSpot(id = 4, normX = 0.2724f, normY = 0.2540f),  // Z1  yola 245 ref-px
             BuildSpot(id = 5, normX = 0.3586f, normY = 0.7033f),  // Z2  yola 122 ref-px
-            BuildSpot(id = 6, normX = 0.3593f, normY = 0.3465f),  // Z1  yola 267 ref-px
+            // YALNIZ-BUZ DUZELTMESI (2026-08-22). Olculen 265,5 ref-px.
+            // 20,5 px kaydirildi -> 245,0. Maske sinifi 3 (kayalik), degismedi.
+            BuildSpot(id = 6, normX = 0.3511f, normY = 0.3587f),  // Z1  yola 245 ref-px
             BuildSpot(id = 7, normX = 0.3694f, normY = 0.4987f),  // Z1  yola 203 ref-px
             BuildSpot(id = 8, normX = 0.4616f, normY = 0.0691f),  // Z5  yola 528 ref-px
             BuildSpot(id = 9, normX = 0.4732f, normY = 0.8800f),  // Z3  yola 141 ref-px

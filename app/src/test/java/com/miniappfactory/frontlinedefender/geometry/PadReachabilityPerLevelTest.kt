@@ -162,21 +162,27 @@ class PadReachabilityPerLevelTest {
             // hasar veren menzilin (175) disina, Frost Field bandina (270)
             // kaydi: 175 < d <= 270. Gecerli bir DESTEK mevzisi, tuzak degil —
             // ustune kurulan kule dusmani yavaslatir. Kume bir eleman buyudu.
-            6 to setOf(1),        // harita 06 · 175 < d <= 270
-            7 to setOf(9),        // harita 07 · 250 < d <= 270
-            10 to setOf(4, 6),    // harita 10 · 250 < d <= 270
-            13 to setOf(4),       // harita 10 · 250 < d <= 270 (Act II; 6 krater ile kapali)
-            // ---- Act III/IV/V (Faz 13). Ayni fiziksel pad'ler, farkli bolumler:
-            // harita 10 pad 4/6 ve harita 07 pad 9. Krater listesi hangilerini
-            // actiysa burada gorunuyor; kume BUYUMEDI, yalnizca daha cok bolume
-            // yayildi. Bu pad'ler gecerli DESTEK mevzileridir (Frost Field), tuzak
-            // degil — kule kurulur, dusmani yavaslatir, oldurmez.
-            23 to setOf(6),       // harita 10
-            26 to setOf(9),       // harita 07
-            36 to setOf(9),       // harita 07
-            44 to setOf(4, 6),    // harita 10
-            46 to setOf(9),       // harita 07
-            54 to setOf(4, 6)     // harita 10
+            6 to setOf(1)         // harita 06 · 175 < d <= 270
+            // ---- 2026-08-22: `250 < d <= 270` BANDI TAMAMEN BOSALDI ----
+            //
+            // Silinen girdiler: 7=[9], 10=[4,6], 13=[4], 23=[6], 26=[9],
+            // 36=[9], 44=[4,6], 46=[9], 54=[4,6] — hepsi UC fiziksel pad'e
+            // dayaniyordu (harita 05 pad 3, harita 07 pad 9, harita 10 pad 4/6)
+            // ve ayni pad'ler farkli bolumlerde tekrar tekrar sayiliyordu.
+            //
+            // O pad'ler HIC BIR bolumde hasar veren bir kule kabul etmiyordu:
+            // en uzun hasar menzili Fuze'nin 250'si, mesafeler 252,7 / 262,6 /
+            // 265,5 / 267,7 idi. Yukaridaki eski yorum bunlari "gecerli DESTEK
+            // mevzisi, tuzak degil" diye savunuyordu; kullanici 2026-08-22'de
+            // bunun KAZA oldugunu soyledi. Dort pad en yakin rota noktasina
+            // dogru 7,7-22,7 ref-px kaydirildi -> hepsi 245,0 (Fuze esiginin
+            // 5 px altinda). Maske sinifi degismedi (3 = kayalik).
+            //
+            // KALAN IKI GIRDI KAZA DEGIL ve silinmemeli: onlar `175 < d <= 270`
+            // bandinda ve sebebi mesafe degil KILIT — Fuze Rampasi L7'de
+            // aciliyor, L5/L6'da en uzun hasar menzili Agir Top'un 175'i. Ayni
+            // pad'ler L7'den itibaren hasar veren bir kule kabul ediyor, yani
+            // bunlar gecici bir durum; kalici bir olu mevzi degil.
         )
 
         val measured = sortedMapOf<Int, Set<Int>>()

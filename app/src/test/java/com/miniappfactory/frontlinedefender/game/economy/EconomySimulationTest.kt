@@ -1167,13 +1167,26 @@ class EconomySimulationTest {
         }
     }
 
+    /**
+     * KURAL DEGISTI (2026-08-22): "ilk IKI rank kapisiz" -> "ilk rank kapisiz".
+     *
+     * Eski kural, reklamla coin toplayan bir oyuncunun hicbir bolum gecmeden
+     * agacin %33'unu (r1+r2 = 6.550 coin) satin almasina izin veriyordu; L2
+     * baslangic sermayesi 130 -> 280 (+%115) cikiyordu. Gerekce olan "ilk satin
+     * alma karari gecikmez" ilkesi DOGRU ve KORUNDU — rank 1 hala kapisiz, yani
+     * dukkan ilk aciliste hala satin alinabilir bir sey gosteriyor. Gecikin
+     * yalnizca IKINCI kademe ve yalnizca L5'e kadar.
+     */
     @Test
-    fun rankGateBlocksHighRankButNeverTheFirstTwoRanks() {
+    fun rankGateBlocksHighRankButNeverTheFirstRank() {
+        // Cleared = {1, 2}: oyuncu daha L5'i gecmemis.
         val richButNew = walletAt(99_999, (1..7).toSet(), (1..2).toSet())
-        // Ilk IKI rank her hatta kapisiz: yeni oyuncunun ilk satin alma karari
-        // gecikmez, erken oyunu cuzdan paceler (L10'da 1 yildiz bakiyesi 2.290).
+
+        // Rank 1 kapisiz KALMALI — bu ilke degismedi.
         assertEquals(0, rankGateClearedLevel(1, true))
-        assertEquals(0, rankGateClearedLevel(2, true))
+        // Rank 2 artik L5 istiyor.
+        assertEquals(5, rankGateClearedLevel(2, true))
+
         for (line in UpgradeLine.entries) {
             assertTrue(
                 "$line ilk ranki kapili olamaz",
@@ -1181,8 +1194,27 @@ class EconomySimulationTest {
                     is PurchaseDecision.Allowed,
             )
         }
-        assertTrue(purchaseAllowed(richButNew, MetaUpgrades(firepower = 1), UpgradeLine.FIREPOWER, gatesEnabled = true) is PurchaseDecision.Allowed)
-        val gated = purchaseAllowed(richButNew, MetaUpgrades(firepower = 2), UpgradeLine.FIREPOWER, gatesEnabled = true)
+
+        // L5 GECILMEDEN rank 2 alinamaz — duzeltmenin ta kendisi.
+        val blockedR2 = purchaseAllowed(
+            richButNew, MetaUpgrades(firepower = 1), UpgradeLine.FIREPOWER, gatesEnabled = true
+        )
+        assertTrue("L5 gecilmeden rank 2 acik kalmis", blockedR2 is PurchaseDecision.RankGated)
+        assertEquals(5, (blockedR2 as PurchaseDecision.RankGated).requiredClearedLevel)
+
+        // L5 gecildikten SONRA rank 2 acilir: kapi kalici bir duvar degil.
+        val clearedFive = walletAt(99_999, (1..7).toSet(), (1..5).toSet())
+        assertTrue(
+            "L5 gecildigi halde rank 2 hala kapali",
+            purchaseAllowed(
+                clearedFive, MetaUpgrades(firepower = 1), UpgradeLine.FIREPOWER, gatesEnabled = true
+            ) is PurchaseDecision.Allowed,
+        )
+
+        // Rank 3 hala L10 ister — ust kapilar degismedi.
+        val gated = purchaseAllowed(
+            clearedFive, MetaUpgrades(firepower = 2), UpgradeLine.FIREPOWER, gatesEnabled = true
+        )
         assertTrue(gated is PurchaseDecision.RankGated)
         assertEquals(10, (gated as PurchaseDecision.RankGated).requiredClearedLevel)
     }

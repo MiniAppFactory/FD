@@ -211,37 +211,71 @@ class LineOfFireUiTest {
     @Test
     @Config(sdk = [33], qualifiers = "tr-rTR-w740dp-h360dp-land-xxhdpi")
     fun `turkce en uzun kule adiyla serit dar ekrana sigar`() {
-        var found = false
+        // ⚠ 2026-08-22: ARTIK TEK BIR KULEYE BAGLI DEGIL.
+        //
+        // Eskiden yalnizca `ANTI_ARMOR` araniyordu cunku en uzun ad "Fuze
+        // Rampasi" idi. "Yalniz-buz" duzeltmesinde dort mevzi yola
+        // yaklastirilinca (245 ref-px) Fuze'nin (menzil 250) YETISMEDIGI mevzi
+        // KALMADI ve test kendi korumasiyla kirildi — dogru davrandi.
+        //
+        // Cozum kuleyi degistirmek DEGIL, soruyu duzeltmek: olculmesi gereken
+        // sey "oyunun gosterebilecegi EN GENIS serit". O yuzden butun kule
+        // tipleri taranir ve gercekten uretilebilen en uzun ADLI olan secilir.
+        // Boylece geometri yarin yine degisirse test yine kendi kendini
+        // ayarlar, sessizce zayiflamaz.
+        //
+        // Not: TR'de "Fuze Rampasi" ve "Gatling Topu" ikisi de 12 karakter,
+        // yani bu degisiklik olculen genisligi pratikte dusurmuyor.
+        val ctx: Context = ApplicationProvider.getApplicationContext()
+        var chosen: TowerType? = null
+        var chosenNameLen = -1
+        var chosenLevel = -1
+        var chosenSpot: BuildSpot? = null
+
         for (spec in GameConfig.CAMPAIGN) {
-            if (!GameConfig.isTowerUnlocked(TowerType.ANTI_ARMOR, spec.levelId)) continue
-            engine.startNewGame(spec.levelId)
-            val routes = engine.scaledRoutes
-            val range = engine.previewRangeRef(TowerType.ANTI_ARMOR) * engine.renderScale
-            val spot = engine.scaledBuildSpots.firstOrNull {
-                !GameConfig.coversRoute(it.normX, it.normY, range, routes)
-            } ?: continue
-            engine.selectBuildSpot(spot)
-            found = true
-            break
+            for (type in TowerType.entries) {
+                if (!GameConfig.isTowerUnlocked(type, spec.levelId)) continue
+                val nameLen = ctx.getString(type.nameRes()).length
+                if (nameLen <= chosenNameLen) continue
+                engine.startNewGame(spec.levelId)
+                val routes = engine.scaledRoutes
+                val range = engine.previewRangeRef(type) * engine.renderScale
+                val spot = engine.scaledBuildSpots.firstOrNull {
+                    !GameConfig.coversRoute(it.normX, it.normY, range, routes)
+                } ?: continue
+                chosen = type
+                chosenNameLen = nameLen
+                chosenLevel = spec.levelId
+                chosenSpot = spot
+            }
         }
+
         assertTrue(
-            "Fuze Rampasi'nin yetismedigi hicbir mevzi yok — en uzun serit " +
-                "metni artik uretilemiyor, tasma olcumu anlamsizlasir",
-            found
+            "Hicbir kule icin 'yetismiyor' seridi uretilemiyor — tasma olcumu " +
+                "anlamsizlasir. Menziller ya da pad geometrisi degistiyse bu " +
+                "testin sordugu soru da gozden gecirilmeli.",
+            chosen != null
+        )
+
+        // Secilen senaryoyu KUR: dongu icinde baska bolumler baslatilmis olabilir.
+        engine.startNewGame(chosenLevel)
+        engine.selectBuildSpot(
+            engine.scaledBuildSpots.first { it.id == chosenSpot!!.id }
         )
 
         composeRule.setContent {
             TowerBuildBar(gameEngine = engine, telemetry = NoTelemetry)
             BuildRejectionStrip(gameEngine = engine)
         }
-        composeRule.onNodeWithTag("build_card_anti_armor").performTouchInput { down(center) }
+        val cardTag = "build_card_" + chosen!!.name.lowercase()
+        composeRule.onNodeWithTag(cardTag).performTouchInput { down(center) }
         composeRule.waitForIdle()
 
         composeRule.onNodeWithTag("build_reach_caption").assertIsDisplayed()
         assertFitsInRoot("build_reach_caption")
         // Kart etiketleri de olculur: TR adlar EN'den %20-35 uzun ve rozet
         // fiyat satirina 12 dp + 3 dp ekliyor.
-        assertFitsInRoot("build_card_anti_armor")
+        assertFitsInRoot(cardTag)
         assertFitsInRoot("build_card_machine_gun")
     }
 

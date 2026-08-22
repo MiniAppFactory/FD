@@ -423,8 +423,40 @@ object EconomyConfig {
      * `purchasableTreeCeiling(0)` = 6.550, agacin **%33'u** — kapilar erken oyunda
      * gercekten kit (`rankGateCeilingIsMonotonicAndScarceEarly` <%50 ister).
      */
+    /*
+     * ⚠ RANK 2 KAPISI EKLENDI (2026-08-22) — 0 -> 5.
+     *
+     * ## Olculen sorun
+     * Ilk IKI rank da kapisizdi. Bu, gunluk odullu reklam tavaniyla
+     * birleserek su sonucu veriyordu: hicbir bolum gecmemis bir oyuncu
+     * agacin **%33'unu** (6.550 coin, r1+r2 tamami) satin alabiliyordu.
+     * Etkisi kucuk degil:
+     *
+     *     L2 baslangic sermayesi   130 -> 280   (+%115, iki kattan fazla)
+     *     tum kule hasari                +%12
+     *     tum kule menzili               +%10
+     *
+     * 130 -> 280 demek bolum basinda iki kule yerine dort kule demek; yani
+     * L1-L11 penceresi, oynanmadan once satin alinabilen bir gucle
+     * sulanabiliyordu. Gunluk 450 coin tavaniyla r1+r2 ~15 gunde toplaniyor.
+     *
+     * ## Neden 5, neden r1'e DOKUNULMADI
+     * Yukaridaki tablonun gerekcesi "ilk karar gecikmez" idi ve bu DOGRU bir
+     * ilke: oyuncu ilk satin almasini hemen yapabilmeli, yoksa dukkan olu
+     * gorunur. O yuzden **rank 1 kapisiz kaldi** — ilk karar hala gecikmiyor.
+     * Gecikin yalnizca IKINCI kademe, ve yalnizca L5'e kadar: L5 bedava
+     * blogun (L1-L6) icinde ve Buz Alani'nin acildigi bolum, yani oyuncu o
+     * noktada dort kule tipinin ucunu gormus oluyor.
+     *
+     * ## Neyi COZMEZ (durust sinir)
+     * L5 gecildikten sonra r2 yine L1-L11 penceresinde alinabilir. Bu kapi
+     * "hic oynamadan maksimum guc" yolunu kapatir, "erken oyunda guclenme"yi
+     * kapatmaz. Asil soru r2'nin ETKI BUYUKLUGU (STARTING_SUPPLY_PER_RANK=75,
+     * L2 sermayesinin %58'i) ve o karar INSAN oynanis verisi ister — bu depoda
+     * simulatorden zorluk turetmek iki kez yanlis sonuc verdi.
+     */
     val RANK_GATE_CLEARED_LEVEL: IntArray = intArrayOf(
-        /* rank 1 */ 0, /* rank 2 */ 0, /* rank 3 */ 10, /* rank 4 */ 20,
+        /* rank 1 */ 0, /* rank 2 */ 5, /* rank 3 */ 10, /* rank 4 */ 20,
         /* rank 5 */ 30, /* rank 6 */ 37, /* rank 7 */ 42, /* rank 8 */ 46,
         /* rank 9 */ 50,
     )
