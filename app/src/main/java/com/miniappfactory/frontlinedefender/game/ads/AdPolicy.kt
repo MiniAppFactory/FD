@@ -37,18 +37,38 @@ object AdPolicyConfig {
     const val MAX_INTERSTITIALS_PER_SESSION: Int = 6
 
     /**
-     * #4b — **her bolumde degil**: yalnizca tamamlanan her N. savastan sonra
-     * interstitial hakki dogar (N=2 -> 4., 6., 8. savas...).
+     * #4b — tamamlanan her N. savastan sonra interstitial hakki dogar.
      *
-     * Neden cooldown yetmiyor: bir TD bolumu 3-5 dakika surer, yani 120 sn'lik
-     * cooldown iki bolum arasinda kendi kendine dolar ve pratikte HER bolum
-     * sonunda reklam cikar. Reklam yorgunlugunun en hizli yolu bu. Kadans
-     * kapisi, gosterim basi geliri korurken gosterim sayisini yariya indirir.
+     * ⚠ 2026-08-22: **2 -> 1** (kullanici karari: "her bolum arasi bolum gecis
+     * reklami olmali").
      *
-     * GDD §G.2'de yok; oradaki kaplarin ustune eklenen DAHA SIKI bir kap
-     * oldugu icin hicbir GDD kuralini ihlal etmez.
+     * ### Neden 2 idi ve o gerekce ne oldu
+     * Eski deger, su gerekceyle konmustu: *"bir TD bolumu 3-5 dakika surer,
+     * yani 120 sn'lik cooldown iki bolum arasinda kendi kendine dolar ve
+     * pratikte HER bolum sonunda reklam cikar; reklam yorgunlugunun en hizli
+     * yolu bu."* Gerekce **teknik olarak hala dogru** — N=1 ile cooldown
+     * gercekten hicbir sey engellemez. Degisen sey, o yorgunlugun kabul
+     * edilebilir sayilmasi: oyun henuz yayinda degil, elimizde tek bir gercek
+     * gosterim/gelir verisi yok ve urun sahibi gosterim sayisini artirmayi
+     * secti. Yani bu bir OLCUM sonucu degil, bilincli bir urun karari.
+     *
+     * ### Neden hala tehlikeli degil
+     * Diger UC kap yerinde duruyor ve hepsi AND'lenir:
+     *   - [ONBOARDING_FREE_BATTLES] = 3 (yeni oyuncu reklamsiz baslar)
+     *   - [SESSION_WARMUP_MS] / [FIRST_SESSION_WARMUP_MS]
+     *   - [MAX_INTERSTITIALS_PER_SESSION] = 6  <-- ASIL FREN
+     * Yenilgi -> "tekrar dene" dongusu zaten muaf (`DefeatModal` interstitial
+     * TETIKLEMEZ), yani ust uste olen oyuncu reklamla cezalandirilmaz. Bu
+     * muafiyet KALDIRILMAMALI.
+     *
+     * ### Bilinen yan etki (olculdu, kabul edildi)
+     * N=1 ile oturum tavanina hizli varilir: 6-8 bolumluk bir oturumda ilk 6
+     * gecis reklamli, sonrakiler reklamsiz olur. Yani "her gecisde reklam"
+     * vaadi 6. bolumden sonra tutmaz ve deneyim tutarsiz hisseder. Tavani
+     * yukseltmek bu tutarsizligi cozerdi ama reklam yukunu de artirirdi;
+     * tavan BILEREK 6'da birakildi — o, kotu bir gunun ust siniri.
      */
-    const val INTERSTITIAL_EVERY_NTH_COMPLETED_BATTLE: Int = 2
+    const val INTERSTITIAL_EVERY_NTH_COMPLETED_BATTLE: Int = 1
 
     /**
      * Sonuc modali kapandiktan sonra reklam akisi bu sureden uzun surerse
