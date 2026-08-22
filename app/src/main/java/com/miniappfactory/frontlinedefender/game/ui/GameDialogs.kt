@@ -14,11 +14,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.ImageShader
-import androidx.compose.ui.graphics.ShaderBrush
-import androidx.compose.ui.graphics.TileMode
-import androidx.compose.ui.res.imageResource
+import androidx.compose.ui.draw.paint
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -52,10 +50,28 @@ fun MainMenuOverlay(
 
     // KAMUFLAJ ZEMIN.
     //
-    // 512x512 SARMALI (seamless) desen, tekrarli shader ile tum ekrana dosenir —
-    // tam ekran bir bitmap yerine 2.7 KB'lik tek karo. Desen prosedurel
-    // uretildi ve uretici korunuyor: docs/tools/camo_pattern.py (seed sabit,
-    // ayni deseni tekrar uretir).
+    // ⚠ 2026-08-22: DESEN VE CIZIM YONTEMI DEGISTI (kullanici: "ana sayfadaki
+    // kamuflaj deseni cok kotu, bunu kullan" + yeni gorsel).
+    //
+    // ESKI: 512x512 SARMALI (seamless) desen, `TileMode.Repeated` shader ile
+    // tum ekrana dosenirdi — 2,7 KB'lik tek karo.
+    //
+    // YENI: 1672x941 TEK PARCA, `ContentScale.Crop` ile ekrani kaplar (105 KB).
+    //
+    // NEDEN DOSEME BIRAKILDI — OLCULDU, tahmin edilmedi. Yeni gorselin sarma
+    // kenarlari ic dokusundan ~10 kat farkli:
+    //     dikey  kenar 29,48 · ic 3,00
+    //     yatay  kenar 37,55 · ic 3,82
+    // (kenar = sag sutun ile sol sutunun ortalama RGB farki, ic = komsu
+    // sutunlarin ayni farki; sarmali bir desende ikisi birbirine yakin olurdu.)
+    // Yani doseseydik her 1672 pikselde GORUNUR bir dikis cizgisi cikardi.
+    //
+    // Bedeli 2,7 KB -> 105 KB; 20 MB'lik APK'da kabul edilebilir ve tek ekranda
+    // kullaniliyor. Yerel cozunurluk korundu (indirgeme yok) cunku gorsel
+    // 2316x1080 yatay ekranda zaten hafifce buyutuluyor.
+    //
+    // Eski karo: incoming/bg_camo_ESKI.webp · ureticisi docs/tools/camo_pattern.py
+    // (sabit seed) — geri donmek gerekirse ikisi de duruyor.
     //
     // Uzerine KOYU PERDE biner: kamuflaj kasitli olarak dusuk kontrast ve
     // koyu tutuldu ki baslik ve butonlar okunur kalsin. Dekor, oynanis
@@ -70,20 +86,27 @@ fun MainMenuOverlay(
     // karti icinde duruyor (SleekSurfaceCard, opak). Perde yalnizca kartlarin
     // ARASINDAKI bos alani etkiliyor, hicbir yazinin arkasinda degil. Yine de
     // tam seffaf birakilmadi: desen zeminde kalmali, one cikmamali.
-    val camo = ImageBitmap.imageResource(R.drawable.bg_camo)
-    val camoBrush = remember(camo) {
-        ShaderBrush(ImageShader(camo, TileMode.Repeated, TileMode.Repeated))
-    }
+    val camoPainter = painterResource(R.drawable.bg_camo)
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(camoBrush)
+            // `sizeToIntrinsics = false`: aksi halde Box gorselin 1672x941
+            // dogal boyutuna olcmeye calisirdi. Boyutu `fillMaxSize` belirler,
+            // gorsel o kutuyu `Crop` ile doldurur (en-boy korunur, tasan kenar
+            // kirpilir) — gerilme YOK.
+            //
+            // Cizim sirasi modifier sirasidir: once kamuflaj, sonra perde.
+            .paint(
+                painter = camoPainter,
+                sizeToIntrinsics = false,
+                contentScale = ContentScale.Crop
+            )
             .background(
                 Brush.verticalGradient(
                     colors = listOf(
-                        SleekSurfaceHeader.copy(alpha = 0.58f),
-                        SleekDarkBg.copy(alpha = 0.80f)
+                        SleekSurfaceHeader.copy(alpha = 0.72f),
+                        SleekDarkBg.copy(alpha = 0.88f)
                     )
                 )
             ),
