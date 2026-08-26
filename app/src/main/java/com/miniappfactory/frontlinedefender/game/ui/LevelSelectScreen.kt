@@ -639,8 +639,8 @@ private fun UnlockConfirmOverlay(
                 )
                 Spacer(Modifier.height(6.dp))
 
-                // ⛔ BU PENCEREYE SANAT YUZEYI KONULAMAZ — UCUNU DE DENEDIM,
-                // UCU DE CIHAZDA PENCERENIN BUTONLARINI GORUNMEZ YAPTI
+                // ⛔ BU PENCEREYE SANAT YUZEYI KONULAMAZ — DORT BICIM DENENDI,
+                // DORDU DE CIHAZDA PENCERENIN BUTONLARINI GORUNMEZ YAPTI
                 // (Galaxy S8 / Android 7.0 / API 24, 2026-08-26).
                 //
                 // DENENENLER ve SONUC (uc ayri build, uc ayri ekran goruntusu):
@@ -668,7 +668,6 @@ private fun UnlockConfirmOverlay(
                 // arasindaki bir cizim/gecersiz kilma etkilesimi. Yeniden
                 // denenecekse ONCE bu ekran goruntusu uretilmeli, sonra kod
                 // yazilmali.
-                Spacer(Modifier.height(8.dp))
                 Text(
                     text = stringResource(
                         R.string.level_unlock_body,
