@@ -304,6 +304,25 @@ fun LevelSelectScreen(
 
                 Spacer(Modifier.width(14.dp))
 
+                // ⛔ BURAYA SANAT BASLIK PLAKASI KONULAMAZ — DENENDI, CIHAZDA
+                // KARTLARI KIRPTI (Galaxy S8, 2026-08-26).
+                //
+                // `docs/UI_ART_INTEGRATION_SPEC.md` R-2 bunu risk olarak
+                // isaretlemisti; olcum riski DOGRULADI ve tahminimi curuttu.
+                //
+                // Aritmetik: plaka 190 dp genislikte 54,3 dp yer kapliyor ve
+                // 22 dp'lik bu metnin YERINE geciyor, yani ust serit +32 dp
+                // buyuyor. Rail'in gercek payi ~19 dp imis: sonuc, bes kartin
+                // BESINDE de "SEVK ET" satirinin alttan kirpilmasi oldu —
+                // yani oyuncunun bolume girmek icin dokundugu tek buton.
+                //
+                // Plakayi kucultmek de cozmuyor: pay 12 dp'ye sigmasi icin
+                // plaka 119 dp'ye inmeli, o boyda ic metin kutusu 20,8 dp
+                // kalir ve `AutoShrinkText` basligi 17 sp'den ~12 sp'ye
+                // dusurur — yani "guzellesirken okunaksizlasan" bir baslik.
+                //
+                // Bu ekranin sanat kazanci `UnlockConfirmOverlay`'deki bolum
+                // plakasindan geliyor; ust serit DUZ METIN kaliyor.
                 Text(
                     text = stringResource(R.string.level_campaign_title),
                     color = Color(0xFFE8F0DC),
@@ -619,6 +638,37 @@ private fun UnlockConfirmOverlay(
                     maxLines = 1
                 )
                 Spacer(Modifier.height(6.dp))
+
+                // ⛔ BU PENCEREYE SANAT YUZEYI KONULAMAZ — UCUNU DE DENEDIM,
+                // UCU DE CIHAZDA PENCERENIN BUTONLARINI GORUNMEZ YAPTI
+                // (Galaxy S8 / Android 7.0 / API 24, 2026-08-26).
+                //
+                // DENENENLER ve SONUC (uc ayri build, uc ayri ekran goruntusu):
+                //   1. `ArtNameplate` + `fillMaxWidth()`   -> butonlar BOS
+                //   2. `ArtNameplate` + sabit 252 dp       -> butonlar BOS
+                //   3. `ArtNameplate` icindeki `AutoShrinkText` -> duz `Text` -> BOS
+                //   4. Cirilciplak `ArtSurface(Art.Nameplate)`  -> BOS
+                // Sanat kaldirilinca DORDUNDE de butonlar aninda geri geldi.
+                //
+                // BELIRTI: pencerenin alt satirindaki iki `Surface` butonu
+                // cizilmeye devam ediyor ama ICLERINDEKI METIN hic boyanmiyor
+                // ve kap rengi (0xFF2A3320) de uygulanmiyor — acik gri bos
+                // haplar kaliyor. Turkce'de "KİLİDİ AÇ" yalnizca uc İ NOKTASI
+                // olarak gorunuyor, yani metin OLCULUYOR ama piksel cikmiyor.
+                // Bu, `UiStrings.kt`'de belgelenen "yer ayrildi, piksel
+                // cizilmedi" sinifiyla ayni belirti.
+                //
+                // ⚠ TASARIM ISTEGI DEGIL, CIKIS YOLU MESELESI: bu iki buton
+                // pencerenin TEK kapanma yolu (scrim disinda) ve "KILIDI AC"
+                // 120 coin harcayan yikici eylem. Gorunmez bir onay butonu
+                // kabul edilemez, o yuzden sanat degil pencere kazandi.
+                //
+                // Kok neden bulunmadi; muhtemelen API 24'te buyuk bir `Image`
+                // + `SubcomposeLayout` ile ayni kapsayicidaki `Surface`
+                // arasindaki bir cizim/gecersiz kilma etkilesimi. Yeniden
+                // denenecekse ONCE bu ekran goruntusu uretilmeli, sonra kod
+                // yazilmali.
+                Spacer(Modifier.height(8.dp))
                 Text(
                     text = stringResource(
                         R.string.level_unlock_body,

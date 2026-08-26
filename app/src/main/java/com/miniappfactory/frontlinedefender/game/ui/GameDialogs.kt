@@ -31,6 +31,28 @@ import com.miniappfactory.frontlinedefender.game.economy.LevelClearResult
 import com.miniappfactory.frontlinedefender.game.economy.healthNeededForStars
 import com.miniappfactory.frontlinedefender.ui.theme.*
 
+/**
+ * Zafer ve yenilgi modallarinin AZAMI GENISLIGI.
+ *
+ * Bu bir estetik degeri DEGIL, ERISILEBILIRLIK PARAMETRESIDIR. Modalin alt
+ * satirindaki eylem butonlari sanat varliklari ve en-boy oranini koruyorlar,
+ * yani YUKSEKLIKLERI GENISLIKLERINDEN TURUYOR:
+ *
+ *   420 dp -> ic 392 -> 12 dp bosluk -> buton 190 dp -> 190/4,33 = 43,9 dp ✘
+ *   480 dp -> ic 452 -> 12 dp bosluk -> buton 220 dp -> 220/4,33 = 50,8 dp ✔
+ *
+ * 44 dp dokunma tabani bu sayiya bagli oldugu icin deger TEK YERDE durur ve
+ * `ArtButtonTouchTargetTest` onu BURADAN okur — testin kendi kopyasi olsaydi
+ * biri burayi 420'ye cekince test yesil kalirdi.
+ */
+internal val ResultModalMaxWidth = 480.dp
+
+/**
+ * Modalin ic genisligi: dis dolgu (2x12) ve ic dolgu (2x14, compact) dusuldukten
+ * sonra butonlara kalan satir. Test bu hesabi tekrarlamaz, buradan okur.
+ */
+internal val ResultModalInnerWidth = ResultModalMaxWidth - 24.dp - 28.dp
+
 @Composable
 fun MainMenuOverlay(
     gameEngine: GameEngine,
@@ -50,45 +72,35 @@ fun MainMenuOverlay(
 
     // KAMUFLAJ ZEMIN.
     //
-    // ⚠ 2026-08-22: DESEN VE CIZIM YONTEMI DEGISTI (kullanici: "ana sayfadaki
-    // kamuflaj deseni cok kotu, bunu kullan" + yeni gorsel).
+    // ⚠ 2026-08-26: SANAT UI ART PACK v2 ILE DEGISTI, PERDE DE ONUNLA BIRLIKTE.
     //
-    // ESKI: 512x512 SARMALI (seamless) desen, `TileMode.Repeated` shader ile
-    // tum ekrana dosenirdi — 2,7 KB'lik tek karo.
+    // ESKI desen PARLAK bir woodland kamuflajiydi (olculen luma ort. 100,7 ·
+    // std 43,1). Uzerindeki koyu perde (0,72 → 0,88) o parlakligi bastirmak
+    // icindi ve cihaz geri bildirimiyle ayarlanmisti.
     //
-    // YENI: 1672x941 TEK PARCA, `ContentScale.Crop` ile ekrani kaplar (105 KB).
+    // YENI desen (pack'in `bg_camo_tactical_16x9`) ZATEN KOYU ve kenarlari
+    // vinyetli: luma ort. **26,2** · std **14,2** · maks 101. Yani eski perde
+    // AYNEN korunsaydi desen 0,72-0,88 opaklik altinda pratikte SIMSIYAH
+    // olurdu ve kullanicinin 2026-08-21'de bildirdigi "kamuflaj deseni belli
+    // olmuyor" sikayeti daha kotu bicimde geri gelirdi.
     //
-    // NEDEN DOSEME BIRAKILDI — OLCULDU, tahmin edilmedi. Yeni gorselin sarma
-    // kenarlari ic dokusundan ~10 kat farkli:
-    //     dikey  kenar 29,48 · ic 3,00
-    //     yatay  kenar 37,55 · ic 3,82
-    // (kenar = sag sutun ile sol sutunun ortalama RGB farki, ic = komsu
-    // sutunlarin ayni farki; sarmali bir desende ikisi birbirine yakin olurdu.)
-    // Yani doseseydik her 1672 pikselde GORUNUR bir dikis cizgisi cikardi.
+    // Bu yuzden perde 0,72/0,88 → **0,10/0,34** yapildi. Perdenin ISI DEGISTI:
+    // artik deseni bastirmak degil, ALT KENARI koyulastirmak (banner ile
+    // birlesme cizgisi) ve sag ust skor cipinin arkasini oturtmak.
     //
-    // Bedeli 2,7 KB -> 105 KB; 20 MB'lik APK'da kabul edilebilir ve tek ekranda
-    // kullaniliyor. Yerel cozunurluk korundu (indirgeme yok) cunku gorsel
-    // 2316x1080 yatay ekranda zaten hafifce buyutuluyor.
+    // OKUNABILIRLIK NEDEN BOZULMUYOR: bu ekrandaki her yazi ya sanat
+    // plakasinin kendi koyu ic alaninda (baslik, birincil buton) ya da opak
+    // bir kart icinde (skor cipi) duruyor. Hicbir metin dogrudan kamuflajin
+    // uzerinde degil.
     //
-    // Eski karo: incoming/bg_camo_ESKI.webp · ureticisi docs/tools/camo_pattern.py
-    // (sabit seed) — geri donmek gerekirse ikisi de duruyor.
-    //
-    // Uzerine KOYU PERDE biner: kamuflaj kasitli olarak dusuk kontrast ve
-    // koyu tutuldu ki baslik ve butonlar okunur kalsin. Dekor, oynanis
-    // okunabilirliginin onune gecmez.
-    //
-    // ⚠ PERDE INCELTILDI (cihaz geri bildirimi 2026-08-21: "ana sayfadaki
-    // kamuflaj deseni belli olmuyor"). Eski degerler 0,82 -> 0,94 idi; yani
-    // desen en acik yerinde bile %82 ortuluyordu ve pratikte duz bir zeminden
-    // ayirt edilemiyordu — cizilen ama gorunmeyen bir dekor.
-    //
-    // Okunabilirlik NEDEN bozulmuyor: bu ekrandaki her metin kendi `Surface`
-    // karti icinde duruyor (SleekSurfaceCard, opak). Perde yalnizca kartlarin
-    // ARASINDAKI bos alani etkiliyor, hicbir yazinin arkasinda degil. Yine de
-    // tam seffaf birakilmadi: desen zeminde kalmali, one cikmamali.
+    // Eski desen: incoming/bg_camo_ONCEKI_2026-08-26.webp (geri donus icin).
+    // Yeni desenin uretici betigi: tools/ui_art_pipeline.py.
     val camoPainter = painterResource(R.drawable.bg_camo)
 
-    Box(
+    // `BoxWithConstraints`: asagidaki yerlesim kullanilabilir YUKSEKLIGI
+    // okumak zorunda (sanat plakalari en-boy oranini korudugu icin genislik
+    // ile yukseklik birbirine bagli). Duz `Box` bu bilgiyi vermez.
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             // `sizeToIntrinsics = false`: aksi halde Box gorselin 1672x941
@@ -105,133 +117,131 @@ fun MainMenuOverlay(
             .background(
                 Brush.verticalGradient(
                     colors = listOf(
-                        SleekSurfaceHeader.copy(alpha = 0.72f),
-                        SleekDarkBg.copy(alpha = 0.88f)
+                        SleekSurfaceHeader.copy(alpha = 0.10f),
+                        SleekDarkBg.copy(alpha = 0.34f)
                     )
                 )
             ),
         contentAlignment = Alignment.Center
     ) {
+        // ---------------------------------------------------------------
+        // YERLESIM — UI ART PACK v2
+        //
+        // Tum olculer YUKSEKLIK BUTCESINDEN turetilir, sabit dp DEGIL.
+        //
+        // NEDEN: oyun `sensorLandscape` ve bu Box'in altinda banner yuvasi
+        // var; kullanilabilir yukseklik 360 dp'lik bir cihazda ~300 dp'ye
+        // kadar duser. Sanat plakalari en-boy oranini KORUDUGU icin
+        // (bkz. ArtSurfaces.kt) genisligi buyutmek yuksekligi de buyutur —
+        // sabit bir genislik verseydik dar cihazda plakalar ust uste
+        // binerdi. Burada tersini yapiyoruz: once her ogeye yuzde olarak
+        // yukseklik payi ayrilir, genislik ORANDAN geri hesaplanir.
+        //
+        //   baslik plakasi   %32
+        //   birincil buton   %21
+        //   disli + etiket   %17
+        //   bosluklar        %14
+        //   dis dolgu        %16
+        //                    ----
+        //                    %100
+        //
+        // Ust sinir olarak ekran genisliginin bir yuzdesi de uygulanir ki
+        // cok genis (tablet) ekranda plaka devlesip komik gorunmesin.
+        // ---------------------------------------------------------------
+        val availableHeight = maxHeight
+        val availableWidth = maxWidth
+
+        val headerWidth = minOf(
+            availableWidth * 0.86f,
+            availableHeight * 0.32f * Art.HeaderPlate.aspect
+        )
+        val primaryWidth = minOf(
+            availableWidth * 0.62f,
+            availableHeight * 0.21f * Art.PrimaryButton.aspect
+        )
+        val gearSize = minOf(58.dp, availableHeight * 0.15f)
+        val gap = (availableHeight * 0.045f).coerceIn(6.dp, 16.dp)
+
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(20.dp),
-            modifier = Modifier
-                .widthIn(max = 480.dp)
-                .padding(24.dp)
+            verticalArrangement = Arrangement.spacedBy(gap),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
-            // Game Title Header
-            Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = SleekSurfaceCard,
-                border = androidx.compose.foundation.BorderStroke(1.5.dp, SleekBorderLight)
-            ) {
-                Column(
-                    modifier = Modifier.padding(horizontal = 32.dp, vertical = 20.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        // Marka adi: translatable="false", her dilde ayni.
-                        text = stringResource(R.string.dialog_game_title),
-                        color = SleekTextAccent,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 26.sp,
-                        textAlign = TextAlign.Center
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = stringResource(R.string.dialog_game_subtitle),
-                        color = Color.White.copy(alpha = 0.8f),
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-            }
+            // BASLIK PLAKASI. Marka adi `translatable="false"` — her dilde
+            // ayni; alt baslik cevrilir. Ikisi de sanata GOMULU DEGIL,
+            // plakanin olculmus ic alanina cizilir.
+            ArtHeaderPlate(
+                title = stringResource(R.string.dialog_game_title),
+                subtitle = stringResource(R.string.dialog_game_subtitle),
+                modifier = Modifier.width(headerWidth),
+                testTag = "menu_title_plate"
+            )
 
-            // High Score
-            if (highScore > 0) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    SpriteIcon(
-                        id = R.drawable.spr_ic_victory_star,
-                        size = 24.dp,
-                        contentDescription = stringResource(R.string.dialog_high_score_icon_desc)
-                    )
-                    Text(
-                        text = stringResource(R.string.dialog_high_score, highScore),
-                        color = SleekGold,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
-                        maxLines = 1
-                    )
-                }
-            }
-
-            // PLAY BUTTON
-            Button(
+            // BIRINCIL EYLEM. `testTag` DEGISMEDI ("play_game_button") —
+            // mevcut UI testleri bu etikete bagli ve sanat degisikligi
+            // testleri kirmamali.
+            ArtPrimaryButton(
+                label = stringResource(R.string.dialog_start_operation),
                 onClick = onStartGame,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = SleekPrimaryGreen,
-                    contentColor = Color.White
-                ),
-                shape = RoundedCornerShape(20.dp),
-                elevation = ButtonDefaults.buttonElevation(defaultElevation = 8.dp),
-                contentPadding = PaddingValues(horizontal = 48.dp, vertical = 14.dp),
-                modifier = Modifier.testTag("play_game_button")
-            ) {
-                SpriteIcon(
-                    id = R.drawable.spr_ic_play,
-                    size = 28.dp,
-                    contentDescription = stringResource(R.string.dialog_play_icon_desc)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                // Buton wrap-content, kolonun ust siniri 480 dp: "HAREKATI
-                // BASLAT" 16 sp ExtraBold'da ~150 dp, 300 dp'lik bosluga sigar.
-                // Yine de tek satirda kalmasi garanti edilir.
+                modifier = Modifier.width(primaryWidth),
+                testTag = "play_game_button"
+            )
+
+            // AYARLAR GIRISI.
+            //
+            // Ikonun ALTINDAKI YAZI KORUNDU: ikon tek basina ne oldugunu
+            // anlatmiyor ve renk tek ayrim kanali olamaz (erisilebilirlik).
+            // Sanat dislisi eski `spr_ic_settings` yerine gecti; davranis
+            // birebir ayni kaldi.
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                ArtSurface(
+                    spec = Art.GearIcon,
+                    modifier = Modifier
+                        .width(gearSize)
+                        .testTag("settings_button"),
+                    onClick = { settingsOpen = true },
+                    contentDescription = stringResource(R.string.settings_open_desc)
+                ) {}
                 Text(
-                    text = stringResource(R.string.dialog_start_operation),
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 16.sp,
+                    text = stringResource(R.string.settings_button_label),
+                    color = ArtTextSecondary,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
                     maxLines = 1
                 )
             }
+        }
 
-            // AYARLAR GIRISI
-            //
-            // ESKI HALI: bu disli ikonu **yalnizca bir ses ac/kapa dugmesiydi**;
-            // kodun kendi yorumu "disli ikonu bir ayarlar EKRANI bekletiyor"
-            // diye itiraf ediyordu ve kullanici da "settings'e basamadim" diye
-            // bildirmisti — cunku basiliyordu ama hicbir ekran acilmiyordu.
-            //
-            // ARTIK: ikon gercek bir ayarlar ekrani aciyor. Ses ac/kapa oraya
-            // TASINDI (davranis ayni: hem kalici kayda hem calisan ses motoruna
-            // yazilir), ve ekran UMP "Gizlilik Secenekleri" girisini de tasiyor —
-            // oyuncunun rizasini geri cekebilecegi tek kalici nokta.
-            //
-            // Ikonun altindaki YAZI korundu: ikon tek basina ne oldugunu
-            // anlatmiyor ve renk tek ayrim kanali olamaz (erisilebilirlik).
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                IconButton(
-                    onClick = { settingsOpen = true },
-                    modifier = Modifier
-                        .size(48.dp)
-                        .background(SleekSurfaceCard, CircleShape)
-                        .border(1.dp, SleekBorderLight, CircleShape)
-                        .testTag("settings_button")
-                ) {
-                    SpriteIcon(
-                        id = R.drawable.spr_ic_settings,
-                        size = 26.dp,
-                        contentDescription = stringResource(R.string.settings_open_desc)
+        // EN YUKSEK SKOR — mockup'taki gibi SAG UST KOSEDE, serbest katman.
+        //
+        // Kolonun ICINDE degil cunku orada dordumcu bir satir olarak
+        // yukseklik butcesini bozardi ve skor 0 iken satir kaybolunca tum
+        // menu zipllardi. Kosede duran bir cip, varligi ve yoklugu duzeni
+        // DEGISTIRMEZ.
+        if (highScore > 0) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(10.dp)
+                    .background(
+                        SleekSurfaceCard.copy(alpha = 0.85f),
+                        RoundedCornerShape(10.dp)
                     )
-                }
-                Spacer(Modifier.height(4.dp))
+                    .border(1.dp, SleekBorderLight, RoundedCornerShape(10.dp))
+                    .padding(horizontal = 10.dp, vertical = 5.dp)
+            ) {
+                SpriteIcon(
+                    id = R.drawable.spr_ic_victory_star,
+                    size = 16.dp,
+                    contentDescription = stringResource(R.string.dialog_high_score_icon_desc)
+                )
                 Text(
-                    text = stringResource(R.string.settings_button_label),
-                    color = SleekTextAccent,
-                    fontSize = 10.sp,
+                    text = stringResource(R.string.dialog_high_score, highScore),
+                    color = ArtAccentGoldGlow,
                     fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp,
                     maxLines = 1
                 )
             }
@@ -343,7 +353,13 @@ fun VictoryModal(
             border = androidx.compose.foundation.BorderStroke(1.5.dp, SleekPrimaryGreen),
             modifier = Modifier
                 .padding(12.dp)
-                .widthIn(max = 420.dp)
+                // 420 -> 480: SAYISAL ZORUNLULUK, estetik degil. Butonlar artik
+                // sanat varliklari ve en-boy oranini koruyorlar; 420 dp'de ic
+                // genislik 392, 12 dp bosluk dusunce buton 190 dp olur ve
+                // 190/4.33 = **43,9 dp** yukseklik cikar — 44 dp dokunma
+                // tabaninin ALTINDA. 480'de ic 452 -> buton 220 dp ->
+                // 220/4.33 = 50,8 dp ✔. Ekran 740 dp genis, 480 sorun degil.
+                .widthIn(max = ResultModalMaxWidth)
                 .heightIn(max = maxHeight - 24.dp)
         ) {
             Column(
@@ -358,12 +374,15 @@ fun VictoryModal(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(gap)
               ) {
-                Text(
-                    text = stringResource(R.string.dialog_victory_title),
-                    color = SleekTextAccent,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 28.sp,
-                    textAlign = TextAlign.Center
+                // Baslik ARTIK sanat plakasinin uzerinde. Metin plakaya
+                // GOMULU DEGIL; `AutoShrinkText` ile ic alana cizilir, yani
+                // TR/EN ve `fontScale` degisimleri hâlâ calisir.
+                ArtHeaderPlate(
+                    title = stringResource(R.string.dialog_victory_title),
+                    modifier = Modifier.fillMaxWidth(0.62f),
+                    titleColor = ArtTextPrimary,
+                    titleSize = 24.sp,
+                    testTag = "victory_title_plate"
                 )
 
                 // 3 Stars Display — Faz 3: asset pack icon_victory_star.
@@ -373,7 +392,10 @@ fun VictoryModal(
                         val isEarned = i <= stars
                         SpriteIcon(
                             id = R.drawable.spr_ic_victory_star,
-                            size = 44.dp,
+                            // 44 -> 40: baslik plakasi 64 dp aldi, dikey butce
+                            // (bkz. docs/UI_ART_INTEGRATION_SPEC.md §3.4)
+                            // yildiz satirindan 4 dp geri istiyor. Sprite ayni.
+                            size = 40.dp,
                             contentDescription = stringResource(R.string.dialog_star_desc, i),
                             modifier = if (isEarned) Modifier else Modifier.alpha(0.22f)
                         )
@@ -450,54 +472,40 @@ fun VictoryModal(
               } // <- kaydirilabilir istatistik alani biter
 
                 // BUTONLAR: kaydirma alaninin DISINDA, yani her zaman gorunur.
+                // BUTON SIRASI KORUNDU: ikincil SOLDA, birincil eylem her
+                // zaman SAGDA. Kas hafizasi; sanat degisti diye yer degismez.
+                //
+                // Tek buton kalinca (kampanya bitti / siradaki kilitli) "BOLUM
+                // SEC" BIRINCIL sanata terfi eder — eskiden de rengi
+                // `SleekPrimaryGreen`e donuyordu, ayni kural.
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // BOLUM SEC: kampanya bittiyse veya siradaki bolum
-                    // kilitliyse TEK buton olarak kalir (eski davranis).
-                    Button(
-                        onClick = onLevelSelect,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (onNextLevel == null) {
-                                SleekPrimaryGreen
-                            } else {
-                                SleekSurfaceCard
-                            }
-                        ),
-                        shape = RoundedCornerShape(16.dp),
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("victory_level_select_button")
-                    ) {
-                        Text(
-                            text = stringResource(R.string.dialog_level_select),
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp,
-                            maxLines = 1
+                    val hasNext = onNextLevel != null && nextLevelId != null
+                    if (hasNext) {
+                        ArtSecondaryButton(
+                            label = stringResource(R.string.dialog_level_select),
+                            onClick = onLevelSelect,
+                            modifier = Modifier.weight(1f),
+                            testTag = "victory_level_select_button"
+                        )
+                    } else {
+                        ArtPrimaryButton(
+                            label = stringResource(R.string.dialog_level_select),
+                            onClick = onLevelSelect,
+                            modifier = Modifier.weight(1f),
+                            testTag = "victory_level_select_button"
                         )
                     }
-                    if (onNextLevel != null && nextLevelId != null) {
-                        Button(
-                            onClick = onNextLevel,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = SleekPrimaryGreen
-                            ),
-                            shape = RoundedCornerShape(16.dp),
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("victory_next_level_button")
-                        ) {
-                            Text(
-                                text = stringResource(R.string.dialog_next_level),
-                                fontWeight = FontWeight.Bold,
-                                // 13sp: TR "SONRAKİ BÖLÜM" 14 karakter ve
-                                // butonlar esit agirlikli; 14sp'de dar
-                                // ekranlarda (S8 landscape) tasiyordu.
-                                fontSize = 13.sp,
-                                maxLines = 1
-                            )
-                        }
+                    if (hasNext) {
+                        ArtPrimaryButton(
+                            label = stringResource(R.string.dialog_next_level),
+                            onClick = onNextLevel!!,
+                            modifier = Modifier.weight(1f),
+                            testTag = "victory_next_level_button"
+                        )
                     }
                 }
             }
@@ -513,93 +521,99 @@ fun DefeatModal(
 ) {
     val waveIndex by gameEngine.currentWaveIndex.collectAsState()
 
-    Box(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xCC000000)),
         contentAlignment = Alignment.Center
     ) {
+        // ⚠ YUKSEKLIK KILIDI + KAYDIRMA — 2026-08-26'da EKLENDI.
+        //
+        // `VictoryModal` ve `PauseMenuModal` bu iki katmani 2026-08-18'de
+        // cihaz bulgusuyla kazanmisti; YENILGI MODALI ATLANMISTI. Ayni hata
+        // burada da canliydi: TR govde metni (`dialog_defeat_body`) uc satira
+        // ciktiginda 360 dp'lik yatay ekranda butonlar asagi itiliyor ve
+        // "TEKRAR DENE" ekran disinda kaliyordu — yani oyuncunun yenilgiden
+        // cikis yolu yoktu. Sanat butonlari eklemek bu tasmayi GORUNUR yapardi,
+        // yaratmazdi; once tasma kapatildi.
+        //
+        // Cozum zaferdekiyle BIREBIR ayni:
+        //  1) yukseklik ekrana kilitlenir (`heightIn`), govde kaydirilir,
+        //  2) BUTONLAR kaydirma alaninin DISINDA — kirpilacak sey aciklama
+        //     metni olur, cikis yolu ASLA.
+        val compact = maxHeight < 420.dp
+        val gap = if (compact) 8.dp else 16.dp
         Surface(
             shape = RoundedCornerShape(24.dp),
             color = SleekDarkBg,
             border = androidx.compose.foundation.BorderStroke(1.5.dp, SleekRed),
             modifier = Modifier
-                .widthIn(max = 420.dp)
-                .padding(20.dp)
+                .padding(12.dp)
+                // Zafer modaliyla AYNI taban ve AYNI gerekce: sanat butonlari
+                // en-boy oranini korudugu icin 420 dp'de yukseklik 43,9 dp'ye
+                // dusup 44 dp dokunma tabaninin altina iniyordu.
+                .widthIn(max = ResultModalMaxWidth)
+                .heightIn(max = maxHeight - 24.dp)
         ) {
             Column(
-                modifier = Modifier.padding(24.dp),
+                modifier = Modifier.padding(if (compact) 14.dp else 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(gap)
             ) {
-                // Faz 3: asset pack icon_defeat_skull
-                SpriteIcon(
-                    id = R.drawable.spr_ic_defeat_skull,
-                    size = 52.dp,
-                    contentDescription = null
-                )
+                Column(
+                    modifier = Modifier
+                        .weight(1f, fill = false)
+                        .verticalScroll(rememberScrollState()),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(gap)
+                ) {
+                    // Faz 3: asset pack icon_defeat_skull. Sprite DEGISMEDI.
+                    SpriteIcon(
+                        id = R.drawable.spr_ic_defeat_skull,
+                        // 52 -> 44: baslik plakasi dikey yer aldi
+                        // (docs/UI_ART_INTEGRATION_SPEC.md §3.4).
+                        size = 44.dp,
+                        contentDescription = null
+                    )
 
-                Text(
-                    text = stringResource(R.string.dialog_defeat_title),
-                    color = SleekRedText,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 28.sp,
-                    textAlign = TextAlign.Center
-                )
+                    ArtHeaderPlate(
+                        title = stringResource(R.string.dialog_defeat_title),
+                        modifier = Modifier.fillMaxWidth(0.62f),
+                        titleColor = SleekRedText,
+                        titleSize = 24.sp,
+                        testTag = "defeat_title_plate"
+                    )
 
-                Text(
-                    // Coklu satira sarar (maxLines yok): dialog genisligi 420 dp
-                    // sabit ama YUKSEKLIK esner, yani uzun ceviri tasmaz.
-                    text = stringResource(R.string.dialog_defeat_body, waveIndex + 1),
-                    color = Color.LightGray,
-                    textAlign = TextAlign.Center,
-                    fontSize = 14.sp
-                )
+                    Text(
+                        // `maxLines` YOK: son cumle kirpilmaz. Tasarsa artik
+                        // kaydirma alaninin icinde tasar, butonlari itmez.
+                        text = stringResource(R.string.dialog_defeat_body, waveIndex + 1),
+                        color = Color.LightGray,
+                        textAlign = TextAlign.Center,
+                        fontSize = 14.sp
+                    )
+                }
 
+                // BUTONLAR: kaydirma alaninin DISINDA, yani her zaman gorunur.
+                // Sira korundu — ikincil (ANA MENU) solda, birincil eylem
+                // (TEKRAR DENE) sagda.
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Button(
+                    ArtSecondaryButton(
+                        label = stringResource(R.string.dialog_main_menu),
                         onClick = onMainMenu,
-                        colors = ButtonDefaults.buttonColors(containerColor = SleekSurfaceCard),
-                        shape = RoundedCornerShape(16.dp),
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("defeat_menu_button")
-                    ) {
-                        // Iki buton weight(1f) ile ESIT boluyor; "TEKRAR DENE"
-                        // gibi uzun karsiliklar icin punto kucultmeye izin var.
-                        AutoShrinkText(
-                            text = stringResource(R.string.dialog_main_menu),
-                            // Unspecified = eskisi gibi butonun contentColor'u.
-                            color = Color.Unspecified,
-                            fontWeight = FontWeight.Bold,
-                            maxFontSize = 12.sp,
-                            minFontSize = 9.sp,
-                            maxLines = 1,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-
-                    Button(
+                        modifier = Modifier.weight(1f),
+                        testTag = "defeat_menu_button"
+                    )
+                    ArtPrimaryButton(
+                        label = stringResource(R.string.dialog_retry),
                         onClick = onRetry,
-                        colors = ButtonDefaults.buttonColors(containerColor = SleekRed),
-                        shape = RoundedCornerShape(16.dp),
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("defeat_retry_button")
-                    ) {
-                        AutoShrinkText(
-                            text = stringResource(R.string.dialog_retry),
-                            color = Color.Unspecified,
-                            fontWeight = FontWeight.Bold,
-                            maxFontSize = 12.sp,
-                            minFontSize = 9.sp,
-                            maxLines = 1,
-                            textAlign = TextAlign.Center
-                        )
-                    }
+                        modifier = Modifier.weight(1f),
+                        testTag = "defeat_retry_button"
+                    )
                 }
             }
         }

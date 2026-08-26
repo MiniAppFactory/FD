@@ -66,4 +66,19 @@
     <string name="settings_reset_progress_cancel">Cancel</string>
     <string name="settings_reset_done">Done.</string>
 
+
+    <!-- ==================== dil secimi (AppLanguage.kt) ====================
+         Uygulama ici TR/EN anahtari. Dil ADLARI translatable="false": bir dilin
+         adi kendi dilinde yazilir, cevrilmez ("Türkçe" Ingilizce arayuzde de
+         "Türkçe"dir). Aksi halde oyuncu anlamadigi bir dilde, anlamadigi bir
+         kelimeye dokunmak zorunda kalirdi. -->
+    <string name="settings_section_language">LANGUAGE</string>
+    <string name="settings_language_english" translatable="false">English</string>
+    <string name="settings_language_turkish" translatable="false">Türkçe</string>
+    <string name="settings_language_desc">Applies immediately.</string>
+    <!-- HANGI KAYNAK KLASORU CIZILIYOR sorusunun cevabi. `Locale`'den DEGIL
+         kaynaktan okunur: cihaz "tr-TR" olsa bile uygulama `values-tr`
+         tasimiyorsa oyuncu Ingilizce goruyordur ve secici de oyle demelidir.
+         Bu deger ekranda GORUNMEZ. -->
+    <string name="settings_locale_tag">en</string>
 </resources>

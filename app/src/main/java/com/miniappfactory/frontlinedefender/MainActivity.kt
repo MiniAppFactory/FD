@@ -21,6 +21,8 @@ import com.miniappfactory.frontlinedefender.game.ads.AdMobAdHost
 import com.miniappfactory.frontlinedefender.game.ads.SaveManagerAdProgressStore
 import com.miniappfactory.frontlinedefender.game.data.SaveManager
 import com.miniappfactory.frontlinedefender.game.ui.BiomeBackgroundCache
+import com.miniappfactory.frontlinedefender.game.settings.AppLanguageProvider
+import com.miniappfactory.frontlinedefender.game.settings.LanguagePreference
 import com.miniappfactory.frontlinedefender.game.ui.GameScreen
 import com.miniappfactory.frontlinedefender.game.ui.LocalAdHost
 import com.miniappfactory.frontlinedefender.ui.theme.FrontlineDefenderTheme
@@ -143,8 +145,18 @@ class MainActivity : ComponentActivity() {
         // (offline oynanabilir bir oyundur).
         adHost.initialize(this)
 
+        val languagePreference = LanguagePreference(this)
+
         setContent {
-            FrontlineDefenderTheme {
+            // DIL SAGLAYICISI EN DISTA — temanin bile DISINDA.
+            //
+            // Altindaki her `stringResource` secili dilde cozulur; tek bir
+            // saglayici butun ekranlari cevirir ve hicbir cagri yerine
+            // dokunulmaz. `AppLanguage.SYSTEM` (varsayilan) secili iken
+            // saglayici context'i AYNEN gecirir, yani dil hic
+            // degistirilmemis bir kurulumda davranis birebir eskisi gibidir.
+            AppLanguageProvider(preference = languagePreference) {
+                FrontlineDefenderTheme {
                 // Surface TUM PENCEREYI kaplar ve koyu zemini cubuklarin
                 // ARKASINA da boyar; inset bosluklarinda pencere zemini (acik
                 // tema varsayilani beyaz olabilir) gorunmesin diye.
@@ -200,6 +212,7 @@ class MainActivity : ComponentActivity() {
                         CompositionLocalProvider(LocalAdHost provides adHost) {
                             GameScreen(adHost = adHost)
                         }
+                    }
                     }
                 }
             }

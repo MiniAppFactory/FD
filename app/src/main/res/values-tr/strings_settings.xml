@@ -35,4 +35,9 @@
     <string name="settings_reset_progress_cancel">Vazgeç</string>
     <string name="settings_reset_done">Tamam.</string>
 
+
+    <!-- ==================== dil secimi ==================== -->
+    <string name="settings_section_language">DİL</string>
+    <string name="settings_language_desc">Anında uygulanır.</string>
+    <string name="settings_locale_tag">tr</string>
 </resources>

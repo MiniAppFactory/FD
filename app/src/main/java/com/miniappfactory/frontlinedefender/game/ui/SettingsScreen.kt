@@ -6,6 +6,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -23,7 +25,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -50,6 +51,9 @@ import com.miniappfactory.frontlinedefender.game.ads.AdHost
 import com.miniappfactory.frontlinedefender.game.ads.ConsentManager
 import com.miniappfactory.frontlinedefender.game.ads.NoOpAdHost
 import com.miniappfactory.frontlinedefender.game.ads.findActivity
+import com.miniappfactory.frontlinedefender.game.settings.AppLanguage
+import com.miniappfactory.frontlinedefender.game.settings.LocalAppLanguage
+import com.miniappfactory.frontlinedefender.ui.theme.ArtTextPrimary
 import com.miniappfactory.frontlinedefender.ui.theme.SleekBorderLight
 import com.miniappfactory.frontlinedefender.ui.theme.SleekDarkBg
 import com.miniappfactory.frontlinedefender.ui.theme.SleekPrimaryGreen
@@ -167,223 +171,286 @@ fun SettingsScreen(
         shouldShowPrivacyOptions(adHost, hasActivity = activity != null)
     }
 
-    Box(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
             .background(Color(0xE6000000))
             .testTag("settings_screen"),
         contentAlignment = Alignment.Center
     ) {
-        Surface(
-            shape = RoundedCornerShape(20.dp),
-            color = SleekDarkBg,
-            border = androidx.compose.foundation.BorderStroke(1.5.dp, SleekBorderLight),
-            modifier = Modifier
-                .padding(16.dp)
-                .widthIn(max = 460.dp)
-                .fillMaxWidth()
-        ) {
-            Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
+        // ---------------------------------------------------------------
+        // PANEL OLCUSU — UI ART PACK v2
+        //
+        // Panel sanati EN-BOY ORANINI korur (1,44). Yani genisligi secmek
+        // yuksekligi de secmektir; ters yon (yukseklik sec) yasak, cunku dar
+        // olan taraf DIKEY (yatay telefonda 360 dp).
+        //
+        // Uc sinirin en kucugu alinir:
+        //   · 480 dp   — ustunde panel gereksiz devlesir ve satirlar
+        //                okunamayacak kadar genis olur,
+        //   · ekran genisliginin %72'si,
+        //   · (kullanilabilir yukseklik − 16 dp) × 1,44 — DIKEY sinir.
+        //
+        // 740x360 dp'lik Galaxy S8'de: min(480, 532,8, 495,4) = 480 dp,
+        // yani yukseklik 480/1,44 = **333,3 dp** ≤ 344 ✔.
+        // ---------------------------------------------------------------
+        val panelWidth = minOf(
+            480.dp,
+            maxWidth * 0.72f,
+            (maxHeight - 16.dp) * Art.ModalPanel.aspect
+        )
 
-                // BASLIK SERIDI — kaydirma alaninin DISINDA. Oyun sensorLandscape;
-                // yatayda kullanilabilir yukseklik 320-400 dp'ye kadar duser ve
-                // kaydirilabilir bir baslikta "KAPAT" ekrandan cikabilir.
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
+        ArtModalPanel(
+            title = stringResource(R.string.settings_title),
+            modifier = Modifier.width(panelWidth),
+            titleColor = ArtTextPrimary,
+            trailing = {
+                // KAPAT panelin UST SERIDINDE — kaydirma alaninin DISINDA.
+                // Bu, sanattan ONCE de boyleydi ve gerekcesi degismedi: yatayda
+                // kullanilabilir yukseklik 320-400 dp'ye duser ve kaydirilabilir
+                // bir baslikta cikis butonu ekran disina cikabilir.
+                Button(
+                    onClick = onDismiss,
+                    colors = ButtonDefaults.buttonColors(containerColor = SleekPrimaryGreen),
+                    shape = RoundedCornerShape(12.dp),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                    modifier = Modifier.testTag("settings_close_button")
                 ) {
-                    Text(
-                        text = stringResource(R.string.settings_title),
-                        color = SleekTextAccent,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 20.sp,
+                    AutoShrinkText(
+                        text = stringResource(R.string.settings_close),
+                        color = Color.Unspecified,
+                        fontWeight = FontWeight.Bold,
+                        maxFontSize = 13.sp,
+                        minFontSize = 10.sp,
                         maxLines = 1,
-                        modifier = Modifier.weight(1f)
+                        textAlign = TextAlign.Center
                     )
-                    Button(
-                        onClick = onDismiss,
-                        colors = ButtonDefaults.buttonColors(containerColor = SleekPrimaryGreen),
-                        shape = RoundedCornerShape(14.dp),
-                        modifier = Modifier.testTag("settings_close_button")
-                    ) {
-                        AutoShrinkText(
-                            text = stringResource(R.string.settings_close),
-                            color = Color.Unspecified,
-                            fontWeight = FontWeight.Bold,
-                            maxFontSize = 13.sp,
-                            minFontSize = 10.sp,
-                            maxLines = 1,
-                            textAlign = TextAlign.Center
-                        )
-                    }
+                }
+            }
+        ) {
+            // Icerik kaydirilir: yeni satirlar (muzik, haptik, gizlilik
+            // politikasi) eklendikce yatay ekranda tasma olusmaz.
+            // Panelin ic alani 333 dp x 0,756 = ~252 dp; gereken icerik ~290 dp.
+            // Yani kaydirma ZORUNLU ve kasitli.
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                // ---------------------------------------------------------
+                // SES
+                // ---------------------------------------------------------
+                SettingsSectionHeader(stringResource(R.string.settings_section_audio))
+
+                SettingsToggleRow(
+                    label = stringResource(R.string.dialog_sound_effects),
+                    checked = soundEnabled,
+                    onCheckedChange = onSoundEnabledChange,
+                    testTag = "settings_sound_switch"
+                )
+
+                // Faz 14 - MUZIK. Ses Efektleri anahtarinin ALTINDA ve ayni
+                // bolumde: ikisi de "ne duyacagim" sorusunun parcasi.
+                //
+                // Not: Ses Efektleri anahtari ANA anahtardir; kapatilinca
+                // muzik de susar (bkz. AudioManager.isSoundEnabled). Muzik
+                // anahtari yalnizca ses acikken anlamlidir ve tercihi ayri
+                // saklanir, yani ses tekrar acilinca muzik oyuncunun
+                // biraktigi durumda geri gelir.
+                SettingsToggleRow(
+                    label = stringResource(R.string.settings_music),
+                    checked = musicEnabled,
+                    onCheckedChange = onMusicEnabledChange,
+                    testTag = "settings_music_switch"
+                )
+
+                // Faz 14 - DOKUNSAL GERI BILDIRIM. Ses bolumunde duruyor
+                // cunku oyuncu icin ayni soru: "cihaz bana geri bildirim
+                // versin mi". Ayri bir baslik acmak uc satirlik bir bolum
+                // uretirdi ve yatay ekranda kaydirmayi uzatirdi.
+                SettingsToggleRow(
+                    label = stringResource(R.string.settings_haptics),
+                    checked = hapticsEnabled,
+                    onCheckedChange = onHapticsEnabledChange,
+                    testTag = "settings_haptics_switch"
+                )
+
+                // ---------------------------------------------------------
+                // DIL
+                //
+                // Mockup'taki sirayi izler: SES -> DIL -> (GIZLILIK) -> SIFIRLAMA.
+                // Secici iki durumlu bir SANAT varligi; ucuncu bir "sistem"
+                // segmenti cizemez. `AppLanguage.SYSTEM` yalnizca oyuncunun
+                // HIC dokunmadigi baslangic halidir ve o durumda hangi
+                // segmentin parlayacagi CIHAZIN dilinden okunur — yani secici
+                // bosta durmaz, oyuncunun o an gordugu dili gosterir.
+                // ---------------------------------------------------------
+                SettingsSectionHeader(stringResource(R.string.settings_section_language))
+
+                val languageController = LocalAppLanguage.current
+                val languageLabels = listOf(
+                    stringResource(R.string.settings_language_english),
+                    stringResource(R.string.settings_language_turkish)
+                )
+                val effectiveLanguage = when (languageController.current) {
+                    AppLanguage.SYSTEM ->
+                        // Sistem dili TR ise TURKISH parlar. `Locale` yerine
+                        // gercekten cizilen kaynagin dili okunur: cihaz
+                        // "tr-TR" ama uygulamada `values-tr` yoksa oyuncu
+                        // Ingilizce goruyordur ve secici de oyle demelidir.
+                        if (stringResource(R.string.settings_locale_tag) == "tr") {
+                            AppLanguage.TURKISH
+                        } else {
+                            AppLanguage.ENGLISH
+                        }
+                    else -> languageController.current
                 }
 
-                Spacer(Modifier.height(10.dp))
+                ArtSegmentedSelector(
+                    selectedIndex = AppLanguage.SELECTABLE.indexOf(effectiveLanguage)
+                        .coerceAtLeast(0),
+                    labels = languageLabels,
+                    onSelect = { index ->
+                        languageController.onChange(AppLanguage.SELECTABLE[index])
+                    },
+                    // GENISLIK KASITLI OLARAK SINIRLI. Secici sanatinin orani
+                    // 5,03; panelin tam genisligini (~430 dp) verseydik
+                    // yukseklik 85 dp olurdu ve 252 dp'lik govdenin ucte birini
+                    // tek satir yerdi. %55'te 236 dp -> 47 dp, yani 44 dp
+                    // dokunma tabaninin ustunde ve satir yuksekliginde.
+                    modifier = Modifier
+                        .fillMaxWidth(0.55f)
+                        .padding(horizontal = 4.dp),
+                    testTagPrefix = "settings_language"
+                )
 
-                // Icerik kaydirilir: yeni satirlar (muzik, haptik, gizlilik
-                // politikasi) eklendikce yatay ekranda tasma olusmaz.
-                Column(
-                    modifier = Modifier.verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    // ---------------------------------------------------------
-                    // SES
-                    // ---------------------------------------------------------
-                    SettingsSectionHeader(stringResource(R.string.settings_section_audio))
+                Text(
+                    text = stringResource(R.string.settings_language_desc),
+                    color = SleekTextAccent.copy(alpha = 0.7f),
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                )
 
-                    SettingsToggleRow(
-                        label = stringResource(R.string.dialog_sound_effects),
-                        checked = soundEnabled,
-                        onCheckedChange = onSoundEnabledChange,
-                        testTag = "settings_sound_switch"
-                    )
-
-                    // Faz 14 - MUZIK. Ses Efektleri anahtarinin ALTINDA ve ayni
-                    // bolumde: ikisi de "ne duyacagim" sorusunun parcasi.
-                    //
-                    // Not: Ses Efektleri anahtari ANA anahtardir; kapatilinca
-                    // muzik de susar (bkz. AudioManager.isSoundEnabled). Muzik
-                    // anahtari yalnizca ses acikken anlamlidir ve tercihi ayri
-                    // saklanir, yani ses tekrar acilinca muzik oyuncunun
-                    // biraktigi durumda geri gelir.
-                    SettingsToggleRow(
-                        label = stringResource(R.string.settings_music),
-                        checked = musicEnabled,
-                        onCheckedChange = onMusicEnabledChange,
-                        testTag = "settings_music_switch"
-                    )
-
-                    // Faz 14 - DOKUNSAL GERI BILDIRIM. Ses bolumunde duruyor
-                    // cunku oyuncu icin ayni soru: "cihaz bana geri bildirim
-                    // versin mi". Ayri bir baslik acmak uc satirlik bir bolum
-                    // uretirdi ve yatay ekranda kaydirmayi uzatirdi.
-                    SettingsToggleRow(
-                        label = stringResource(R.string.settings_haptics),
-                        checked = hapticsEnabled,
-                        onCheckedChange = onHapticsEnabledChange,
-                        testTag = "settings_haptics_switch"
-                    )
-
-                    // ---------------------------------------------------------
-                    // GIZLILIK
-                    //
-                    // Satir KOSULLU: yalnizca UMP "bu oyuncu icin gizlilik
-                    // secenekleri gerekli" dediginde cizilir (pratikte AB/EEA ve
-                    // UK oyuncular). Kosul saglanmadiginda form ACILMAZ; her
-                    // zaman gorunen bir satir, dokununca hicbir sey olmayan bir
-                    // satir olurdu.
-                    // ---------------------------------------------------------
-                    if (showPrivacyOptions && activity != null) {
-                        SettingsSectionHeader(stringResource(R.string.settings_section_privacy))
-                        SettingsActionRow(
-                            label = stringResource(R.string.settings_ad_settings),
-                            description = stringResource(R.string.settings_ad_settings_desc),
-                            onClick = {
-                                // Form kapaninca gereklilik degismis olabilir
-                                // (oyuncu rizayi geri cekti) -> satiri yeniden oku.
-                                openPrivacyOptions(adHost, activity) { privacyTick++ }
-                            },
-                            testTag = "settings_privacy_options_row"
-                        )
-                    }
-
-                    // >>> GIZLILIK POLITIKASI BAGLANTISI BURAYA GELECEK. <<<
-                    // Metin docs/PRIVACY_POLICY.md icinde HAZIR ama HOST EDILMEDI.
-                    // Gercek URL olusmadan satir eklenmez.
-
-                    // ---------------------------------------------------------
-                    // SIFIRLAMA
-                    //
-                    // `SaveManager.resetHints/resetTutorial/resetProgress`
-                    // yazilmisti ama `main/` icinde HIC cagri yeri yoktu:
-                    // oyuncu ogreticiyi tekrar goremiyordu, tek yol adb idi.
-                    // ---------------------------------------------------------
-                    SettingsSectionHeader(stringResource(R.string.settings_section_reset))
-
-                    val doneLabel = stringResource(R.string.settings_reset_done)
-
+                // ---------------------------------------------------------
+                // GIZLILIK
+                //
+                // Satir KOSULLU: yalnizca UMP "bu oyuncu icin gizlilik
+                // secenekleri gerekli" dediginde cizilir (pratikte AB/EEA ve
+                // UK oyuncular). Kosul saglanmadiginda form ACILMAZ; her
+                // zaman gorunen bir satir, dokununca hicbir sey olmayan bir
+                // satir olurdu.
+                // ---------------------------------------------------------
+                if (showPrivacyOptions && activity != null) {
+                    SettingsSectionHeader(stringResource(R.string.settings_section_privacy))
                     SettingsActionRow(
-                        label = stringResource(R.string.settings_reset_hints),
-                        description = stringResource(R.string.settings_reset_hints_desc),
+                        label = stringResource(R.string.settings_ad_settings),
+                        description = stringResource(R.string.settings_ad_settings_desc),
                         onClick = {
-                            onResetHints()
-                            confirmingReset = false
-                            resetDone = doneLabel
+                            // Form kapaninca gereklilik degismis olabilir
+                            // (oyuncu rizayi geri cekti) -> satiri yeniden oku.
+                            openPrivacyOptions(adHost, activity) { privacyTick++ }
                         },
-                        testTag = "settings_reset_hints_row"
+                        testTag = "settings_privacy_options_row"
                     )
+                }
 
-                    SettingsActionRow(
-                        label = stringResource(R.string.settings_reset_tutorial),
-                        description = stringResource(R.string.settings_reset_tutorial_desc),
-                        onClick = {
-                            onResetTutorial()
+                // >>> GIZLILIK POLITIKASI BAGLANTISI BURAYA GELECEK. <<<
+                // Metin docs/PRIVACY_POLICY.md icinde HAZIR ama HOST EDILMEDI.
+                // Gercek URL olusmadan satir eklenmez.
+
+                // ---------------------------------------------------------
+                // SIFIRLAMA
+                //
+                // `SaveManager.resetHints/resetTutorial/resetProgress`
+                // yazilmisti ama `main/` icinde HIC cagri yeri yoktu:
+                // oyuncu ogreticiyi tekrar goremiyordu, tek yol adb idi.
+                // ---------------------------------------------------------
+                SettingsSectionHeader(stringResource(R.string.settings_section_reset))
+
+                val doneLabel = stringResource(R.string.settings_reset_done)
+
+                SettingsActionRow(
+                    label = stringResource(R.string.settings_reset_hints),
+                    description = stringResource(R.string.settings_reset_hints_desc),
+                    onClick = {
+                        onResetHints()
+                        confirmingReset = false
+                        resetDone = doneLabel
+                    },
+                    testTag = "settings_reset_hints_row"
+                )
+
+                SettingsActionRow(
+                    label = stringResource(R.string.settings_reset_tutorial),
+                    description = stringResource(R.string.settings_reset_tutorial_desc),
+                    onClick = {
+                        onResetTutorial()
+                        confirmingReset = false
+                        resetDone = doneLabel
+                    },
+                    testTag = "settings_reset_tutorial_row"
+                )
+
+                // YIKICI. Ilk dokunus yalnizca onay ister, ikinci dokunus
+                // uygular. Etiket de degisir: onay satiri, aciklamanin
+                // degil KENDISININ okundugu yerdir.
+                SettingsActionRow(
+                    label = if (confirmingReset) {
+                        stringResource(R.string.settings_reset_progress_confirm)
+                    } else {
+                        stringResource(R.string.settings_reset_progress)
+                    },
+                    description = stringResource(R.string.settings_reset_progress_desc),
+                    onClick = {
+                        if (confirmingReset) {
                             confirmingReset = false
+                            onResetProgress()
                             resetDone = doneLabel
-                        },
-                        testTag = "settings_reset_tutorial_row"
-                    )
-
-                    // YIKICI. Ilk dokunus yalnizca onay ister, ikinci dokunus
-                    // uygular. Etiket de degisir: onay satiri, aciklamanin
-                    // degil KENDISININ okundugu yerdir.
-                    SettingsActionRow(
-                        label = if (confirmingReset) {
-                            stringResource(R.string.settings_reset_progress_confirm)
                         } else {
-                            stringResource(R.string.settings_reset_progress)
-                        },
-                        description = stringResource(R.string.settings_reset_progress_desc),
-                        onClick = {
-                            if (confirmingReset) {
-                                confirmingReset = false
-                                onResetProgress()
-                                resetDone = doneLabel
-                            } else {
-                                confirmingReset = true
-                                resetDone = null
-                            }
-                        },
-                        testTag = "settings_reset_progress_row"
+                            confirmingReset = true
+                            resetDone = null
+                        }
+                    },
+                    testTag = "settings_reset_progress_row"
+                )
+
+                if (confirmingReset) {
+                    // Vazgecme yolu ACIK olmali: yikici bir onayda tek
+                    // cikis "baska bir yere dokun" olamaz.
+                    SettingsActionRow(
+                        label = stringResource(R.string.settings_reset_progress_cancel),
+                        description = null,
+                        onClick = { confirmingReset = false },
+                        testTag = "settings_reset_cancel_row"
                     )
+                }
 
-                    if (confirmingReset) {
-                        // Vazgecme yolu ACIK olmali: yikici bir onayda tek
-                        // cikis "baska bir yere dokun" olamaz.
-                        SettingsActionRow(
-                            label = stringResource(R.string.settings_reset_progress_cancel),
-                            description = null,
-                            onClick = { confirmingReset = false },
-                            testTag = "settings_reset_cancel_row"
-                        )
-                    }
-
-                    val doneMessage = resetDone
-                    if (doneMessage != null) {
-                        Text(
-                            text = doneMessage,
-                            color = SleekPrimaryGreen,
-                            fontSize = 12.sp,
-                            modifier = Modifier
-                                .padding(horizontal = 12.dp, vertical = 4.dp)
-                                .testTag("settings_reset_done")
-                        )
-                    }
-
-                    // ---------------------------------------------------------
-                    // HAKKINDA
-                    // ---------------------------------------------------------
-                    SettingsSectionHeader(stringResource(R.string.settings_section_about))
-
+                val doneMessage = resetDone
+                if (doneMessage != null) {
                     Text(
-                        text = stringResource(R.string.settings_version, versionName, versionCode),
-                        color = SleekTextAccent.copy(alpha = 0.7f),
+                        text = doneMessage,
+                        color = SleekPrimaryGreen,
                         fontSize = 12.sp,
                         modifier = Modifier
-                            .padding(horizontal = 12.dp, vertical = 8.dp)
-                            .testTag("settings_version")
+                            .padding(horizontal = 12.dp, vertical = 4.dp)
+                            .testTag("settings_reset_done")
                     )
                 }
+
+                // ---------------------------------------------------------
+                // HAKKINDA
+                // ---------------------------------------------------------
+                SettingsSectionHeader(stringResource(R.string.settings_section_about))
+
+                Text(
+                    text = stringResource(R.string.settings_version, versionName, versionCode),
+                    color = SleekTextAccent.copy(alpha = 0.7f),
+                    fontSize = 12.sp,
+                    modifier = Modifier
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                        .testTag("settings_version")
+                )
             }
         }
     }
@@ -496,10 +563,14 @@ fun SettingsToggleRow(
                 modifier = Modifier.weight(1f)
             )
             Spacer(Modifier.width(8.dp))
-            // onCheckedChange = null: anahtar burada GORSELDIR, dokunmayi satir
-            // isler. Aksi halde ayni satirda iki ayri ac/kapa ogesi bildirilir
-            // ve erisilebilirlik agaci ikiye bolunur.
-            Switch(checked = checked, onCheckedChange = null)
+            // Anahtar burada GORSELDIR, dokunmayi satir isler. Aksi halde ayni
+            // satirda iki ayri ac/kapa ogesi bildirilir ve erisilebilirlik
+            // agaci ikiye bolunur — bu, Material `Switch(onCheckedChange = null)`
+            // cagrisinin de yaptigi seydi, sanata gecerken korundu.
+            //
+            // DURUM IKI KANALDAN OKUNUR: kapali sanatta topuz SOLDA (yatay
+            // ayna) ve ayrica doygunluk dusuk. Renk tek ayrim kanali degil.
+            ArtToggleVisual(checked = checked)
         }
     }
 }

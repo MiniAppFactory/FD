@@ -4,15 +4,19 @@ import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -215,7 +219,7 @@ fun ActIntroOverlay(
     val safeAct = act.coerceIn(1, ActIntro.ACT_COUNT)
     val scrimInteraction = remember { MutableInteractionSource() }
 
-    Box(
+    BoxWithConstraints(
         contentAlignment = Alignment.Center,
         modifier = modifier
             .fillMaxSize()
@@ -227,35 +231,44 @@ fun ActIntroOverlay(
             )
             .testTag("act_intro_overlay")
     ) {
+        // ⚠ YUKSEKLIK KILIDI + KAYDIRMA — 2026-08-26'da EKLENDI.
+        //
+        // Bu kart `LevelSelectScreen`'in `weight(1f)` kutusunun icinde yasiyor;
+        // banner ve `SupplyDropBar` dustukten sonra ona kalan yukseklik
+        // Galaxy S8'de ~258 dp. Olculen icerik (etiket + baslik + aralik satiri
+        // + 5-6 satir govde + onay cipi) ~270 dp idi, yani kart ALTTAN
+        // KIRPILIYORDU ve en uzun perde metinlerinde "ANLASILDI" cipi ekran
+        // disinda kalabiliyordu. Kartin ikinci kapanis yolu (scrim'e dokunma)
+        // oldugu icin oyuncu kilitlenmiyordu ama cikisin GORUNUR olani yoktu.
+        //
+        // Cozum `VictoryModal` kalibinin AYNISI:
+        //  1) yukseklik ekrana kilitlenir, govde kaydirilir,
+        //  2) ONAY CIPI kaydirmanin DISINDA — her zaman gorunur.
+        //
+        // Sanat afisi (240 x 76 dp) bu duzeltmeden SONRA eklendi; tasmayi
+        // gorunur yapar, yaratmaz.
+        val bannerWidth = minOf(
+            maxWidth * 0.62f,
+            maxHeight * 0.30f * Art.ActBanner.aspect
+        )
+
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier
                 .widthIn(max = 420.dp)
+                .heightIn(max = maxHeight - 16.dp)
                 .clip(RoundedCornerShape(12.dp))
                 .background(Color(0xFF1B2416))
-                .padding(horizontal = 22.dp, vertical = 18.dp)
+                .padding(horizontal = 22.dp, vertical = 14.dp)
         ) {
-            // KISIM III — serit ayracindaki etiketin ta kendisi; oyuncu
-            // karti bolum seridiyle ayni kelimeyle esler.
-            Text(
-                text = stringResource(storyActLabelRes(safeAct)),
-                color = Color(0xFF8FA87A),
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Black,
-                maxLines = 1
-            )
-
-            Spacer(Modifier.height(4.dp))
-
-            AutoShrinkText(
-                text = stringResource(storyActTitleRes(safeAct)),
-                color = SleekGold,
-                fontWeight = FontWeight.Black,
-                maxFontSize = 24.sp,
-                minFontSize = 16.sp,
-                maxLines = 1,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth()
+            // PERDE AFISI. Ust seritte "KISIM III" (bolum seridindeki ayracin
+            // TA KENDISI — oyuncu karti seritle ayni kelimeyle esler), ana
+            // alanda perde basligi. Ikisi de sanata GOMULU DEGIL.
+            ArtActBanner(
+                actLabel = stringResource(storyActLabelRes(safeAct)),
+                actTitle = stringResource(storyActTitleRes(safeAct)),
+                modifier = Modifier.width(bannerWidth),
+                testTag = "act_intro_banner"
             )
 
             Spacer(Modifier.height(2.dp))
@@ -272,24 +285,33 @@ fun ActIntroOverlay(
                 maxLines = 1
             )
 
+            Spacer(Modifier.height(10.dp))
+
+            // GOVDE — KAYDIRILABILIR.
+            //
+            // `maxLines` YOK ve olmayacak: metin bir cihazda 6 satira
+            // tastiginda kirpmak, telsiz emrinin son cumlesini — yani perdenin
+            // GOREVINI — yok eder. Butce `StoryStringsTest` ile metin
+            // tarafinda kilitli (220 karakter); burada kirpma yerine
+            // KAYDIRMASINA izin verilir.
+            Column(
+                modifier = Modifier
+                    .weight(1f, fill = false)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                Text(
+                    text = stringResource(storyActBodyRes(safeAct)),
+                    color = Color(0xFFDCE8CC),
+                    fontSize = 13.sp,
+                    lineHeight = 19.sp,
+                    textAlign = TextAlign.Start,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
             Spacer(Modifier.height(12.dp))
 
-            // Govde. `maxLines` YOK: metin bir cihazda 6 satira tastiginda
-            // kirpmak, telsiz emrinin son cumlesini — yani perdenin GOREVINI
-            // — yok eder. Butce `StoryStringsTest` ile metin tarafinda
-            // kilitli (220 karakter); burada kirpma yerine akmasina izin
-            // verilir.
-            Text(
-                text = stringResource(storyActBodyRes(safeAct)),
-                color = Color(0xFFDCE8CC),
-                fontSize = 13.sp,
-                lineHeight = 19.sp,
-                textAlign = TextAlign.Start,
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            Spacer(Modifier.height(16.dp))
-
+            // ONAY CIPI — kaydirmanin DISINDA, yani her zaman gorunur.
             Text(
                 text = stringResource(R.string.story_ack),
                 color = Color(0xFF14200C),

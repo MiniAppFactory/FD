@@ -6,6 +6,109 @@ yalan soyleyebiliyorlardi; surum notu artik kodla ayni gecmisi paylasiyor.
 
 ---
 
+## 2026-08-26 — UI ART PACK v2 (menu / ayarlar / sonuc ekranlari) + UYGULAMA ICI DIL
+
+Yeni sanat paketi (`asset-pack/Frontline_Defender_assets_individual_full/`)
+oyuna baglandi. Oynanis yuzeylerine (GameCanvas, HUD, kule/dalga seritleri)
+**dokunulmadi**; degisen yalnizca menu, ayarlar, sonuc modallari ve perde karti.
+
+### Ne eklendi
+
+- **`ArtSurfaces.kt`** — sanat plakalarini Compose'a baglayan ince katman.
+  Her yuzey kendi **en-boy oranini korur**; yukseklik genislikten TURETILIR,
+  boylece "bu ekran 360 dp'ye siger mi" sorusu cagri yerinde aritmetikle
+  cevaplanabilir. Ic alan kesirleri (`ArtInset`) tahmin edilmedi, sanatin
+  merkezinden disa tarama ile OLCULDU.
+- **Ana menu**: baslik plakasi, birincil eylem butonu, ayarlar dislisi.
+  Yerlesim artik sabit dp degil **yukseklik butcesi** uzerinden hesaplaniyor.
+- **Ayarlar**: tum modal tek bir panel sanatina tasindi; Material `Switch`
+  yerine sanat anahtari (`ArtToggleVisual`).
+- **Zafer / yenilgi**: baslik plakasi + sanat butonlari.
+- **Perde acilis karti**: perde afisi (ust seritte "KISIM III", altta perde
+  basligi).
+- **Uygulama ici dil secimi (YENI OZELLIK)** — `AppLanguage.kt`. Ayarlarda
+  Ingilizce/Turkce segmentli secici; secim aninda uygulaniyor ve kaliciyor.
+  `appcompat` EKLENMEDI; Compose kokunde `LocalContext` cevrilmis bir
+  `ContextThemeWrapper` ile degistiriliyor — `createConfigurationContext`
+  KULLANILMADI cunku o Activity zincirini kopariyor ve `findActivity()`
+  null donunce UMP "Reklam Ayarlari" satiri sessizce kaybolurdu.
+- **Kamuflaj zemini degisti.** Yeni desen olculen luma ort. 26,2 (eskisi
+  100,7); uzerindeki perde 0,72/0,88 -> **0,10/0,34** yapildi, aksi halde
+  desen simsiyah olurdu.
+
+### Yol boyunca DUZELTILEN uc mevcut hata
+
+1. **`DefeatModal`'da yukseklik kilidi ve kaydirma YOKTU.** `VictoryModal` ve
+   `PauseMenuModal` bunu 2026-08-18'de cihaz bulgusuyla kazanmisti, yenilgi
+   tarafi atlanmisti: TR govde metni uc satira ciktiginda "TEKRAR DENE"
+   ekran disina itiliyordu, yani yenilgiden cikis yolu yoktu.
+2. **`ActIntroOverlay`'de de yoktu.** Icerik ~270 dp, kutu 258 dp; "ANLASILDI"
+   cipi en uzun perde metinlerinde ekran disinda kalabiliyordu.
+3. **Sonuc modallarinin genisligi 420 -> 480 dp.** Sanat butonlari orani
+   korudugu icin 420'de buton yuksekligi 43,9 dp'ye, yani **44 dp dokunma
+   tabaninin altina** duyuyordu.
+
+### Cihazda olcup GERI ALDIGIMIZ iki sey
+
+- **Kampanya baslik plakasi**: 190 dp'lik plaka ust seridi +32 dp buyuttu ve
+  bes bolum kartinin BESINDE de "SEVK ET" satiri alttan kirpildi — yani
+  bolume girmenin tek butonu. Ust serit DUZ METIN kaldi.
+- **Kilit acma penceresi plakasi**: dort ayri bicimde denendi, dordunde de
+  pencerenin iki `Surface` butonu metinsiz kaldi (120 coin harcayan onay
+  butonu gorunmez oldu). Sanat kaldirilinca dordunde de duzeldi. Kok neden
+  bulunamadi (muhtemel: API 24'te buyuk `Image` + `SubcomposeLayout` ile ayni
+  kapsayicidaki `Surface` arasinda bir cizim etkilesimi). `ArtNameplate`,
+  `Art.Nameplate` ve `ui_plate_nameplate.webp` bu yuzden SILINDI — olu kod ve
+  oksuz varlik birakilmadi.
+
+### Kontrast: sanata bakarak degil, pikselden olculdu
+
+Ilk surumde buton etiketleri KOYU cizildi cunku sanat "parlak sari-yesil"
+gorunuyordu. Cihazda olculen gercek: parlak olan yalnizca kenar isiltisi.
+
+| yuzey | koyu yaziyla | acik yaziyla |
+|---|---|---|
+| birincil buton | **1,58:1** ✘ | **12,86:1** ✔ |
+| secili dil segmenti | **2,31:1** ✘ | 6,6:1 ✔ |
+| baslik plakasi | — | **13,79:1** ✔ |
+
+`ArtOnBright` sabiti kaldirildi.
+
+### Metin-gomulu 142 PNG KULLANILMADI
+
+Pack ayrica `level_titles/` (110), `map_name_labels/` (22) ve `act_titles/`
+(10) altinda metni piksele gomulmus plakalar iceriyordu (ham ~250 MB). Hicbiri
+alinmadi: yazi `stringResource` ile geliyor, sanatin USTUNE ciziliyor. Aksi
+halde her yeni dil 142 yeni dosya demek olurdu, `AutoShrinkText` devre disi
+kalirdi ve ayni bolum adi biri kodda biri pikselde olmak uzere IKI yerde
+yasardi — bu deponun en sik hata sinifi.
+
+### Yeni testler
+
+- `ArtSurfaceContractTest` — beyan edilen en-boy orani dosyanin GERCEK
+  pikselinden okunanla karsilastirilir (WebP basligi elle cozulur; Robolectric
+  bu soruyu cevaplayamaz). Ayrica oksuz/eksik varlik nobeti ve silinmis
+  nameplate'in geri gelmemesi.
+- `ArtButtonTouchTargetTest` — modal butonlari 44 dp tabaninin altina dusmez
+  (genisligi GERCEK koddan, `ResultModalInnerWidth`'ten okur) ve sanat
+  uzerindeki etiket renkleri olculen zeminlerde 4,5:1'i gecer.
+
+Ikisi de **mutasyonla dogrulandi**: oran 3,50 -> 3,70 yapilinca ve modal
+genisligi 480 -> 420 cekilince kiriliyorlar.
+
+### Varlik butcesi
+
+10 metinsiz bilesen, kirpilip WebP'ye cevrildi: **toplam 379 KB**
+(uretici `tools/ui_art_pipeline.py`, surum kontrolu altinda ve yeniden
+kosturulabilir). Kapali durum anahtari ayri bir dosya DEGIL, acik durumdan
+turetiliyor (yatay ayna + doygunluk dusurme), yani "renk tek ayrim kanali
+olamaz" kurali korunuyor.
+
+Kanit: cihaz ekran goruntuleri `docs/device_evidence/ui_art_pack_v2/`
+(Galaxy S8 / API 24 / 740x360 dp, TR ve EN).
+
+---
+
 ## 2026-08-21 — COIN CIPINDEN ODULLU REKLAM (R1b, `COIN_TOP_UP`)
 
 Tekrar oynama geliri kaldiriliyor (`replayReward` -> 0). Yerine gelen yol:
