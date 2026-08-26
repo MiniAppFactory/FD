@@ -30,8 +30,8 @@ android {
     //
     // Play e HENUZ yuklenmedi; yuklendikten sonra versionCode geri alinamaz
     // ve denenen her kod tukenir — o noktadan sonra artirmadan once sorulmali.
-    versionCode = 47
-    versionName = "0.47"
+    versionCode = 48
+    versionName = "0.48"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }

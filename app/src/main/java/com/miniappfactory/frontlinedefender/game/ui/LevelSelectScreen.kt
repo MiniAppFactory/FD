@@ -483,7 +483,16 @@ fun LevelSelectScreen(
                 GameConfig.CAMPAIGN.forEach { spec ->
                     if (spec.act != lastAct) {
                         lastAct = spec.act
-                        ActDivider(act = spec.act)
+                        // Perde ayraci artik ilerleme de soyluyor (hedef
+                        // tasarimdaki sol raydaki "1/5 COMPLETE" bilgisinin
+                        // serit ici karsiligi): o perdede kac bolum bitti.
+                        val actLevels = GameConfig.CAMPAIGN.filter { it.act == spec.act }
+                        ActDivider(
+                            act = spec.act,
+                            completedCount = actLevels.count { progress.starsFor(it.levelId) > 0 },
+                            totalCount = actLevels.size,
+                            locked = actLevels.none { progress.isUnlocked(it.levelId) }
+                        )
                     }
                     LevelCard(
                         spec = spec,
@@ -734,11 +743,27 @@ private fun UnlockConfirmOverlay(
     }
 }
 
+/**
+ * Perde ayraci — hedef tasarimdaki SOL RAYIN serit ici karsiligi.
+ *
+ * Mockup perdeleri kaydirmayan sabit bir sol sutunda listeliyor; 55 kartlik
+ * yatay seritte sabit sutun, ekranin ~%15'ini surekli yiyecekti (740 dp'de
+ * ~110 dp) ve kart alanini daraltirdi. Ayni bilgi — perde adi, kac bolumun
+ * bittigi, kilit — kaydirmayla birlikte akan ayracin uzerine tasindi:
+ * oyuncu hangi perdenin icinden gectigini kaydirdikca goruyor.
+ */
 @Composable
-private fun ActDivider(act: Int) {
+private fun ActDivider(
+    act: Int,
+    completedCount: Int = 0,
+    totalCount: Int = 0,
+    locked: Boolean = false
+) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.padding(end = 12.dp)
+        modifier = Modifier
+            .padding(end = 12.dp)
+            .alpha(if (locked) 0.55f else 1f)
     ) {
         Text(
             text = stringResource(actLabelRes(act)),
@@ -747,11 +772,22 @@ private fun ActDivider(act: Int) {
             fontWeight = FontWeight.Black,
             maxLines = 1
         )
+        Spacer(Modifier.height(2.dp))
+        // Ilerleme / kilit satiri. Kilitli perdede sayi yerine kilit glifi:
+        // "0/11" ile "henuz acilmadi" ayni sey degil — ilki oynanabilir ama
+        // bitmemis, ikincisi dokunulamaz.
+        Text(
+            text = if (locked) "■" else "$completedCount/$totalCount",
+            color = if (locked) Color(0x778FA87A) else Color(0xFFB8C9A8),
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1
+        )
         Spacer(Modifier.height(4.dp))
         Box(
             Modifier
                 .width(2.dp)
-                .height(96.dp)
+                .height(84.dp)
                 .background(Color(0x558FA87A))
         )
     }
@@ -795,25 +831,29 @@ private fun LevelCard(
         else -> Color(0x33FFFFFF)
     }
 
-    // Zemin: tamamlanan kart belirgin sekilde daha yesil ve daha acik.
-    // Metin rengi (0xFFE8F0DC / 0xFFDCE8CC) bu zeminde de yuksek kontrast
-    // birakir — zemin hala koyu, yalnizca yesil tarafa kaydirildi.
-    val cardBackground = when {
-        !unlocked -> Color(0xCC15170F)
-        completed -> Color(0xE62E4A1E)
-        else -> Color(0xCC1E2A18)
+    // HEDEF TASARIM (2026-08-26): kart artik yuvarlatilmis duz bir kutu degil,
+    // kosesi kesilmis TAKTIK CERCEVE (bkz. TacticalFrame.kt — cizim, gorsel
+    // dosya degil). Dort durum dort tona esler; eski `cardBackground`un
+    // yerine gecti ve "yesil iz + tek altin vurgu" okumasi birebir korundu.
+    val tone = when {
+        isNext -> FrameTone.NEXT
+        completed -> FrameTone.CLEARED
+        unlocked -> FrameTone.ACTIVE
+        else -> FrameTone.MUTED
     }
 
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
+    TacticalFrame(
+        tone = tone,
+        chamfer = 9.dp,
         modifier = Modifier
             .width(126.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(cardBackground)
             .clickable(enabled = true, onClick = onClick)
-            .padding(10.dp)
             .alpha(if (unlocked) 1f else 0.62f)
     ) {
+      Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.padding(10.dp)
+      ) {
         // ---------------------------------------------------------------
         // HARITA KUPURU + BOLUM NUMARASI
         //
@@ -950,18 +990,18 @@ private fun LevelCard(
 
         Spacer(Modifier.height(6.dp))
 
-        // Yildizlar (0-3). Glifler translatable="false".
-        val starFilled = stringResource(R.string.level_star_filled_glyph)
-        val starEmpty = stringResource(R.string.level_star_empty_glyph)
-        Row {
+        // Yildizlar (0-3) — HEDEF TASARIMDAKI gibi SPRITE, glif degil.
+        // `spr_ic_victory_star` zafer ekranindakiyle AYNI dosya; kazanilmayan
+        // yildiz ayni sprite'in soluk hali (zafer modaliyla ayni kural, 0.22).
+        // `level_star_*_glyph` dizelerinin baska cagri yeri kalmadi.
+        Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
             repeat(3) { i ->
-                Text(
-                    text = if (i < stars) starFilled else starEmpty,
-                    color = if (i < stars) Color(0xFFFFD54F) else Color(0x55FFFFFF),
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.Black
+                SpriteIcon(
+                    id = R.drawable.spr_ic_victory_star,
+                    size = 15.dp,
+                    contentDescription = null,
+                    modifier = if (i < stars) Modifier else Modifier.alpha(0.22f)
                 )
-                Spacer(Modifier.width(2.dp))
             }
         }
 
@@ -1023,5 +1063,6 @@ private fun LevelCard(
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth()
         )
+      }
     }
 }

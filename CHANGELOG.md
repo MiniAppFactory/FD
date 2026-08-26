@@ -6,6 +6,35 @@ yalan soyleyebiliyorlardi; surum notu artik kodla ayni gecmisi paylasiyor.
 
 ---
 
+## 2026-08-26 (d) — KAMPANYA EKRANI HEDEF TASARIMA CEKILDI (v48)
+
+Kullanici hedef mockup'i gonderdi ("hedef tasarim bu"). Ekran ona cekildi.
+
+- **`TacticalFrame.kt` (YENI)** — kosesi kesilmis govde, cift kontur, kose
+  isaret cizgileri, duruma gore hale. GORSEL DOSYA DEGIL, Compose ile cizim:
+  PNG olsaydi 4 boyut x 2 durum = 8 dosya gerekir ve her boyut degisiminde
+  yeniden uretim isterdi; cizim her olcude keskin ve APK'ya sifir bayt.
+- Bolum karti dort duruma dort ton esler (MUTED/ACTIVE/CLEARED/NEXT);
+  SIRADAKI kart mockup'taki gibi ALTIN cerceve + hale tasir ve ekrandaki tek
+  altin vurgu odur. "Yesil iz + tek altin" okumasi (cihaz geri bildirimiyle
+  kazanilmisti) birebir korundu.
+- Yildizlar glif ("*"/"-") degil SPRITE: zafer ekranindakiyle ayni
+  `spr_ic_victory_star`, kazanilmamis olan ayni sprite'in 0,22 soluk hali.
+- Perde ayraci artik ilerleme soyluyor: perde adi + "n/11" + kilitli perdede
+  ayracin solmasi. Mockup'in SABIT SOL RAYI kasten alinmadi: 55 kartlik
+  yatay seritte sabit sutun ekranin ~%15'ini surekli yer ve kart alanini
+  daraltirdi; ayni bilgi kaydirmayla akan ayraca tasindi.
+
+Asset muhasebesi de kapandi (kullanici sordu): pack'te islenmemis varlik
+KALMADI. `assets/raw_generated/` icindeki 10 dosyanin 8'i `ui_components/`
+ile bayt-bayt ayni (md5), 2'si mockup kopyasi.
+
+Kanit: `testDebugUnitTest lintDebug` yesil; cihazda siradaki kartin altin
+cerceve+hale ile tek vurgu oldugu, yildizlarin sprite ciktigi ve "KISIM I
+1/11" ayracinin gorundugu ekran goruntusuyle dogrulandi.
+
+---
+
 ## 2026-08-26 (c) — BOLUM KARTLARINDA HARITA KUPURU + IKON HIZASI (v47)
 
 Kullanici iki sey bildirdi: ana menudeki ikincil buton ikonlari yuvadan
