@@ -120,7 +120,15 @@ class ArtSurfaceContractTest {
 
         // Ac/kapa anahtari [Art] tablosunda ArtSpec olarak DEGIL, dogrudan
         // `R.drawable` ile cagriliyor (yalnizca oran gerekiyor, ic alan degil).
-        val usedDirectly = setOf("ui_toggle_on.webp", "ui_toggle_off.webp")
+        // 55-KART PAKETI (v50) de dogrudan cagrilir: durum sablonlari
+        // `LevelCard` icinde `when` ile secilir, yildiz overlay'i sabit
+        // bindirmedir — ikisi de ArtSpec'in ic-alan mekanigini kullanmaz.
+        val usedDirectly = setOf(
+            "ui_toggle_on.webp", "ui_toggle_off.webp",
+            "ui_card_active.webp", "ui_card_available.webp",
+            "ui_card_completed.webp", "ui_card_locked.webp",
+            "ui_card_star.webp"
+        )
         val used = (declared.map { it.third } + usedDirectly).toSortedSet()
 
         val orphans = onDisk - used

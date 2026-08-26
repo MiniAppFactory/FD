@@ -123,20 +123,41 @@ fun mapNameRes(mapId: Int): Int = when (mapId) {
  * soyluyor ve 11 kupur yerine 55 kupur uretmek bellek kazancini geri verirdi.
  */
 @DrawableRes
-fun levelThumbRes(mapId: Int): Int = when (mapId) {
-    1 -> R.drawable.thumb_level_01
-    2 -> R.drawable.thumb_level_02
-    3 -> R.drawable.thumb_level_03
-    4 -> R.drawable.thumb_level_04
-    5 -> R.drawable.thumb_level_05
-    6 -> R.drawable.thumb_level_06
-    7 -> R.drawable.thumb_level_07
-    8 -> R.drawable.thumb_level_08
-    9 -> R.drawable.thumb_level_09
-    10 -> R.drawable.thumb_level_10
-    11 -> R.drawable.thumb_level_11
-    else -> R.drawable.thumb_level_01
+fun levelThumbRes(levelId: Int): Int {
+    // 55-KART PAKETI (2026-08-26): kupurler artik LEVELID bazli ve BIYOMLU —
+    // ayni harita kista karli, colde kumlu goruntusuyle gelir (55/55 benzersiz,
+    // md5 ile dogrulandi). Eski 11'lik harita-bazli uretim pipeline'da devre
+    // disi birakildi.
+    //
+    // when tablosu YOK: 55 satirlik elle yazilmis tablo bayatlamaya davetiye
+    // olurdu. Ad, kimlikten TURETILIR; kaynak adlari uretici betikle ayni
+    // kaliptan (thumb_level_NN) geldigi icin kopukluk derleme zamaninda degil
+    // calisma zamaninda da olusamaz — getIdentifier degil, sabit dizi.
+    val safe = levelId.coerceIn(1, LEVEL_THUMBS.size)
+    return LEVEL_THUMBS[safe - 1]
 }
+
+private val LEVEL_THUMBS = intArrayOf(
+    R.drawable.thumb_level_01, R.drawable.thumb_level_02, R.drawable.thumb_level_03,
+    R.drawable.thumb_level_04, R.drawable.thumb_level_05, R.drawable.thumb_level_06,
+    R.drawable.thumb_level_07, R.drawable.thumb_level_08, R.drawable.thumb_level_09,
+    R.drawable.thumb_level_10, R.drawable.thumb_level_11, R.drawable.thumb_level_12,
+    R.drawable.thumb_level_13, R.drawable.thumb_level_14, R.drawable.thumb_level_15,
+    R.drawable.thumb_level_16, R.drawable.thumb_level_17, R.drawable.thumb_level_18,
+    R.drawable.thumb_level_19, R.drawable.thumb_level_20, R.drawable.thumb_level_21,
+    R.drawable.thumb_level_22, R.drawable.thumb_level_23, R.drawable.thumb_level_24,
+    R.drawable.thumb_level_25, R.drawable.thumb_level_26, R.drawable.thumb_level_27,
+    R.drawable.thumb_level_28, R.drawable.thumb_level_29, R.drawable.thumb_level_30,
+    R.drawable.thumb_level_31, R.drawable.thumb_level_32, R.drawable.thumb_level_33,
+    R.drawable.thumb_level_34, R.drawable.thumb_level_35, R.drawable.thumb_level_36,
+    R.drawable.thumb_level_37, R.drawable.thumb_level_38, R.drawable.thumb_level_39,
+    R.drawable.thumb_level_40, R.drawable.thumb_level_41, R.drawable.thumb_level_42,
+    R.drawable.thumb_level_43, R.drawable.thumb_level_44, R.drawable.thumb_level_45,
+    R.drawable.thumb_level_46, R.drawable.thumb_level_47, R.drawable.thumb_level_48,
+    R.drawable.thumb_level_49, R.drawable.thumb_level_50, R.drawable.thumb_level_51,
+    R.drawable.thumb_level_52, R.drawable.thumb_level_53, R.drawable.thumb_level_54,
+    R.drawable.thumb_level_55
+)
 
 /** Kupurun en-boy orani (320/132). Kart yuksekligi bundan turer. */
 const val LEVEL_THUMB_ASPECT = 2.424f

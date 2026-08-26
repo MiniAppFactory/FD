@@ -114,4 +114,109 @@ def build_level_thumbs():
         print(f"  {name:22s} {THUMB_W}x{THUMB_H}  {kb:7.1f} KB")
     print(f"  kupur toplami: {total:.1f} KB")
 
-build_level_thumbs()
+# build_level_thumbs()  # DEVRE DISI (2026-08-26): harita-bazli 11 kupurun
+# yerini 55 kart paketinin LEVELID-bazli, biyomlu 55 kupuru aldi (asagida).
+
+# -----------------------------------------------------------------------------
+# 55 KART PAKETI (Frontline_Defender_55_Cards_COMPLETE, 2026-08-26)
+# -----------------------------------------------------------------------------
+#
+# Kullanicinin GitHub Release uzerinden gonderdigi 198 MB'lik paket:
+#   assets/templates/    4 durum sablonu (1086x1448 RGBA, METINSIZ)
+#   assets/thumbnails/   55 BENZERSIZ harita gorseli (820x410) — biyomlu
+#   preview_cards/       metin gomulu ornekler (KULLANILMAZ, referans)
+#
+# Sablon 560 px'e indirilir (126 dp kart @4x = 504 px + pay). Kupurler 384x192
+# (sablonun kupur penceresi 126 dp kartta 96x48 dp -> @4x 384x192).
+#
+# DOLU YILDIZ SPRITE'i completed sablonundan KESILIR (completed ile available
+# arasindaki piksel farkinin orta kumesi): 1-2 yildizli bolumlerde available
+# sablonunun bos konturlarinin uzerine kazanilan sayida bindirilir. Elle
+# cizilmis bir yildiz DEGIL — sablonla ayni sanattan geldigi icin birebir
+# ayni gorunur.
+
+# SRC = <asset-pack>/Frontline_Defender_assets_individual_full/assets/ui_components
+# 55 kart paketi <asset-pack>/Frontline_Defender_55_Cards_COMPLETE altinda.
+CARDS = os.path.normpath(os.path.join(SRC, "..", "..", "..", "Frontline_Defender_55_Cards_COMPLETE"))
+
+def build_55_cards():
+    tpl_dir = os.path.join(CARDS, "assets", "templates")
+    th_dir = os.path.join(CARDS, "assets", "thumbnails")
+    if not os.path.isdir(tpl_dir):
+        print("55 kart paketi yok, atlandi:", tpl_dir)
+        return
+    print("=== 55 kart paketi ===")
+    total = 0.0
+    for state in ("active", "available", "completed", "locked"):
+        im = Image.open(os.path.join(tpl_dir, f"card_template_{state}.png")).convert("RGBA")
+
+        # KUPUR PENCERESI SEFFAFLASTIRILIR (sablonda opak koyu doku geliyordu).
+        # Boylece Compose'da kupur sablonun ALTINA cizilir ve cerceve, ic
+        # golgeler ve NUMARA DAIRESI kupurun ustunde kalir — daire ayrica
+        # thumb'larin kendi gomulu kose rozetini de orter (cift rozet olmaz).
+        # Pencere: x 126-954, y 133-545 (olculdu). KORUNAN DISK: numara
+        # dairesi merkez (214, 200) r=100 — pencereyle ortusen alt yarisi
+        # silinmesin diye alfa dokunulmadan birakilir.
+        W0, H0 = im.size
+        pxs = im.load()
+        for y in range(133, 545):
+            for x in range(126, 954):
+                if (x - 214) ** 2 + (y - 200) ** 2 <= 100 * 100:
+                    continue
+                r, g, b, a = pxs[x, y]
+                pxs[x, y] = (r, g, b, 0)
+
+        w = 560
+        h = round(im.size[1] * w / im.size[0])
+        im = im.resize((w, h), Image.LANCZOS)
+        pth = os.path.join(OUT, f"ui_card_{state}.webp")
+        im.save(pth, "WEBP", quality=82, method=6)
+        kb = os.path.getsize(pth) / 1024.0; total += kb
+        print(f"  ui_card_{state:10s} {w}x{h}  {kb:7.1f} KB")
+
+    # Dolu yildiz: completed sablonundan SABIT kutuyla kesilir.
+    #
+    # Fark-tabanli otomatik kesim DENENDI ve YANILDI (14x96'lik dikey serit
+    # kesti): iki sablon yildiz bandinin disinda da (buton parlamasi, doku)
+    # farklilasiyor ve kume secimi yanlis merkeze kilitlendi. Kutu, orta
+    # yildizin OLCULMUS sinirlarindan sabitlendi: x 434-652 (fark taramasi,
+    # y=1056 satirinda), y 950-1125 (bant gorselinden; alt uclar 1056-1109
+    # olculdu, tepe ~950). Sanat degisirse bu dort sayi yeniden olculur.
+    comp = Image.open(os.path.join(tpl_dir, "card_template_completed.png")).convert("RGBA")
+    box = (434, 964, 652, 1125)
+    star = comp.crop(box)
+    # ZEMIN SEFFAFLASTIRMA: kesilen kutu sablonda opak; oldugu gibi bindirilse
+    # koseli koyu bir kutu gorunurdu. Yildiz ALTIN (r yuksek, r-b buyuk),
+    # zemin zeytin (r-b kucuk) — alfa "altinlik"tan turetilir, kenarlar
+    # kademeli oldugu icin kesim yumusak kalir.
+    px = star.load()
+    for y in range(star.size[1]):
+        for x in range(star.size[0]):
+            r, g, b, a = px[x, y]
+            gold = max(0, min(255, (r - b - 15) * 4))
+            px[x, y] = (r, g, b, min(a, gold))
+    star.thumbnail((96, 96), Image.LANCZOS)
+    pth = os.path.join(OUT, "ui_card_star.webp")
+    star.save(pth, "WEBP", quality=85, method=6)
+    kb = os.path.getsize(pth) / 1024.0; total += kb
+    print(f"  ui_card_star      {star.size[0]}x{star.size[1]}  {kb:7.1f} KB  (kaynak kutu {box})")
+
+    # 55 kupur. ESKI harita-bazli thumb_level_01..11 uretimi ARTIK KULLANILMIYOR;
+    # ayni adlar LEVELID bazli 55 dosya olarak yeniden dolduruluyor.
+    for i in range(1, 56):
+        src = os.path.join(th_dir, f"level_{i:02d}_thumb.png")
+        im = Image.open(src).convert("RGB")
+        # SOL-UST KIRPMA: thumb'larin kendi gomulu "NN" kose rozeti var ve
+        # sablonun numara dairesi onu TAM ortmuyordu (sag kenari tasip kart
+        # 4-5'te cift numara gorunuyordu). Rozet bolgesi ~150x100; 140,70
+        # kirpmasi rozeti atar, kalan 680x340 tam 2:1 oranindadir.
+        im = im.crop((140, 70, im.size[0], im.size[1]))
+        im = im.resize((384, 192), Image.LANCZOS)
+        pth = os.path.join(OUT, f"thumb_level_{i:02d}.webp")
+        im.save(pth, "WEBP", quality=76, method=6)
+        total += os.path.getsize(pth) / 1024.0
+    print(f"  55 kupur (384x192) yazildi")
+    print(f"  55-kart toplami: {total:.1f} KB ({total/1024:.2f} MB)")
+
+build_55_cards()
+

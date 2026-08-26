@@ -833,278 +833,247 @@ private fun LevelCard(
     isNext: Boolean,
     onClick: () -> Unit
 ) {
-    // TAMAMLANMIS BOLUM KENDI RENGINDE (cihaz geri bildirimi 2026-08-21:
-    // "bitirdigim bolumler koyu"). Dort durum dort tona esler ve liste bir
-    // "yesil iz" olusturur: yesil biter, ALTIN baslar. Siradaki kart ekrandaki
-    // tek altin vurgudur.
+    // =========================================================================
+    // 55-KART SABLON PAKETI (2026-08-26, kullanicinin GitHub Release'i).
+    //
+    // Kart artik Compose cizimi DEGIL, paketin METINSIZ durum sablonu:
+    // `ui_card_active/available/completed/locked` (560x747, oran 0,75).
+    // Metin ve sayilar sablonun OLCULMUS bolgelerine bindirilir — bolge
+    // kesirleri sablon ile metinli onizleme arasindaki piksel farkindan
+    // cikarildi (tools/ui_art_pipeline.py yorumlari).
+    //
+    // SABLON SECIMI ve YILDIZLAR:
+    //   `completed` sablonunda UC DOLU yildiz GOMULU -> yalnizca stars == 3
+    //   olan bolumde kullanilir. 1-2 yildizli bolum `available` sablonunu
+    //   (bos konturlar gomulu) alir ve kazanilan sayida `ui_card_star`
+    //   (completed sablonundan kesilen dolu yildiz — ayni sanat) konturlarin
+    //   ustune bindirilir. Boylece hicbir bolum oldugundan fazla yildiz
+    //   GOSTEREMEZ.
+    //
+    // TacticalFrame kart govdesinden cekildi ama SILINMEDI: tedarik bandi ve
+    // olasi baska yuzeyler kullaniyor.
+    // =========================================================================
     val completed = unlocked && stars > 0
-    val tone = when {
-        isNext -> FrameTone.NEXT
-        completed -> FrameTone.CLEARED
-        unlocked -> FrameTone.ACTIVE
-        else -> FrameTone.MUTED
+    val template = when {
+        !unlocked -> R.drawable.ui_card_locked
+        isNext -> R.drawable.ui_card_active
+        stars == 3 -> R.drawable.ui_card_completed
+        else -> R.drawable.ui_card_available
     }
 
-    // BUYUK HARF, YERELE GORE. Kotlin'in yerel-siz `uppercase()`i Turkcede
-    // yanlis sonuc verir: "Geçidi" -> "GEÇIDI" (noktasiz I). Cizilen kaynagin
-    // yereliyle donusturulunce "GEÇİDİ" cikar. Yerel, cihazdan degil GERCEKTEN
-    // CIZILEN kaynaktan okunur — uygulama ici dil secimi (AppLanguage)
-    // configuration'i degistiriyor ve saglayici bunu LocalConfiguration'a da
-    // yansitiyor.
+    // BUYUK HARF, YERELE GORE (sabit yerel Turkcede noktasiz I uretir).
     val locale = LocalConfiguration.current.locales[0] ?: java.util.Locale.getDefault()
     val title = stringResource(mapNameRes(spec.mapId)).uppercase(locale)
 
-    TacticalFrame(
-        tone = tone,
-        chamfer = 9.dp,
+    BoxWithConstraints(
         modifier = Modifier
-            .width(126.dp)
-            // SIRADAKI kart hedefteki gibi SAHNEDE: %3 buyur ve 3 dp yukari
-            // cikar. `graphicsLayer` OLCUYU degistirmez — komsu kartlar
-            // kimildamaz, buyume yalnizca cizimde olur; yani 55 kartlik
-            // seridin ritmi ve kaydirma mesafesi ayni kalir.
+            .width(CARD_WIDTH)
+            .aspectRatio(CARD_ASPECT)
             .graphicsLayer(
                 scaleX = if (isNext) 1.03f else 1f,
                 scaleY = if (isNext) 1.03f else 1f,
                 translationY = if (isNext) -3f else 0f
             )
             .clickable(enabled = true, onClick = onClick)
-            .alpha(if (unlocked) 1f else 0.62f)
+            .alpha(if (unlocked) 1f else 0.72f)
     ) {
-      // Icerik KENARIN HEMEN ICINDEN baslar (hedefteki gibi panel dolu
-      // gorunur); tek dis dolgu, bevel kenarin kalinligi kadar (4 dp).
-      Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.padding(4.dp)
-      ) {
-        // ---------------------------------------------------------------
-        // HARITA KUPURU — KENARDAN KENARA (hedef tasarimin en belirgin
-        // farki: kupur kartin ust bandini tamamen dolduruyor, icerde kucuk
-        // yuvarlatilmis bir kutu degil). Bellek gerekcesi: `levelThumbRes`.
-        // ---------------------------------------------------------------
+        val w = maxWidth
+        val h = maxHeight
+
+        // KUPUR ONCE, SABLON SONRA. Sablonun kupur penceresi pipeline'da
+        // SEFFAFLASTIRILDI (korunan numara diski haric); boylece cerceve, ic
+        // golgeler ve numara dairesi kupurun USTUNDE biner — ve daire,
+        // thumb'larin kendi gomulu kose rozetini de orter (cift rozet olmaz).
         Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(LEVEL_THUMB_ASPECT)
-                .clip(RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp))
+                .padding(
+                    start = w * 0.110f,
+                    top = h * 0.085f,
+                    end = w * 0.116f,
+                    bottom = h * 0.615f
+                )
+                .fillMaxSize()
         ) {
             Image(
-                painter = painterResource(levelThumbRes(spec.mapId)),
-                contentDescription = null, // ad hemen altta yaziyor
+                painter = painterResource(levelThumbRes(spec.levelId)),
+                contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.matchParentSize()
             )
-            // Kilitli kartta kupur belirgin sekilde koyu: kilit, renkten
-            // baska bir kanaldan da okunmali.
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .background(Color(if (unlocked) 0x48140F04 else 0x99000000))
-            )
-            // Numara rozeti — kupurun sol ustunde, hedefteki gibi DAIRE.
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(4.dp)
-                    .size(28.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(
-                        when {
-                            isNext -> Color(0xFFF1C95D)
-                            completed -> Color(0xFF7FA24E)
-                            else -> Color(0xCC4A5540)
-                        }
-                    )
-            ) {
-                Text(
-                    text = stringResource(R.string.level_number, spec.levelId),
-                    color = if (isNext) Color(0xFF1A1A0E) else Color(0xFFF2F7E8),
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Black,
-                    maxLines = 1
+            if (!unlocked) {
+                // Kilitli kartta kupur koyu: kilit renkten baska kanaldan da
+                // okunur; sablonun kendi kilit ikonu buton bandinda.
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .background(Color(0x88000000))
                 )
             }
         }
 
-        Spacer(Modifier.height(6.dp))
-
-        // BASLIK — hedefteki gibi BUYUK HARF ve kalin; siradaki kartta ALTIN.
-        // Taban 7 sp'ye kadar inebilir: 126 dp kartta Black agirlikli
-        // BUYUK HARF "KARANLIK BOĞAZ" 9 sp'de bile sigmiyordu ve `Clip`
-        // kelimenin yarisini yiyordu (cihazda goruldu). 8 sp'de sigiyor;
-        // 7 taban guvenlik payi.
-        AutoShrinkText(
-            text = title,
-            color = if (isNext) Color(0xFFF1C95D) else Color(0xFFE8F0DC),
-            fontWeight = FontWeight.Black,
-            maxFontSize = 11.5.sp,
-            minFontSize = 7.sp,
-            maxLines = 1,
-            textAlign = TextAlign.Center,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 4.dp)
+        Image(
+            painter = painterResource(template),
+            contentDescription = null,
+            contentScale = ContentScale.FillBounds,
+            modifier = Modifier.matchParentSize()
         )
 
-        // Bolum hedefi ("Gecidi tut.") — bos dize gelirse satir hic cizilmez.
+        // NUMARA — sablonun sol ust dairesinin merkezine (0,197 · 0,138).
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .padding(start = w * 0.115f, top = h * 0.077f)
+                .size(w * 0.165f)
+        ) {
+            AutoShrinkText(
+                text = stringResource(R.string.level_number, spec.levelId),
+                color = if (isNext) Color(0xFF2A1F06) else Color(0xFFEAF2DC),
+                maxFontSize = 13.sp,
+                minFontSize = 9.sp,
+                fontWeight = FontWeight.Black,
+                maxLines = 1,
+                textAlign = TextAlign.Center
+            )
+        }
+
+        // BASLIK — sablonun ad bandina (y 0,415-0,500).
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .padding(
+                    start = w * 0.14f,
+                    end = w * 0.14f,
+                    top = h * 0.408f,
+                    bottom = h * 0.492f
+                )
+                .fillMaxSize()
+        ) {
+            AutoShrinkText(
+                text = title,
+                color = if (isNext) Color(0xFFF1C95D) else Color(0xFFE8F0DC),
+                fontWeight = FontWeight.Black,
+                maxFontSize = 11.5.sp,
+                minFontSize = 7.sp,
+                maxLines = 1,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        // HEDEF CUMLESI — sablonun crosshair'li satirina. Ikon SABLONDA
+        // GOMULU (x ~0,21), metin ikonun sagindan baslar ve SOLA hizalidir.
         val objective = levelObjectiveOrEmpty(spec.levelId)
         if (objective.isNotEmpty()) {
-            Spacer(Modifier.height(3.dp))
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center,
+            Box(
+                contentAlignment = Alignment.CenterStart,
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 6.dp)
+                    .padding(
+                        start = w * 0.285f,
+                        end = w * 0.13f,
+                        top = h * 0.497f,
+                        bottom = h * 0.423f
+                    )
+                    .fillMaxSize()
             ) {
-                // Crosshair — hedefteki gorev isareti. Zeytin tint: sprite'in
-                // kendi rengi kart paletine yabanciydi.
-                Image(
-                    painter = painterResource(R.drawable.spr_ic_target),
-                    contentDescription = null,
-                    colorFilter = ColorFilter.tint(Color(0xFF8FA96B)),
-                    modifier = Modifier.size(10.dp)
-                )
-                Spacer(Modifier.width(4.dp))
                 AutoShrinkText(
                     text = objective,
                     color = Color(0xFFAAB894),
-                    maxFontSize = 10.sp,
+                    maxFontSize = 9.sp,
                     minFontSize = 7.sp,
                     maxLines = 1,
-                    textAlign = TextAlign.Center,
-                    // `weight(fill=false)`: Row icinde SINIRLI genislik olc.
-                    // Sinirsiz olculen metinde `didOverflowWidth` hic
-                    // tetiklenmez ve kucultme calismaz — cihazda "Gol yolunu
-                    // perdele."nin kirpilma sebebi tam buydu.
-                    modifier = Modifier.weight(1f, fill = false)
+                    modifier = Modifier.fillMaxWidth()
                 )
             }
         }
 
-        Spacer(Modifier.height(3.dp))
-
-        // Dalga sayisi — hedefteki gibi KALKAN ikonlu.
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        // DALGA SAYISI — sablonun kalkan ikonlu satirina (ikon gomulu).
+        Box(
+            contentAlignment = Alignment.CenterStart,
+            modifier = Modifier
+                .padding(
+                    start = w * 0.285f,
+                    end = w * 0.13f,
+                    top = h * 0.605f,
+                    bottom = h * 0.315f
+                )
+                .fillMaxSize()
         ) {
-            // Kalkan ZEYTIN tonlanir: sprite'in kendi mavisi bu ekranin tek
-            // soguk rengiydi ve seciliden once goz cekiyordu (UX denetimi).
-            Image(
-                painter = painterResource(R.drawable.spr_ic_base_health),
-                contentDescription = null,
-                colorFilter = ColorFilter.tint(Color(0xFF8FA96B)),
-                modifier = Modifier.size(11.dp)
-            )
             Text(
                 text = pluralStringResource(
                     R.plurals.level_wave_count, spec.waveCount, spec.waveCount
                 ),
                 color = Color(0xFFAAB894),
-                fontSize = 10.sp,
+                fontSize = 9.sp,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1
             )
         }
 
-        Spacer(Modifier.height(4.dp))
-
-        // Yildizlar — hedefteki gibi BUYUK (20 dp). Kazanilmamis olan ayni
-        // sprite'in soluk hali (zafer modaliyla ayni kural).
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            repeat(3) { i ->
-                SpriteIcon(
-                    id = R.drawable.spr_ic_victory_star,
-                    size = 20.dp,
+        // KAZANILAN YILDIZLAR — yalnizca 1-2 yildizda (3'te sablon zaten
+        // dolu, 0'da konturlar bos kalir). Bindirme konumlari sablonun kendi
+        // yildiz merkezleri: x 0,333 / 0,500 / 0,667 · merkez y 0,720.
+        if (completed && stars < 3) {
+            val starW = w * 0.20f
+            val starH = starW * (71f / 96f)
+            val centers = listOf(0.333f, 0.500f, 0.667f)
+            repeat(stars) { i ->
+                Image(
+                    painter = painterResource(R.drawable.ui_card_star),
                     contentDescription = null,
-                    modifier = if (i < stars) Modifier else Modifier.alpha(0.22f)
+                    modifier = Modifier
+                        .padding(
+                            start = w * centers[i] - starW / 2,
+                            top = h * 0.720f - starH / 2
+                        )
+                        .size(starW, starH)
                 )
             }
         }
 
-        Spacer(Modifier.height(6.dp))
-
-        // ---------------------------------------------------------------
-        // EYLEM CUBUGU — hedefteki gibi kartin icinde GERCEK BIR BUTON
-        // gorunumu; duz metin degil. Siradaki kartta DOLU ALTIN (mockup'in
-        // DEPLOY cubugu), digerlerinde koyu zemin + tona uygun kontur.
-        // Dokunma islevi hala KARTIN TAMAMINDA (degismedi); cubuk gorseldir,
-        // ayri bir tiklama hedefi ekleyip karti ikiye bolmez.
-        // ---------------------------------------------------------------
-        val statusText: String
-        val statusColor: Color
-        val barBg: Color
-        val barBorder: Color
-        when {
-            !unlocked && spec.deploymentCost > 0 -> {
-                statusText = stringResource(R.string.level_unlock_cost, spec.deploymentCost)
-                statusColor = Color(0xFFD8C46A)
-                barBg = Color(0x66201F10)
-                barBorder = Color(0x55D8A52A)
-            }
-            !unlocked -> {
-                statusText = stringResource(R.string.level_locked)
-                statusColor = Color(0x88C5D6B4)
-                barBg = Color(0x4415170F)
-                barBorder = Color(0x33FFFFFF)
-            }
-            isNext -> {
-                statusText = stringResource(R.string.level_deploy)
-                statusColor = Color(0xFF1A1A0E)
-                barBg = Color(0xFFD8A52A)
-                barBorder = Color(0xFFF1C95D)
-            }
-            completed -> {
-                statusText = stringResource(R.string.level_replay)
-                statusColor = Color(0xFFD8E8C0)
-                barBg = Color(0x552C3A1D)
-                barBorder = Color(0x887FA24E)
-            }
-            else -> {
-                statusText = stringResource(R.string.level_deploy)
-                statusColor = Color(0xFFA8C48C)
-                barBg = Color(0x55181E11)
-                barBorder = Color(0x665C7440)
-            }
+        // EYLEM METNI — sablonun buton bandina (y 0,849-0,959). Buton sanati
+        // GOMULU (active dolu altin, locked kilit ikonlu); yalnizca metin.
+        val statusText = when {
+            !unlocked && spec.deploymentCost > 0 ->
+                stringResource(R.string.level_unlock_cost, spec.deploymentCost)
+            !unlocked -> stringResource(R.string.level_locked)
+            isNext -> stringResource(R.string.level_deploy)
+            completed -> stringResource(R.string.level_replay)
+            else -> stringResource(R.string.level_deploy)
         }
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 5.dp)
-                .clip(RoundedCornerShape(5.dp))
-                .background(barBg)
-                .border(1.dp, barBorder, RoundedCornerShape(5.dp))
-                .padding(vertical = 5.dp)
+                .padding(
+                    start = w * 0.16f,
+                    end = w * 0.16f,
+                    // CIHAZDAN OLCULDU (tahmin turlari bitti): altin buton
+                    // govdesi ekranda y 0,79-0,885, merkez 0,84. Sablon
+                    // dosyasindan okudugum 0,849-0,959 GLOW dahildi ve metni
+                    // uc kez yanlis banda tasidi. Band 0,806-0,908: 11 sp
+                    // metne dikey shrink tetiklemeden yer birakir.
+                    top = h * 0.806f,
+                    bottom = h * 0.092f
+                )
+                .fillMaxSize()
         ) {
             AutoShrinkText(
                 text = statusText,
-                color = statusColor,
+                color = when {
+                    isNext -> Color(0xFF2A1F06)
+                    !unlocked -> Color(0x99C5D6B4)
+                    else -> Color(0xFFDCE8CC)
+                },
                 fontWeight = FontWeight.Black,
-                maxFontSize = 12.sp,
-                minFontSize = 8.sp,
+                maxFontSize = 11.sp,
+                minFontSize = 7.sp,
                 maxLines = 1,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth()
             )
-            // Chevron — hedefteki "ilerle" isareti. Dekoratif glif;
-            // oynanabilir kartlarda tam, digerlerinde soluk.
-            if (unlocked) {
-                Text(
-                    text = "\u00BB",
-                    color = statusColor.copy(alpha = if (isNext) 1f else 0.45f),
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Black,
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .padding(end = 7.dp)
-                )
-            }
         }
-
-        Spacer(Modifier.height(5.dp))
-      }
     }
 }
+
+/** Kart olculeri — sablonun kendi oranindan (560x747). */
+private val CARD_WIDTH = 126.dp
+private const val CARD_ASPECT = 560f / 747f

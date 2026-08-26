@@ -6,6 +6,46 @@ yalan soyleyebiliyorlardi; surum notu artik kodla ayni gecmisi paylasiyor.
 
 ---
 
+## 2026-08-26 (f) — 55-KART SABLON PAKETI ENTEGRE (v50)
+
+Kullanici 198 MB'lik "Frontline_Defender_55_Cards_COMPLETE" paketini GitHub
+Release uzerinden gonderdi (25 MB web limiti Release ekiyle asildi; sha256
+dogrulandi). Kampanya kartlari artik paketin sanatiyla ciziliyor.
+
+### Iceri alinanlar
+- **4 durum sablonu** (active/available/completed/locked, 1086x1448,
+  metinsiz) -> 560 px WebP. **Kupur penceresi pipeline'da SEFFAFLASTIRILDI**
+  (numara diski korunarak): Compose'da kupur sablonun ALTINA cizilir, cerceve
+  ve numara dairesi ustte biner. Ilk deneme (kupur ustte) dairenin yarisini
+  yutuyordu.
+- **55 BENZERSIZ, biyomlu kupur** (md5 ile dogrulandi: ayni harita kista
+  karli geliyor) -> 384x192 WebP, LEVELID bazli. Thumb'larin kendi gomulu
+  "NN" kose rozeti sol-ust kirpmayla atildi (sablon dairesiyle cift numara
+  yaratiyordu). Eski harita-bazli 11 kupur uretimi devre disi.
+- **Dolu yildiz sprite'i** completed sablonundan sabit kutuyla kesildi,
+  zemini "altinlik" maskesiyle seffaflastirildi. 1-2 yildizli bolumde
+  available sablonunun bos konturlarinin ustune bindirilir; 3 yildiz
+  completed sablonunun gomulu yildizlarini kullanir. Boylece hicbir bolum
+  oldugundan fazla yildiz gosteremez.
+- TacticalFrame kart govdesinden cekildi (tedarik bandinda yasiyor);
+  LevelCard sablon + olculmus kesirli overlay'lerle yeniden yazildi.
+
+### Olcum dersleri (uc tahmin turu, uc duzeltme)
+- Sablon dosyasindan okunan buton bandi (0,849-0,959) GLOW dahildi ve metni
+  uc kez yanlis banda tasidi; dogru merkez CIHAZDAN olculdu (0,84).
+- Satir bantlari dar tutulunca AutoShrink dikey tasmayla 7 sp'ye cokup metni
+  eziyordu; bantlar cizgi hizasina buyutuldu.
+- Yildiz overlay konumu (x 0,333/0,500/0,667 · y 0,720) ILK denemede tam
+  oturdu — cunku tahmin degil, sablonlar arasi piksel farkindan olculmustu.
+
+Toplam yeni varlik: ~442 KB (4 sablon + 55 kupur + yildiz).
+
+Kanit: 1093 test + lint yesil; cihazda ÇAYIR GEÇİDİ cengelleriyle tam,
+1 yildizli kartta tek dolu yildiz konturla hizali, SEVK ET altin butonun
+ortasinda (docs/device_evidence/ui_art_pack_v2/13_campaign_v50).
+
+---
+
 ## 2026-08-26 (e) — KAMPANYA CILASI: UX DENETIMI SONRASI (v49)
 
 Kullanici v48 kartlarini "hedefle alakasi yok" diye reddetti; hakliydi — ilk
