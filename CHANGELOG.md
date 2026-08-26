@@ -6,6 +6,39 @@ yalan soyleyebiliyorlardi; surum notu artik kodla ayni gecmisi paylasiyor.
 
 ---
 
+## 2026-08-26 (e) — KAMPANYA CILASI: UX DENETIMI SONRASI (v49)
+
+Kullanici v48 kartlarini "hedefle alakasi yok" diye reddetti; hakliydi — ilk
+TacticalFrame ince tel cerceveydi, hedef DOLU METAL PANEL. UX ajani piksel
+denetimi yapti (bir kez yanlis referansla — duzeltilip tekrarlatildi), rapor
+uygulandi:
+
+- **TacticalFrame v2**: opak gradyan govde, 3 dp DIKEY GRADYANLI bevel kenar
+  (ustten isik), ic golge konturu, siradaki icin uc kademeli hale.
+- **LevelCard yeniden**: kupur kenardan kenara; BUYUK HARF baslik (yerele
+  gore `uppercase(locale)` — sabit yerel Turkcede noktasiz I uretiyordu);
+  crosshair'li hedef cumlesi; zeytin tint'li kalkan + dalga; 20 dp sprite
+  yildizlar; kartin icinde GERCEK buton cubugu (siradaki DOLU ALTIN + »).
+- **Secili kart sahnede**: `graphicsLayer` scale 1.03 + translationY -3 —
+  OLCU degismez, komsu kartlar kimildamaz.
+- **Ust serit**: condensed Black "KAMPANYA", pill'lere 1 dp metal cerceve.
+- **TEDARIK bandi**: duz M3 buton -> TacticalFrame + `spr_ic_supply_crate`
+  (pakette vardi, bu band icin cizilmisti, hic kullanilmamisti).
+- Kaydirma ipucuna « » oklari.
+
+IKI KIRPMA HATASI cihazda bulunup kapatildi:
+1. "KARANLIK BOĞAZ" 9 sp tabanda bile sigmiyordu -> taban 7 sp + baslama
+   boyutu 11,5 sp (statik ekranda kucultme karesinin kaybolabildigi bilinen
+   tuzaga karsi: ilk kare bile sigacak boyuttan baslanir).
+2. Crosshair Row'undaki `AutoShrinkText` GENISLIK SINIRSIZ olculuyordu ->
+   `didOverflowWidth` hic tetiklenmiyor, "Gol yolunu perdele." kirpiliyordu.
+   `weight(1f, fill = false)` ile sinir verildi.
+
+Kanit: 1093 test + lint yesil; cihazda tum metinlerin tam, secili kartin
+sahnede oldugu goruntu (docs/device_evidence/ui_art_pack_v2/12_campaign_v49).
+
+---
+
 ## 2026-08-26 (d) — KAMPANYA EKRANI HEDEF TASARIMA CEKILDI (v48)
 
 Kullanici hedef mockup'i gonderdi ("hedef tasarim bu"). Ekran ona cekildi.

@@ -1,6 +1,10 @@
 package com.miniappfactory.frontlinedefender.game.ads
 
 import androidx.compose.foundation.background
+import androidx.compose.ui.res.painterResource
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -29,6 +33,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import android.content.Context
 import com.miniappfactory.frontlinedefender.R
+import com.miniappfactory.frontlinedefender.game.ui.FrameTone
+import com.miniappfactory.frontlinedefender.game.ui.TacticalFrame
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -252,24 +258,45 @@ fun SupplyDropBar(
             .padding(horizontal = 16.dp)
     ) {
         if (offered) {
-            Box(
-                contentAlignment = Alignment.Center,
+            // HEDEF TASARIM: duz yesil M3 butonu degil, kampanya kartlariyla
+            // ayni dili konusan SANDIK BANDI — kosesi kesilmis taktik cerceve
+            // (TacticalFrame, cizim) + sandigin kapak cizgisi hissini veren
+            // altin vurgulu metin. Davranis, testTag ve 44 dp yukseklik
+            // sozlesmesi AYNEN korundu.
+            TacticalFrame(
+                tone = FrameTone.CLEARED,
+                chamfer = 7.dp,
+                showTicks = false,
                 modifier = Modifier
                     .heightIn(min = 36.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(Color(0xFF4C7A2E))
                     .clickable(onClick = onRequest)
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
                     .testTag("supply_drop_button")
             ) {
-                Text(
-                    text = stringResource(R.string.ad_supply_bar_button, remaining),
-                    color = Color(0xFFF2FFE4),
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Black,
-                    maxLines = 2,
-                    textAlign = TextAlign.Center
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .padding(horizontal = 14.dp, vertical = 6.dp)
+                ) {
+                    // Sandik ikonu — hedef tasarimin tedarik bandindaki sandik.
+                    // `spr_ic_supply_crate` zaten pakette vardi ve BU band
+                    // icin cizilmisti; simdiye kadar yalnizca teklif sayfasinda
+                    // gorunuyordu.
+                    Image(
+                        painter = painterResource(R.drawable.spr_ic_supply_crate),
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = stringResource(R.string.ad_supply_bar_button, remaining),
+                        color = Color(0xFFE9F4D8),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Black,
+                        maxLines = 2,
+                        textAlign = TextAlign.Center
+                    )
+                }
             }
         } else {
             Text(

@@ -4,6 +4,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.foundation.border
 import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -18,7 +20,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.DeviceFontFamilyName
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
@@ -329,8 +336,15 @@ fun LevelSelectScreen(
                 Text(
                     text = stringResource(R.string.level_campaign_title),
                     color = Color(0xFFE8F0DC),
-                    fontSize = 17.sp,
+                    fontSize = 19.sp,
                     fontWeight = FontWeight.Black,
+                    // Hedefteki stencil hissine en yakin SISTEM ailesi. Ozel
+                    // font dosyasi EKLENMEDI: tek baslik icin font gommek
+                    // APK'ya ~200 KB ve yeni bir lisans kalemi getirirdi.
+                    fontFamily = FontFamily(
+                        Font(DeviceFontFamilyName("sans-serif-condensed"), FontWeight.Black)
+                    ),
+                    letterSpacing = 1.2.sp,
                     maxLines = 1
                 )
 
@@ -351,6 +365,13 @@ fun LevelSelectScreen(
                             .clip(RoundedCornerShape(8.dp))
                             .background(
                                 if (claimableMissions > 0) Color(0x554C7A2E) else Color(0x334C7A2E)
+                            )
+                            // Hedefteki metal cerceve dili: pill artik
+                            // cizgisiz yuzmuyor.
+                            .border(
+                                1.dp,
+                                if (claimableMissions > 0) Color(0xFF9ADF3F) else Color(0xFF5A6A3A),
+                                RoundedCornerShape(8.dp)
                             )
                             .clickable { missionsOpen = true }
                             .padding(horizontal = 12.dp, vertical = 6.dp)
@@ -396,6 +417,7 @@ fun LevelSelectScreen(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
                         .background(Color(0x334C7A2E))
+                        .border(1.dp, Color(0xFF5A6A3A), RoundedCornerShape(8.dp))
                         .clickable { onOpenArmory() }
                         .padding(horizontal = 12.dp, vertical = 6.dp)
                         .testTag("open_armory")
@@ -523,19 +545,29 @@ fun LevelSelectScreen(
                 }
             }
 
-            Text(
-                text = pluralStringResource(
-                    R.plurals.level_browse_hint,
-                    GameConfig.CAMPAIGN_LEVEL_COUNT,
-                    GameConfig.CAMPAIGN_LEVEL_COUNT
-                ),
-                color = Color(0x99C5D6B4),
-                fontSize = 11.sp,
+            // Hedef tasarimdaki gibi iki yaninda kaydirma oklariyla.
+            // Oklar dekoratif glif ('«' '»'), cevirisi yok, okuyucuya gerek yok.
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 8.dp),
-                textAlign = TextAlign.Center
-            )
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(text = "«", color = Color(0x66C5D6B4), fontSize = 12.sp)
+                Text(
+                    text = pluralStringResource(
+                        R.plurals.level_browse_hint,
+                        GameConfig.CAMPAIGN_LEVEL_COUNT,
+                        GameConfig.CAMPAIGN_LEVEL_COUNT
+                    ),
+                    color = Color(0x99C5D6B4),
+                    fontSize = 11.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 10.dp)
+                )
+                Text(text = "»", color = Color(0x66C5D6B4), fontSize = 12.sp)
+            }
         }
 
         // Gorev paneli — TAM EKRAN katman, kok Box'in en ustunde.
@@ -801,40 +833,11 @@ private fun LevelCard(
     isNext: Boolean,
     onClick: () -> Unit
 ) {
-    // TAMAMLANMIS BOLUM ARTIK KENDI RENGINDE.
-    //
-    // ## Duzeltilen hata (cihaz geri bildirimi 2026-08-21)
-    // "Bitirdigim bolumler koyu, haritada nerede oldugumuz tam belli olmuyor."
-    // Haklıydi: kart yalnizca IKI durum ayirt ediyordu — kilitli / acik. Yani
-    // 30 bolum bitirmis bir oyuncunun bitirdigi 30 kart ile daha hic
-    // dokunmadigi ama acik olan kart AYNI koyu zemini (0xCC1E2A18) ve AYNI
-    // soluk yesil cercevesi paylasiyordu. "Nerede kaldim" sorusunun cevabi
-    // yalnizca altin renkli TEK "siradaki" kartta duruyordu; ondan onceki
-    // ilerleme gorunmuyordu.
-    //
-    // Artik UC durum var ve ucu de OYUNUN yesil ailesinden:
-    //   kilitli      -> neredeyse siyah, soluk         (gecilmemis)
-    //   TAMAMLANMIS  -> DOLU YESIL, parlak cerceve     (geride kalan yol)
-    //   siradaki     -> altin                          (tek vurgu)
-    //   acik/oynanmamis -> koyu yesil, soluk cerceve   (ileride)
-    //
-    // Boylece liste bir "yesil iz" olusturur: yesil biter, altin baslar. Kac
-    // yildiz alindigi zaten yildiz satirinda yaziyor, bu yuzden zemin
-    // yildiz sayisina gore TONLANMADI — uc kademeli bir yesil, ilerleme
-    // cizgisini okunmaz yapardi.
+    // TAMAMLANMIS BOLUM KENDI RENGINDE (cihaz geri bildirimi 2026-08-21:
+    // "bitirdigim bolumler koyu"). Dort durum dort tona esler ve liste bir
+    // "yesil iz" olusturur: yesil biter, ALTIN baslar. Siradaki kart ekrandaki
+    // tek altin vurgudur.
     val completed = unlocked && stars > 0
-
-    val borderColor = when {
-        isNext -> Color(0xFFFFD54F)
-        completed -> Color(0xCC9CD65B)
-        unlocked -> Color(0x66A8C48C)
-        else -> Color(0x33FFFFFF)
-    }
-
-    // HEDEF TASARIM (2026-08-26): kart artik yuvarlatilmis duz bir kutu degil,
-    // kosesi kesilmis TAKTIK CERCEVE (bkz. TacticalFrame.kt — cizim, gorsel
-    // dosya degil). Dort durum dort tona esler; eski `cardBackground`un
-    // yerine gecti ve "yesil iz + tek altin vurgu" okumasi birebir korundu.
     val tone = when {
         isNext -> FrameTone.NEXT
         completed -> FrameTone.CLEARED
@@ -842,82 +845,81 @@ private fun LevelCard(
         else -> FrameTone.MUTED
     }
 
+    // BUYUK HARF, YERELE GORE. Kotlin'in yerel-siz `uppercase()`i Turkcede
+    // yanlis sonuc verir: "Geçidi" -> "GEÇIDI" (noktasiz I). Cizilen kaynagin
+    // yereliyle donusturulunce "GEÇİDİ" cikar. Yerel, cihazdan degil GERCEKTEN
+    // CIZILEN kaynaktan okunur — uygulama ici dil secimi (AppLanguage)
+    // configuration'i degistiriyor ve saglayici bunu LocalConfiguration'a da
+    // yansitiyor.
+    val locale = LocalConfiguration.current.locales[0] ?: java.util.Locale.getDefault()
+    val title = stringResource(mapNameRes(spec.mapId)).uppercase(locale)
+
     TacticalFrame(
         tone = tone,
         chamfer = 9.dp,
         modifier = Modifier
             .width(126.dp)
+            // SIRADAKI kart hedefteki gibi SAHNEDE: %3 buyur ve 3 dp yukari
+            // cikar. `graphicsLayer` OLCUYU degistirmez — komsu kartlar
+            // kimildamaz, buyume yalnizca cizimde olur; yani 55 kartlik
+            // seridin ritmi ve kaydirma mesafesi ayni kalir.
+            .graphicsLayer(
+                scaleX = if (isNext) 1.03f else 1f,
+                scaleY = if (isNext) 1.03f else 1f,
+                translationY = if (isNext) -3f else 0f
+            )
             .clickable(enabled = true, onClick = onClick)
             .alpha(if (unlocked) 1f else 0.62f)
     ) {
+      // Icerik KENARIN HEMEN ICINDEN baslar (hedefteki gibi panel dolu
+      // gorunur); tek dis dolgu, bevel kenarin kalinligi kadar (4 dp).
       Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.padding(10.dp)
+        modifier = Modifier.padding(4.dp)
       ) {
         // ---------------------------------------------------------------
-        // HARITA KUPURU + BOLUM NUMARASI
-        //
-        // Eskiden burada yalnizca 38 dp'lik bir numara madalyonu vardi ve
-        // kart, oynanacak yerin NEREsi oldugunu yalnizca ADIYLA soyluyordu.
-        // Mockup'in kampanya ekraninda kartin tepesinde haritanin kendisi
-        // duruyor; oyuncu bolumu adindan degil GORUNTUSUNDEN taniyor.
-        //
-        // DIKEY MALIYET ~6 dp: kupur ic genisligin tamamini (106 dp) alir ve
-        // 106 / 2,424 = 43,7 dp yukselir; yerine gectigi madalyon 38 dp'ydi.
-        // Bu ekranda pay dar (bkz. ust seride plaka koyma denemesi, +32 dp
-        // kartlari kirpmisti), o yuzden numara madalyonu kupurun USTUNE
-        // bindirildi — ayri bir satir daha acmadi.
-        //
-        // Kupur neden `bg_level_NN` DEGIL: bellek. Ayrinti `levelThumbRes`.
+        // HARITA KUPURU — KENARDAN KENARA (hedef tasarimin en belirgin
+        // farki: kupur kartin ust bandini tamamen dolduruyor, icerde kucuk
+        // yuvarlatilmis bir kutu degil). Bellek gerekcesi: `levelThumbRes`.
         // ---------------------------------------------------------------
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(LEVEL_THUMB_ASPECT)
-                .clip(RoundedCornerShape(8.dp))
+                .clip(RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp))
         ) {
             Image(
                 painter = painterResource(levelThumbRes(spec.mapId)),
-                contentDescription = null, // ad hemen altinda yaziyor
+                contentDescription = null, // ad hemen altta yaziyor
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.matchParentSize()
             )
-
-            // KOYU PERDE. Kupur renkli ve parlak; uzerine binen numara
-            // madalyonunun okunur kalmasi buna bagli. Kilitli kartta perde
-            // daha koyu: kilit durumu RENKTEN BASKA bir kanaldan da
-            // okunmali ve kartin genel `alpha`si tek basina zayif kaliyordu.
+            // Kilitli kartta kupur belirgin sekilde koyu: kilit, renkten
+            // baska bir kanaldan da okunmali.
             Box(
                 modifier = Modifier
                     .matchParentSize()
-                    .background(Color(if (unlocked) 0x4D000000 else 0x99000000))
+                    .background(Color(if (unlocked) 0x48140F04 else 0x99000000))
             )
-
-            // Numara madalyonu — SOL USTTE, kupurun uzerinde.
+            // Numara rozeti — kupurun sol ustunde, hedefteki gibi DAIRE.
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .padding(4.dp)
-                    .size(30.dp)
-                    .clip(RoundedCornerShape(15.dp))
-                    // Tamamlanan kartin madalyonu da yesil okunur (0.55):
-                    // 0.25'te zemin degisikligi madalyonu yutuyordu ve kart
-                    // "bitmis" gorunmuyordu. Altin siradaki kart tek basina
-                    // en parlak (0.9) kalmaya devam eder.
+                    .size(28.dp)
+                    .clip(RoundedCornerShape(14.dp))
                     .background(
-                        borderColor.copy(
-                            alpha = when {
-                                isNext -> 0.95f
-                                completed -> 0.8f
-                                else -> 0.7f
-                            }
-                        )
+                        when {
+                            isNext -> Color(0xFFF1C95D)
+                            completed -> Color(0xFF7FA24E)
+                            else -> Color(0xCC4A5540)
+                        }
                     )
             ) {
                 Text(
                     text = stringResource(R.string.level_number, spec.levelId),
-                    color = if (isNext) Color(0xFF1A1A0E) else Color(0xFFE8F0DC),
+                    color = if (isNext) Color(0xFF1A1A0E) else Color(0xFFF2F7E8),
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Black,
                     maxLines = 1
@@ -927,78 +929,95 @@ private fun LevelCard(
 
         Spacer(Modifier.height(6.dp))
 
-        // TASMA — bu ekranin en riskli yeri. Kart genisligi SABIT 126 dp
-        // (yatay seritte gorsel ritim icin) yani ic genislik 106 dp. En uzun
-        // adlar: "Village Outskirts" (EN, 17 kr) ve "Karanlik Bogaz" (TR).
-        // Iki satira sarar; UCUNCU satira tasarsa punto kuculur. Kesme YOK:
-        // "Karanlik Bo…" hangi harita oldugunu belirsizlestirir.
+        // BASLIK — hedefteki gibi BUYUK HARF ve kalin; siradaki kartta ALTIN.
+        // Taban 7 sp'ye kadar inebilir: 126 dp kartta Black agirlikli
+        // BUYUK HARF "KARANLIK BOĞAZ" 9 sp'de bile sigmiyordu ve `Clip`
+        // kelimenin yarisini yiyordu (cihazda goruldu). 8 sp'de sigiyor;
+        // 7 taban guvenlik payi.
         AutoShrinkText(
-            text = stringResource(mapNameRes(spec.mapId)),
-            color = Color(0xFFDCE8CC),
-            fontWeight = FontWeight.Bold,
-            maxFontSize = 11.sp,
-            minFontSize = 8.sp,
-            maxLines = 2,
+            text = title,
+            color = if (isNext) Color(0xFFF1C95D) else Color(0xFFE8F0DC),
+            fontWeight = FontWeight.Black,
+            maxFontSize = 11.5.sp,
+            minFontSize = 7.sp,
+            maxLines = 1,
             textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp)
         )
 
-        // ANLATI — bolum durum satiri (`docs/STORY.md` §3).
-        //
-        // Bolum adinin hemen ALTINDA, tek satir, emir kipi ("Gecidi tut.").
-        // Bu, oyuncunun kampanyada NEDEN savastigini ogrendigi tek daimi
-        // yuzey; perde karti bes kez cikar, bu satir 55 kez.
-        //
-        // Butce 24 karakter (turetilis `strings_story.xml` basliginda,
-        // `StoryStringsTest` ile kilitli) ama yine de `AutoShrinkText`:
-        // kirpma bu kartta bilgi YOK EDER ("Komuta tankini v…" hangi emir
-        // oldugunu belirsizlestirir). Bos dize cizilmez — eksik bir ceviri
-        // yerlesimi bozmak yerine yalnizca satiri yok eder.
+        // Bolum hedefi ("Gecidi tut.") — bos dize gelirse satir hic cizilmez.
         val objective = levelObjectiveOrEmpty(spec.levelId)
         if (objective.isNotEmpty()) {
-            AutoShrinkText(
-                text = objective,
-                color = Color(0xCC9FBF84),
-                maxFontSize = 9.sp,
-                minFontSize = 7.sp,
-                maxLines = 1,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth()
-            )
+            Spacer(Modifier.height(3.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 6.dp)
+            ) {
+                // Crosshair — hedefteki gorev isareti. Zeytin tint: sprite'in
+                // kendi rengi kart paletine yabanciydi.
+                Image(
+                    painter = painterResource(R.drawable.spr_ic_target),
+                    contentDescription = null,
+                    colorFilter = ColorFilter.tint(Color(0xFF8FA96B)),
+                    modifier = Modifier.size(10.dp)
+                )
+                Spacer(Modifier.width(4.dp))
+                AutoShrinkText(
+                    text = objective,
+                    color = Color(0xFFAAB894),
+                    maxFontSize = 10.sp,
+                    minFontSize = 7.sp,
+                    maxLines = 1,
+                    textAlign = TextAlign.Center,
+                    // `weight(fill=false)`: Row icinde SINIRLI genislik olc.
+                    // Sinirsiz olculen metinde `didOverflowWidth` hic
+                    // tetiklenmez ve kucultme calismaz — cihazda "Gol yolunu
+                    // perdele."nin kirpilma sebebi tam buydu.
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+            }
         }
 
-        Text(
-            text = pluralStringResource(
-                R.plurals.level_wave_count,
-                spec.waveCount,
-                spec.waveCount
-            ),
-            color = Color(0x99C5D6B4),
-            fontSize = 10.sp,
-            maxLines = 1
-        )
+        Spacer(Modifier.height(3.dp))
 
-        if (spec.overlay == GameConfig.MapOverlay.NIGHT) {
+        // Dalga sayisi — hedefteki gibi KALKAN ikonlu.
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            // Kalkan ZEYTIN tonlanir: sprite'in kendi mavisi bu ekranin tek
+            // soguk rengiydi ve seciliden once goz cekiyordu (UX denetimi).
+            Image(
+                painter = painterResource(R.drawable.spr_ic_base_health),
+                contentDescription = null,
+                colorFilter = ColorFilter.tint(Color(0xFF8FA96B)),
+                modifier = Modifier.size(11.dp)
+            )
             Text(
-                text = stringResource(R.string.level_night_badge),
-                color = Color(0xFF7FA6D6),
-                fontSize = 9.sp,
+                text = pluralStringResource(
+                    R.plurals.level_wave_count, spec.waveCount, spec.waveCount
+                ),
+                color = Color(0xFFAAB894),
+                fontSize = 10.sp,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1
             )
         }
 
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(4.dp))
 
-        // Yildizlar (0-3) — HEDEF TASARIMDAKI gibi SPRITE, glif degil.
-        // `spr_ic_victory_star` zafer ekranindakiyle AYNI dosya; kazanilmayan
-        // yildiz ayni sprite'in soluk hali (zafer modaliyla ayni kural, 0.22).
-        // `level_star_*_glyph` dizelerinin baska cagri yeri kalmadi.
-        Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+        // Yildizlar — hedefteki gibi BUYUK (20 dp). Kazanilmamis olan ayni
+        // sprite'in soluk hali (zafer modaliyla ayni kural).
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             repeat(3) { i ->
                 SpriteIcon(
                     id = R.drawable.spr_ic_victory_star,
-                    size = 15.dp,
+                    size = 20.dp,
                     contentDescription = null,
                     modifier = if (i < stars) Modifier else Modifier.alpha(0.22f)
                 )
@@ -1007,62 +1026,85 @@ private fun LevelCard(
 
         Spacer(Modifier.height(6.dp))
 
-        // Durum satiri: kilitliyse bedel, degilse eylem.
-        // 106 dp'lik sabit genislikte en uzun karsilik "KILIDI AC 350" (TR);
-        // hepsi AutoShrinkText ile tek satirda kalir, kesilmez.
-        val statusColor: Color
+        // ---------------------------------------------------------------
+        // EYLEM CUBUGU — hedefteki gibi kartin icinde GERCEK BIR BUTON
+        // gorunumu; duz metin degil. Siradaki kartta DOLU ALTIN (mockup'in
+        // DEPLOY cubugu), digerlerinde koyu zemin + tona uygun kontur.
+        // Dokunma islevi hala KARTIN TAMAMINDA (degismedi); cubuk gorseldir,
+        // ayri bir tiklama hedefi ekleyip karti ikiye bolmez.
+        // ---------------------------------------------------------------
         val statusText: String
-        val statusSize = if (unlocked && isNext) 11.sp else 10.sp
-        val statusWeight = if (unlocked && isNext) FontWeight.Black else FontWeight.Bold
+        val statusColor: Color
+        val barBg: Color
+        val barBorder: Color
         when {
             !unlocked && spec.deploymentCost > 0 -> {
                 statusText = stringResource(R.string.level_unlock_cost, spec.deploymentCost)
-                statusColor = Color(0xFFFFD54F)
+                statusColor = Color(0xFFD8C46A)
+                barBg = Color(0x66201F10)
+                barBorder = Color(0x55D8A52A)
             }
             !unlocked -> {
                 statusText = stringResource(R.string.level_locked)
-                statusColor = Color(0x99FFFFFF)
+                statusColor = Color(0x88C5D6B4)
+                barBg = Color(0x4415170F)
+                barBorder = Color(0x33FFFFFF)
             }
             isNext -> {
                 statusText = stringResource(R.string.level_deploy)
-                statusColor = Color(0xFFFFD54F)
+                statusColor = Color(0xFF1A1A0E)
+                barBg = Color(0xFFD8A52A)
+                barBorder = Color(0xFFF1C95D)
             }
-            // ⚠ 2026-08-22: "TEKRAR" ARTIK YILDIZA BAGLI (cihaz raporu:
-            // *"resetliyor ama yine de bolumlerde replay yaziyor"*).
-            //
-            // Eskiden son dal KOSULSUZ "TEKRAR" yaziyordu: acik VE siradaki
-            // olmayan her kart, HIC OYNANMAMIS olsa bile "tekrar" diyordu.
-            // Ilerleme sifirlandiktan sonra L1-L6 acik ve hepsi 0 yildiz
-            // oluyor; L1 "siradaki" oldugu icin SEVK ET diyor, L2-L6 ise bu
-            // dala dusup "TEKRAR" diyordu — oyuncuya hic yapmadigi bir seyi
-            // yapmis gibi gosteriyordu.
-            //
-            // Ayni hata ailesinden: kart durumu OYNANMIS ile OYNANMAMIS'i
-            // hic ayirt etmiyordu, yalnizca "siradaki mi" diye soruyordu.
-            // (Kardesi `nextLevel`in `?: 1` geri dususuydu, ayni gun duzeltildi.)
-            stars > 0 -> {
+            completed -> {
                 statusText = stringResource(R.string.level_replay)
-                statusColor = Color(0xFFA8C48C)
+                statusColor = Color(0xFFD8E8C0)
+                barBg = Color(0x552C3A1D)
+                barBorder = Color(0x887FA24E)
             }
             else -> {
-                // Acik ama hic oynanmamis ve "siradaki" de degil: dogru fiil
-                // yine SEVK ET. Altin vurgu YALNIZCA siradaki kartta kalir,
-                // yani oneri sinyali bulanmaz — degisen tek sey yanlis fiilin
-                // dogruyla yer degistirmesi.
                 statusText = stringResource(R.string.level_deploy)
                 statusColor = Color(0xFFA8C48C)
+                barBg = Color(0x55181E11)
+                barBorder = Color(0x665C7440)
             }
         }
-        AutoShrinkText(
-            text = statusText,
-            color = statusColor,
-            fontWeight = statusWeight,
-            maxFontSize = statusSize,
-            minFontSize = 8.sp,
-            maxLines = 1,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth()
-        )
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 5.dp)
+                .clip(RoundedCornerShape(5.dp))
+                .background(barBg)
+                .border(1.dp, barBorder, RoundedCornerShape(5.dp))
+                .padding(vertical = 5.dp)
+        ) {
+            AutoShrinkText(
+                text = statusText,
+                color = statusColor,
+                fontWeight = FontWeight.Black,
+                maxFontSize = 12.sp,
+                minFontSize = 8.sp,
+                maxLines = 1,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+            // Chevron — hedefteki "ilerle" isareti. Dekoratif glif;
+            // oynanabilir kartlarda tam, digerlerinde soluk.
+            if (unlocked) {
+                Text(
+                    text = "\u00BB",
+                    color = statusColor.copy(alpha = if (isNext) 1f else 0.45f),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Black,
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(end = 7.dp)
+                )
+            }
+        }
+
+        Spacer(Modifier.height(5.dp))
       }
     }
 }

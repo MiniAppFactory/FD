@@ -20,75 +20,85 @@ import androidx.compose.ui.unit.dp
  * TAKTIK CERCEVE — kampanya ekraninin cizim dili
  * =============================================================================
  *
- * Hedef tasarimda (kullanicinin gonderdigi kampanya mockup'i) kartlar, perde
- * rayi, ust serit ve tedarik seridi ayni metalik dili paylasiyor: **kosesi
- * kesilmis** bir govde, cift kontur, koselerde parlak isaret cizgileri ve
- * "siradaki" ogede altin bir hale.
+ * Hedef tasarimda kartlar DOLU METAL PANELLER: kosesi kesilmis govde, KALIN
+ * bevel'li kenar (ustten isik alan, alta dogru kararan), koselerde parlak
+ * isaret cizgileri ve siradaki ogede altin hale.
+ *
+ * ## ⚠ ILK SURUM YETERSIZDI — kullanici reddetti (2026-08-26)
+ *
+ * Ilk cizim 1,5 dp'lik INCE cift konturdu ve kart "tel cerceve" gibi
+ * gorunuyordu; kullanici "hedef ile alakasi yok" dedi ve hakliydi. Hedefteki
+ * panel hissini veren uc sey eksikti:
+ *  1. kenar KALIN (3-4 dp) ve DIKEY GRADYANLI — ustten isik aliyor,
+ *  2. govde OPAK ve zeminden net ayrisiyor,
+ *  3. icerik kenara kadar gidiyor (kart ici ayri bir kutu gibi degil).
+ * Bu surum ucunu de duzeltir.
  *
  * ## Neden GORSEL DOSYA degil, CIZIM
  *
- * Bu cerceveyi bir PNG olarak eklemek dort ayri boyut (kart, ray, serit,
- * tedarik) ve iki durum (normal, vurgulu) icin **sekiz dosya** demekti; her
- * boyut degisiminde de yeniden uretim gerekirdi. Compose ile cizilince:
- *  · her olcude keskin — gerilme ve yeniden orneklemeden dogan bulaniklik yok,
- *  · APK'ya sifir bayt ekliyor,
- *  · renk/hale durumu (kilitli · tamamlanmis · siradaki) **kodda** yasiyor,
- *    yani sanat ile durum iki ayri yerde bayatlamiyor.
- *
- * Pack'in metalik plaka sanati (`ui_plate_header` vb.) SABIT oranlidir ve bu
- * ekrandaki degisken yukseklikli yuzeylere oturmuyordu — nitekim ust serite
- * plaka koyma denemesi kartlari kirpmisti (bkz. `LevelSelectScreen`).
+ * PNG olarak eklemek dort boyut x iki durum = sekiz dosya demekti ve her
+ * boyut degisiminde yeniden uretim gerekirdi. Cizim her olcude keskin, APK'ya
+ * sifir bayt, durum (kilitli/tamamlanmis/siradaki) kodda yasiyor.
  */
-
-/** Cercevenin durum rengi ve halesi. */
 enum class FrameTone {
     /** Kilitli / ileride — sonuk, halesiz. */
     MUTED,
 
-    /** Acik ama siradaki degil — yesil kontur. */
+    /** Acik ama siradaki degil — yesil kenar. */
     ACTIVE,
 
-    /** Tamamlanmis — yesil, biraz daha parlak. */
+    /** Tamamlanmis — parlak yesil kenar. */
     CLEARED,
 
-    /** SIRADAKI — altin kontur + hale. Ekranda tek bir oge bunu tasir. */
+    /** SIRADAKI — altin kenar + hale. Ekranda tek oge bunu tasir. */
     NEXT
 }
 
-private fun FrameTone.stroke(): Color = when (this) {
-    FrameTone.MUTED -> Color(0xFF44503A)
-    FrameTone.ACTIVE -> Color(0xFF6E8A4E)
-    FrameTone.CLEARED -> Color(0xFF8CB45C)
-    FrameTone.NEXT -> Color(0xFFD8A52A)
+/** Kenar gradyani: ustte ISIK, altta GOLGE — bevel hissinin kaynagi. */
+private fun FrameTone.borderBrush(): Brush = when (this) {
+    FrameTone.NEXT -> Brush.verticalGradient(
+        listOf(Color(0xFFF1C95D), Color(0xFFD8A52A), Color(0xFF7A5B12))
+    )
+    FrameTone.CLEARED -> Brush.verticalGradient(
+        listOf(Color(0xFFB4D284), Color(0xFF7FA24E), Color(0xFF3A4C22))
+    )
+    FrameTone.ACTIVE -> Brush.verticalGradient(
+        listOf(Color(0xFF8AA061), Color(0xFF5C7440), Color(0xFF2C3A1E))
+    )
+    FrameTone.MUTED -> Brush.verticalGradient(
+        listOf(Color(0xFF5A6350), Color(0xFF3E4636), Color(0xFF23281E))
+    )
+}
+
+private fun FrameTone.tickColor(): Color = when (this) {
+    FrameTone.NEXT -> Color(0xFFF1C95D)
+    FrameTone.CLEARED -> Color(0xFFA8CC74)
+    FrameTone.ACTIVE -> Color(0xFF7E9656)
+    FrameTone.MUTED -> Color(0xFF525C46)
+}
+
+/** Govde OPAK: panel zeminden ayrismali, arkasi okunmamali. */
+private fun FrameTone.fill(): Brush = when (this) {
+    FrameTone.MUTED -> Brush.verticalGradient(
+        listOf(Color(0xFF20241B), Color(0xFF15180F))
+    )
+    FrameTone.CLEARED -> Brush.verticalGradient(
+        listOf(Color(0xFF2C3A1D), Color(0xFF1C2611))
+    )
+    FrameTone.NEXT -> Brush.verticalGradient(
+        listOf(Color(0xFF33321B), Color(0xFF201F10))
+    )
+    FrameTone.ACTIVE -> Brush.verticalGradient(
+        listOf(Color(0xFF262E1D), Color(0xFF181E11))
+    )
 }
 
 private fun FrameTone.glow(): Color? = when (this) {
-    FrameTone.NEXT -> Color(0x66F1C95D)
-    FrameTone.CLEARED -> Color(0x2E8CB45C)
+    FrameTone.NEXT -> Color(0xFFF1C95D)
     else -> null
 }
 
-private fun FrameTone.fill(): Brush = when (this) {
-    FrameTone.MUTED -> Brush.verticalGradient(
-        listOf(Color(0xFF1A1F16), Color(0xFF12160F))
-    )
-    FrameTone.CLEARED -> Brush.verticalGradient(
-        listOf(Color(0xFF243019), Color(0xFF18200F))
-    )
-    FrameTone.NEXT -> Brush.verticalGradient(
-        listOf(Color(0xFF2A2C16), Color(0xFF1A1B0E))
-    )
-    FrameTone.ACTIVE -> Brush.verticalGradient(
-        listOf(Color(0xFF1E2618), Color(0xFF141A10))
-    )
-}
-
-/**
- * Kosesi kesilmis (sekizgen) govde yolu.
- *
- * Kesim [chamfer] kadar; kutu cok kucukse kesim kendiliginden kuculur ki
- * kenarlar carpismasin.
- */
+/** Kosesi kesilmis (sekizgen) govde yolu. */
 private fun chamferPath(size: Size, chamfer: Float): Path {
     val c = chamfer.coerceAtMost(minOf(size.width, size.height) / 2.5f)
     return Path().apply {
@@ -105,38 +115,32 @@ private fun chamferPath(size: Size, chamfer: Float): Path {
 }
 
 /**
- * Koselerdeki KISA parlak isaret cizgileri.
- *
- * Mockup'ta cercevenin kendisi duz degil; her kosede kisa, daha parlak bir
- * cizgi var ve "olculmus/teknik" hissi buradan geliyor. Cizgiler kenar
- * uzunlugunun %18'i kadar.
+ * Kose isaret cizgileri — hedefteki "olculmus/teknik" his. Kenarin ic
+ * hizasinda, kesim koselerini atlayarak cizilir.
  */
-private fun DrawScope.cornerTicks(size: Size, color: Color, inset: Float, w: Float) {
-    val lx = size.width * 0.18f
-    val ly = size.height * 0.18f
+private fun DrawScope.cornerTicks(size: Size, color: Color, inset: Float, w: Float, chamfer: Float) {
+    val lx = size.width * 0.16f
+    val ly = size.height * 0.16f
     val l = size.width - inset
     val b = size.height - inset
-    val s = Stroke(width = w)
-    // ust-sol / ust-sag / alt-sol / alt-sag — her kosede yatay + dikey bir cizgi
+    val c = chamfer
     listOf(
-        Offset(inset, inset) to Offset(inset + lx, inset),
-        Offset(inset, inset) to Offset(inset, inset + ly),
-        Offset(l, inset) to Offset(l - lx, inset),
-        Offset(l, inset) to Offset(l, inset + ly),
-        Offset(inset, b) to Offset(inset + lx, b),
-        Offset(inset, b) to Offset(inset, b - ly),
-        Offset(l, b) to Offset(l - lx, b),
-        Offset(l, b) to Offset(l, b - ly)
-    ).forEach { (from, to) -> drawLine(color, from, to, strokeWidth = s.width) }
+        Offset(inset + c, inset) to Offset(inset + c + lx, inset),
+        Offset(inset, inset + c) to Offset(inset, inset + c + ly),
+        Offset(l - c, inset) to Offset(l - c - lx, inset),
+        Offset(l, inset + c) to Offset(l, inset + c + ly),
+        Offset(inset + c, b) to Offset(inset + c + lx, b),
+        Offset(inset, b - c) to Offset(inset, b - c - ly),
+        Offset(l - c, b) to Offset(l - c - lx, b),
+        Offset(l, b - c) to Offset(l, b - c - ly)
+    ).forEach { (from, to) -> drawLine(color, from, to, strokeWidth = w) }
 }
 
 /**
- * Taktik cerceveli yuzey.
+ * Taktik cerceveli DOLU panel.
  *
- * @param tone durum rengi ve halesi.
- * @param chamfer kose kesimi.
- * @param showTicks kose isaret cizgileri cizilsin mi (kucuk yuzeylerde
- *   kalabaliklastirdigi icin kapatilabilir).
+ * Icerik, kenarin hemen icinden baslar ([content] kendi dolgusunu koyar);
+ * cerceve bir "kutu icinde kutu" degil, panelin kendisidir.
  */
 @Composable
 fun TacticalFrame(
@@ -146,38 +150,46 @@ fun TacticalFrame(
     showTicks: Boolean = true,
     content: @Composable BoxScope.() -> Unit
 ) {
-    val strokeColor = tone.stroke()
-    val glowColor = tone.glow()
+    val borderBrush = tone.borderBrush()
     val fill = tone.fill()
+    val glowColor = tone.glow()
+    val tick = tone.tickColor()
 
     Box(
         modifier = modifier.drawBehind {
             val c = chamfer.toPx()
             val path = chamferPath(size, c)
+            val bw = 3.dp.toPx()
 
-            // HALE — govdenin ALTINA, disa dogru. Siradaki kartin ekranda
-            // aranmadan bulunmasini saglayan tek sinyal bu.
+            // HALE — yalnizca SIRADAKI. Blur yok; disari dogru zayiflayan uc
+            // kademeli stroke ayni isi goruyor ve her cihazda ayni gorunuyor.
             if (glowColor != null) {
-                val g = 3.dp.toPx()
-                drawPath(
-                    path = chamferPath(size, c),
-                    color = glowColor,
-                    style = Stroke(width = g * 2f)
-                )
+                listOf(0.30f to 7f, 0.18f to 12f, 0.08f to 18f).forEach { (a, wd) ->
+                    drawPath(
+                        path = path,
+                        color = glowColor.copy(alpha = a),
+                        style = Stroke(width = wd.dp.toPx() / 3f)
+                    )
+                }
             }
 
+            // GOVDE — opak.
             drawPath(path = path, brush = fill)
-            drawPath(path = path, color = strokeColor, style = Stroke(width = 1.5.dp.toPx()))
 
-            // IC KONTUR — 3 dp iceride, daha koyu. Cift kontur, tek konturun
-            // veremedigi "cukur govde" hissini veriyor.
-            val inset = 3.dp.toPx()
+            // KALIN BEVEL KENAR — ustten isikli dikey gradyan. Stroke yolun
+            // uzerine ortalanir; disa tasan yarisi haleyle, ice tasan yarisi
+            // govdeyle birlesir ve kenar "metal cita" gibi okunur.
+            drawPath(path = path, brush = borderBrush, style = Stroke(width = bw))
+
+            // IC GOLGE KONTURU — kenarin hemen icinde 1 dp koyu cizgi; bevel
+            // ile govde arasindaki derinlik sicramasi buradan geliyor.
+            val inset = bw
             val innerSize = Size(size.width - inset * 2, size.height - inset * 2)
             if (innerSize.width > 0 && innerSize.height > 0) {
-                translate(inset, inset) {
+                withTranslate(inset, inset) {
                     drawPath(
                         path = chamferPath(innerSize, (c - inset).coerceAtLeast(0f)),
-                        color = strokeColor.copy(alpha = 0.35f),
+                        color = Color(0x66000000),
                         style = Stroke(width = 1.dp.toPx())
                     )
                 }
@@ -186,9 +198,10 @@ fun TacticalFrame(
             if (showTicks) {
                 cornerTicks(
                     size = size,
-                    color = strokeColor.copy(alpha = 0.85f),
-                    inset = 1.5.dp.toPx(),
-                    w = 1.5.dp.toPx()
+                    color = tick,
+                    inset = bw / 2f,
+                    w = 2.dp.toPx(),
+                    chamfer = c
                 )
             }
         },
@@ -196,8 +209,7 @@ fun TacticalFrame(
     )
 }
 
-/** `translate` icin kucuk yardimci — DrawScope'un kendi surumu inline degil. */
-private inline fun DrawScope.translate(dx: Float, dy: Float, block: DrawScope.() -> Unit) {
+private inline fun DrawScope.withTranslate(dx: Float, dy: Float, block: DrawScope.() -> Unit) {
     drawContext.canvas.save()
     drawContext.canvas.translate(dx, dy)
     block()
