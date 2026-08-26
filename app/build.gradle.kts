@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.compose)
@@ -43,14 +45,43 @@ android {
     // Release imzasi ise KOSULLU: keystore dosyasi gercekten mevcutsa
     // olusturulur. Boylece keystore olmayan bir makinede assembleRelease
     // "Keystore file not found" ile patlamak yerine imzasiz cikti uretir.
-    // Keystore uretimi ayri bir karar (kullanici onayi gerekir).
+    //
+    // 2026-08-26: SIFRELER ARTIK YEREL BIR DOSYADAN DA OKUNABILIYOR.
+    //
+    // Eskiden yalnizca ortam degiskeninden okunuyordu ve bu, her release
+    // build'i cok adimli bir torene ceviriyordu: Gradle her cagrida AYRI bir
+    // surecte kostugu icin `export STORE_PASSWORD=...` bir sonraki komuta
+    // miras kalmiyor, yani sifreler her seferinde ayni satirda tekrar
+    // verilmek zorundaydi. Bu, sifrenin komut gecmisine ve oturum kaydina
+    // tekrar tekrar dusmesi demekti — yani surtunme YARATIP guvenligi de
+    // DUSURUYORDU.
+    //
+    // Artik kardes proje Boom-Blocks ile AYNI desen: `signing.properties`
+    // (git'e HIC girmez, bkz. .gitignore satir 34) okunur; ortam degiskeni
+    // varsa o ONCELIKLI kalir (CI / farkli makine senaryosu icin).
+    //
+    // ⚠ IMZALAMA ANAHTARI BU PROJEYE AIT DEGIL. Kullanici 2026-08-26'da
+    // Boom-Blocks'un upload key'inin (sertifika DN `CN=Blast the Blocks`,
+    // alias `upload`) Frontline Defender icin de kullanilmasina KARAR VERDI.
+    // v39-v44 release'leri de zaten onunla imzalanmisti. Sonucu: iki uygulama
+    // ayni imzayi paylasir. Play'e yuklendikten sonra bir uygulamanin anahtari
+    // DEGISTIRILEMEZ, yani bu karar oradan sonra kalicidir.
+    val signingPropsFile = rootProject.file("signing.properties")
+    val signingProps = Properties().apply {
+      if (signingPropsFile.exists()) signingPropsFile.inputStream().use { load(it) }
+    }
+    // Release imzasi KOSULLU: keystore dosyasi gercekten mevcutsa olusturulur.
+    // Boylece keystore olmayan bir makinede assembleRelease "Keystore file not
+    // found" ile patlamak yerine imzasiz cikti uretir.
     val keystoreFile = file(System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks")
     if (keystoreFile.exists()) {
       create("release") {
         storeFile = keystoreFile
         storePassword = System.getenv("STORE_PASSWORD")
+          ?: signingProps.getProperty("storePassword")
         keyAlias = "upload"
         keyPassword = System.getenv("KEY_PASSWORD")
+          ?: signingProps.getProperty("keyPassword")
       }
     }
   }
