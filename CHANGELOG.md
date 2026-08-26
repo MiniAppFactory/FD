@@ -6,6 +6,37 @@ yalan soyleyebiliyorlardi; surum notu artik kodla ayni gecmisi paylasiyor.
 
 ---
 
+## 2026-08-26 (h) — CEPHANELIK SABLON DILINE GECTI + iki kucuk duzeltme (v52)
+
+Kullanici uc sey bildirdi: GOREVLER rozeti pill'e sigmiyor, kupur kalitesi
+dusuk, ve cephanelik kartlari "bolum kartlari gibi" olmali. Ucu de kapandi.
+
+### Cephanelik (kullanici istegi)
+- `ui_card_shop`: available sablonunun YILDIZSIZ turevi (yildiz bandi pencere
+  dokusuyla yamali — iki basarisiz yama denemesinden sonra ucuncusu tuttu;
+  denemeler pipeline yorumlarinda). Bolgeler yeni anlamlar tasir: pencere ->
+  hattin OYUNDAN TANIDIK sprite'i, daire -> mevcut kademe, kalkan satiri ->
+  KADEME n/m, yama bolgesi -> kademe noktalari, buton -> fiyat/durum.
+- Eski uzun etki cumleleri tek satira SIGMIYORDU; kisaltildi ("Tum kulelerin
+  atis mesafesi +%5" -> "Atis mesafesi +%5"). Eski 3-satirlik kartin tek
+  kullanicisi bu ekrandi; bilgi kaybi yok, baglam basliklarda.
+
+### Kupur kalitesi (kullanici bulgusu)
+Onceki merkez-bant %42'lik dar seritti ve 344x172'den BUYUTULUYORDU. Kadraj
+buyutuldu (x 214-766, y 16-292) ve cikti NATIVE 552x276 (upscale sifir),
+q 76 -> 82. Alan 2,5 kat, bulanma kaynagi yok.
+
+### GOREVLER rozeti (kullanici bulgusu)
+Rozet pill'in ICINDE satir sonundaydi ve pill'in `clip(RoundedCornerShape)`
+kirpmasi cihazda dairenin altini kesiyordu. Rozet pill'in DISINA, sag ust
+koseye tasan nokta yapildi (hedef mockup'in dili); dis Box clip'siz oldugu
+icin kirpilma yapisal olarak imkansiz.
+
+Kanit: 1093 test + lint yesil; cihazda cephanelik 4 kartinin tum metinleriyle,
+kupurlerin keskin haliyle goruntusu (docs/device_evidence 16).
+
+---
+
 ## 2026-08-26 (g) — KUPUR TEMIZLIGI: gomulu isimler ve yanlis numara (v51)
 
 Kilitli perdeler cihazda gezilince paketin thumb'larinin TUTARSIZ oldugu

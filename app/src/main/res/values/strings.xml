@@ -336,13 +336,13 @@
     <string name="shop_reserve_blocked">RESERVE</string>
     <string name="shop_gated">CLEAR LEVEL %1$d</string>
     <string name="shop_line_firepower">Firepower (Damage)</string>
-    <string name="shop_line_firepower_fx">All tower damage +%1$d%%</string>
+    <string name="shop_line_firepower_fx">Tower damage +%1$d%%</string>
     <string name="shop_line_optics">Optics (Range)</string>
-    <string name="shop_line_optics_fx">All towers shoot +%1$d%% farther</string>
+    <string name="shop_line_optics_fx">Range +%1$d%%</string>
     <string name="shop_line_supply">Starting Supply</string>
-    <string name="shop_line_supply_fx">Battle starts with %1$d supply</string>
+    <string name="shop_line_supply_fx">Start supply: %1$d</string>
     <string name="shop_line_fortification">Fortification (Lives)</string>
-    <string name="shop_line_fortification_fx">Base withstands %1$d lives</string>
+    <string name="shop_line_fortification_fx">Base lives: %1$d</string>
     <string name="shop_line_salvage">Salvage (Sell Refund)</string>
     <string name="shop_line_salvage_fx">Sell refund %1$d%%</string>
 

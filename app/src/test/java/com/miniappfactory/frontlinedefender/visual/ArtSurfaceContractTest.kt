@@ -127,7 +127,10 @@ class ArtSurfaceContractTest {
             "ui_toggle_on.webp", "ui_toggle_off.webp",
             "ui_card_active.webp", "ui_card_available.webp",
             "ui_card_completed.webp", "ui_card_locked.webp",
-            "ui_card_star.webp"
+            "ui_card_star.webp",
+            // v52: cephanelik sablonu (available'in yildizsiz turevi),
+            // UpgradeShopScreen dogrudan cagirir.
+            "ui_card_shop.webp"
         )
         val used = (declared.map { it.third } + usedDirectly).toSortedSet()
 

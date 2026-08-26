@@ -174,6 +174,45 @@ def build_55_cards():
         kb = os.path.getsize(pth) / 1024.0; total += kb
         print(f"  ui_card_{state:10s} {w}x{h}  {kb:7.1f} KB")
 
+    # CEPHANELIK SABLONU: available sablonunun YILDIZSIZ turevi.
+    #
+    # Dukkan kartinda yildiz anlamsiz (kademe 4-9 arasi, 3 yildiza esleyemez);
+    # gomulu konturlar kalirsa oyuncu "bu kartta da mi yildiz var" diye okur.
+    # Yildiz bandi (x 300-790, y 940-1140) ayni bandin SOLUNDAKI temiz doku
+    # seridiyle (x 130-300) dosenerek yamalanir — sablonla ayni malzeme,
+    # dikis fark edilmez.
+    shop = Image.open(os.path.join(tpl_dir, "card_template_available.png")).convert("RGBA")
+    # UCUNCU (dogru) deneme. Ilk ikisi yanildi:
+    #   1. soldaki dusey serit -> yildiz UST uclari kaldi (konturlar y 885'te
+    #      basliyormus) ve serit o yukseklikte kalkan ikonu iceriyordu;
+    #   2. "bandin alt kenarindan yatay serit" -> meger butonun PARLAK ust
+    #      kenariymis, bant acik yesil cizgilerle doldu ve dongu wave
+    #      satirini da ezdi.
+    # Simdi kaynak, sablonun KUPUR PENCERESININ ic dokusu (genis, duz, koyu)
+    # ve hedef yalnizca YILDIZLARIN KENDI KUTUSU (x 174-912, y 995-1150 —
+    # wave satirinin ALTINDAN baslar, satiri ezmez; konturlarin y 995 ustu
+    # ucu yoktur, olculdu: dolu yildiz kutusu 950-1125 ama KONTURLAR 995'te
+    # basliyor... guvenli olmak icin 985'ten baslanir, wave metni 950'de
+    # bitmisti).
+    patch_src = shop.crop((250, 180, 900, 500))
+    patch = patch_src.resize((800, 186), Image.LANCZOS)
+    shop.paste(patch, (128, 966))
+    # kupur penceresi burada da seffaflastirilir (ayni gerekce)
+    pxs = shop.load()
+    for y in range(133, 545):
+        for x in range(126, 954):
+            if (x - 214) ** 2 + (y - 200) ** 2 <= 100 * 100:
+                continue
+            r, g, b, a = pxs[x, y]
+            pxs[x, y] = (r, g, b, 0)
+    w = 560
+    h = round(shop.size[1] * w / shop.size[0])
+    shop = shop.resize((w, h), Image.LANCZOS)
+    pth = os.path.join(OUT, "ui_card_shop.webp")
+    shop.save(pth, "WEBP", quality=82, method=6)
+    kb = os.path.getsize(pth) / 1024.0; total += kb
+    print(f"  ui_card_shop       {w}x{h}  {kb:7.1f} KB")
+
     # Dolu yildiz: completed sablonundan SABIT kutuyla kesilir.
     #
     # Fark-tabanli otomatik kesim DENENDI ve YANILDI (14x96'lik dikey serit
@@ -218,17 +257,22 @@ def build_55_cards():
         #   y: 0,30H-0,72H (rozet ustte, isim altta), x: merkezden 2:1 kutu.
         # 55'ine UNIFORM uygulanir — temiz olanlar da ayni kadraji alir ki
         # serit boyunca kadraj ritmi tutarli kalsin.
-        W0, H0 = im.size
-        bh = int(H0 * 0.42)
-        bw = bh * 2
-        x0 = (W0 - bw) // 2
-        y0 = int(H0 * 0.30)
-        im = im.crop((x0, y0, x0 + bw, y0 + bh))
-        im = im.resize((384, 192), Image.LANCZOS)
+        # KADRAJ BUYUTULDU + NATIVE COZUNURLUK (kullanici: "thumbnaillerin
+        # kalitesi bozulmus" — hakliydi). Onceki merkez-bant %42'lik dar bir
+        # seritti ve 344x172'den 384x192'ye BUYUTULUYORDU; az alan + upscale
+        # birlesince kupurler yumusadi. Kirlilikler aslinda uc ayri KENARDA:
+        #   gomulu rozet SOL SERIT (x < ~160), gomulu isim ALT BANT (y > ~0,71),
+        #   cerceve artigi UST/KENAR (birkac px). Ortadaki temiz alan cok daha
+        #   buyuk: x 214-766, y 16-292 -> 552x276 (tam 2:1), oncekinin 2,5 kati
+        #   alan ve SIFIR upscale (cikti native).
+        im = im.crop((214, 16, 766, 292))
+        # resize YOK: 552x276 dogrudan yazilir; pencere 96x48 dp (@4x = 384px)
+        # icin fazlasiyla yeterli ve buyutme kaynakli bulanma olusamaz.
+
         pth = os.path.join(OUT, f"thumb_level_{i:02d}.webp")
-        im.save(pth, "WEBP", quality=76, method=6)
+        im.save(pth, "WEBP", quality=82, method=6)
         total += os.path.getsize(pth) / 1024.0
-    print(f"  55 kupur (384x192) yazildi")
+    print(f"  55 kupur (552x276 native) yazildi")
     print(f"  55-kart toplami: {total:.1f} KB ({total/1024:.2f} MB)")
 
 build_55_cards()

@@ -2,6 +2,9 @@ package com.miniappfactory.frontlinedefender.game.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -170,60 +173,180 @@ private fun UpgradeCard(
     val rank = upgrades.rankOf(line)
     val decision = progress.purchaseDecision(line)
 
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
+    // =========================================================================
+    // BOLUM KARTLARIYLA AYNI DIL (kullanici istegi 2026-08-26: "cephanelikteki
+    // kartlar ... bolum kartlari gibi tasarla").
+    //
+    // Sablon `ui_card_shop`: available sablonunun YILDIZSIZ turevi (uretici
+    // tools/ui_art_pipeline.py — yildiz bandi pencere dokusuyla yamali).
+    // Bolum kartindaki bolgeler burada su anlamlari tasir:
+    //   pencere       -> yukseltme hattinin IKONU (savastaki sprite'in kendisi)
+    //   numara dairesi -> mevcut KADEME
+    //   baslik bandi  -> hat adi
+    //   crosshair sat. -> bir SONRAKI kademenin etkisi
+    //   kalkan satiri -> KADEME n/m
+    //   yama bolgesi  -> kademe NOKTALARI (dolu/bos — renk tek kanal degil)
+    //   buton bandi   -> fiyat / MAKS / kisit etiketi
+    // =========================================================================
+    val satinAlinabilir = decision is PurchaseDecision.Allowed
+
+    BoxWithConstraints(
         modifier = Modifier
             .width(168.dp)
-            .fillMaxHeight()
-            .clip(RoundedCornerShape(14.dp))
-            .background(SleekSurfaceCard)
-            .border(1.dp, SleekBorderLight, RoundedCornerShape(14.dp))
-            .padding(12.dp)
+            .aspectRatio(560f / 747f)
+            .then(
+                if (satinAlinabilir) {
+                    Modifier.clickable {
+                        if (progress.buyUpgrade(line) is PurchaseDecision.Allowed) onBought()
+                    }
+                } else Modifier
+            )
             .testTag("upgrade_card_${line.name}")
     ) {
-        AutoShrinkText(
-            text = stringResource(lineNameRes(line)),
-            color = SleekTextAccent,
-            maxFontSize = 15.sp,
-            fontWeight = FontWeight.ExtraBold,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth()
-        )
-        Spacer(Modifier.height(4.dp))
-        Text(
-            text = stringResource(R.string.shop_rank, rank, line.maxRank),
-            color = SleekGold.copy(alpha = 0.9f),
-            fontWeight = FontWeight.Bold,
-            fontSize = 11.sp
-        )
-        Spacer(Modifier.height(8.dp))
-        // Bir SONRAKI kademenin toplam etkisi — oyuncu ne alacagini gorur.
-        AutoShrinkText(
-            text = stringResource(lineEffectRes(line), effectValue(line, (rank + 1).coerceAtMost(line.maxRank))),
-            color = SleekTextAccent.copy(alpha = 0.75f),
-            maxFontSize = 12.sp,
-            maxLines = 3,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth()
+        val w = maxWidth
+        val h = maxHeight
+
+        // IKON — pencerede, koyu zeminde. Kupurun aksine kenardan kenara
+        // degil ORTALI: sprite'lar dikdortgen doldurmaz, Fit ile ortalanir.
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .padding(
+                    start = w * 0.110f,
+                    top = h * 0.085f,
+                    end = w * 0.116f,
+                    bottom = h * 0.615f
+                )
+                .fillMaxSize()
+                .background(Color(0xFF141A0E))
+        ) {
+            Image(
+                painter = painterResource(lineIconRes(line)),
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize(0.72f)
+            )
+        }
+
+        Image(
+            painter = painterResource(R.drawable.ui_card_shop),
+            contentDescription = null,
+            contentScale = ContentScale.FillBounds,
+            modifier = Modifier.matchParentSize()
         )
 
-        Spacer(Modifier.weight(1f))
+        // KADEME — numara dairesinde.
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .padding(start = w * 0.115f, top = h * 0.077f)
+                .size(w * 0.165f)
+        ) {
+            AutoShrinkText(
+                text = stringResource(R.string.level_number, rank),
+                color = Color(0xFFEAF2DC),
+                maxFontSize = 13.sp,
+                minFontSize = 9.sp,
+                fontWeight = FontWeight.Black,
+                maxLines = 1,
+                textAlign = TextAlign.Center
+            )
+        }
 
-        // Rank gostergesi: nokta dizisi (renk tek ayrim kanali degil, DOLU/BOS
-        // sekil farki da var).
-        Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+        // HAT ADI — baslik bandinda.
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .padding(
+                    start = w * 0.14f,
+                    end = w * 0.14f,
+                    top = h * 0.408f,
+                    bottom = h * 0.492f
+                )
+                .fillMaxSize()
+        ) {
+            AutoShrinkText(
+                text = stringResource(lineNameRes(line)),
+                color = Color(0xFFE8F0DC),
+                fontWeight = FontWeight.Black,
+                maxFontSize = 11.5.sp,
+                minFontSize = 7.sp,
+                maxLines = 1,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        // ETKI — crosshair satirinda: bir SONRAKI kademenin toplam etkisi.
+        Box(
+            contentAlignment = Alignment.CenterStart,
+            modifier = Modifier
+                .padding(
+                    start = w * 0.285f,
+                    end = w * 0.13f,
+                    // Etki cumleleri bolum hedeflerinden UZUN ("Tum
+                    // kulelerin atis mesafesi +%5") — tek satir kesiyordu
+                    // (cihazda goruldu). Iki satira izin verilir; band
+                    // kalkan satirina (0,605) kadar buyutuldu.
+                    top = h * 0.478f,
+                    bottom = h * 0.392f
+                )
+                .fillMaxSize()
+        ) {
+            AutoShrinkText(
+                text = stringResource(
+                    lineEffectRes(line),
+                    effectValue(line, (rank + 1).coerceAtMost(line.maxRank))
+                ),
+                color = Color(0xFFAAB894),
+                maxFontSize = 9.sp,
+                minFontSize = 7.sp,
+                maxLines = 2,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        // KADEME n/m — kalkan satirinda.
+        Box(
+            contentAlignment = Alignment.CenterStart,
+            modifier = Modifier
+                .padding(
+                    start = w * 0.285f,
+                    end = w * 0.13f,
+                    top = h * 0.605f,
+                    bottom = h * 0.315f
+                )
+                .fillMaxSize()
+        ) {
+            Text(
+                text = stringResource(R.string.shop_rank, rank, line.maxRank),
+                color = Color(0xFFD8C46A),
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1
+            )
+        }
+
+        // KADEME NOKTALARI — eski kartin gostergesi, yamali bolgede.
+        // Dolu/bos ayrimi boyutla da verilir (renk tek kanal degil).
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(3.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .padding(top = h * 0.695f)
+                .align(Alignment.TopCenter)
+        ) {
             repeat(line.maxRank) { i ->
                 Box(
                     Modifier
                         .size(if (i < rank) 8.dp else 6.dp)
                         .clip(RoundedCornerShape(50))
-                        .background(if (i < rank) SleekGold else SleekBorderLight)
+                        .background(if (i < rank) SleekGold else Color(0xFF49533E))
                 )
             }
         }
-        Spacer(Modifier.height(8.dp))
 
-        val satinAlinabilir = decision is PurchaseDecision.Allowed
+        // FIYAT / DURUM — buton bandinda (bolum kartiyla ayni band).
         val etiket = when (decision) {
             is PurchaseDecision.Allowed -> stringResource(R.string.shop_buy, decision.price)
             is PurchaseDecision.MaxRank -> stringResource(R.string.shop_max)
@@ -233,34 +356,43 @@ private fun UpgradeCard(
                 stringResource(R.string.shop_gated, decision.requiredClearedLevel)
             else -> stringResource(R.string.shop_reserve_blocked)
         }
-
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 36.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(if (satinAlinabilir) SleekPrimaryGreen else SleekBorderDark)
-                .then(
-                    if (satinAlinabilir) {
-                        Modifier.clickable {
-                            if (progress.buyUpgrade(line) is PurchaseDecision.Allowed) onBought()
-                        }
-                    } else Modifier
+                .padding(
+                    start = w * 0.16f,
+                    end = w * 0.16f,
+                    top = h * 0.806f,
+                    bottom = h * 0.092f
                 )
-                .padding(horizontal = 8.dp, vertical = 6.dp)
+                .fillMaxSize()
                 .testTag("upgrade_buy_${line.name}")
         ) {
             AutoShrinkText(
                 text = etiket,
-                color = if (satinAlinabilir) Color.White else SleekTextAccent.copy(alpha = 0.55f),
-                maxFontSize = 12.sp,
+                color = if (satinAlinabilir) Color(0xFFDCE8CC) else Color(0x99C5D6B4),
+                maxFontSize = 10.sp,
+                minFontSize = 7.sp,
                 fontWeight = FontWeight.Black,
+                maxLines = 1,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth()
             )
         }
     }
+}
+
+/**
+ * Hattin pencerede gosterilen ikonu — OYUNDAN TANIDIK sprite'lar, yeni cizim
+ * degil: oyuncu "Ates Gucu"nun topun hasari oldugunu savastaki ayni gorselden
+ * okur.
+ */
+private fun lineIconRes(line: UpgradeLine): Int = when (line) {
+    UpgradeLine.FIREPOWER -> R.drawable.spr_tower_heavy_cannon
+    UpgradeLine.OPTICS -> R.drawable.spr_ic_target
+    UpgradeLine.STARTING_SUPPLY -> R.drawable.spr_ic_supply_crate
+    UpgradeLine.FORTIFICATION -> R.drawable.spr_ic_base_health
+    UpgradeLine.SALVAGE -> R.drawable.spr_ic_sell
 }
 
 private fun lineNameRes(line: UpgradeLine): Int = when (line) {

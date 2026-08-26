@@ -359,39 +359,49 @@ fun LevelSelectScreen(
                 // acilmadan da gorunur olmasi bu ekranin tek isi — FUN_AUDIT'in
                 // "kimse fark etmiyor" bulgusu tam olarak buydu.
                 if (missionsAvailable) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(
-                                if (claimableMissions > 0) Color(0x554C7A2E) else Color(0x334C7A2E)
+                    // ROZET PILL'IN DISINDA, SAG UST KOSEYE TASAR (hedef
+                    // mockup'in dili). ⚠ ESKI HALI rozeti pill'in ICINE, satir
+                    // sonuna koyuyordu ve pill'in `clip(RoundedCornerShape)`
+                    // kirpmasi cihazda dairenin altini KESIYORDU (kullanici
+                    // goruntusuyle bildirdi). Dis Box CLIP'SIZ: rozet artik
+                    // hicbir yuvarlatmanin kirpma alaninda degil.
+                    Box {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .padding(top = 4.dp, end = 4.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(
+                                    if (claimableMissions > 0) Color(0x554C7A2E) else Color(0x334C7A2E)
+                                )
+                                // Hedefteki metal cerceve dili: pill artik
+                                // cizgisiz yuzmuyor.
+                                .border(
+                                    1.dp,
+                                    if (claimableMissions > 0) Color(0xFF9ADF3F) else Color(0xFF5A6A3A),
+                                    RoundedCornerShape(8.dp)
+                                )
+                                .clickable { missionsOpen = true }
+                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                                .testTag("open_missions")
+                        ) {
+                            Text(
+                                text = stringResource(R.string.mission_open),
+                                color = if (claimableMissions > 0) Color(0xFFCDEB9E) else SleekGold,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                maxLines = 1
                             )
-                            // Hedefteki metal cerceve dili: pill artik
-                            // cizgisiz yuzmuyor.
-                            .border(
-                                1.dp,
-                                if (claimableMissions > 0) Color(0xFF9ADF3F) else Color(0xFF5A6A3A),
-                                RoundedCornerShape(8.dp)
-                            )
-                            .clickable { missionsOpen = true }
-                            .padding(horizontal = 12.dp, vertical = 6.dp)
-                            .testTag("open_missions")
-                    ) {
-                        Text(
-                            text = stringResource(R.string.mission_open),
-                            color = if (claimableMissions > 0) Color(0xFFCDEB9E) else SleekGold,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            maxLines = 1
-                        )
+                        }
                         if (claimableMissions > 0) {
-                            Spacer(Modifier.width(6.dp))
                             Box(
                                 contentAlignment = Alignment.Center,
                                 modifier = Modifier
+                                    .align(Alignment.TopEnd)
                                     .size(17.dp)
                                     .clip(RoundedCornerShape(9.dp))
                                     .background(Color(0xFF9CD65B))
+                                    .border(1.dp, Color(0xFF14200C), RoundedCornerShape(9.dp))
                             ) {
                                 Text(
                                     text = stringResource(R.string.mission_badge, claimableMissions),
