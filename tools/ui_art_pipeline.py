@@ -206,11 +206,24 @@ def build_55_cards():
     for i in range(1, 56):
         src = os.path.join(th_dir, f"level_{i:02d}_thumb.png")
         im = Image.open(src).convert("RGB")
-        # SOL-UST KIRPMA: thumb'larin kendi gomulu "NN" kose rozeti var ve
-        # sablonun numara dairesi onu TAM ortmuyordu (sag kenari tasip kart
-        # 4-5'te cift numara gorunuyordu). Rozet bolgesi ~150x100; 140,70
-        # kirpmasi rozeti atar, kalan 680x340 tam 2:1 oranindadir.
-        im = im.crop((140, 70, im.size[0], im.size[1]))
+        # MERKEZ-BANT KIRPMA. Paketin thumb'lari TUTARSIZ cikti (cihazda
+        # goruldu, orneklem md5 degil GOZLE dogrulandi):
+        #   · L02/L12 temiz,
+        #   · L34/L42/L50 ALT bantta cift dilli GOMULU ISIM ("Çayır Geçidi /
+        #     Meadow Pass") — kart basligiyla cift isim,
+        #   · L25 kenarlarinda komsu kart cercevesi artigi,
+        #   · L50 gorselinin rozetinde YANLIS NUMARA ("51").
+        # Sol-ust kirpma yalnizca rozeti atiyordu; isim bandi ve kenar
+        # artiklari kaliyordu. Merkez bant hepsini birden disarida birakir:
+        #   y: 0,30H-0,72H (rozet ustte, isim altta), x: merkezden 2:1 kutu.
+        # 55'ine UNIFORM uygulanir — temiz olanlar da ayni kadraji alir ki
+        # serit boyunca kadraj ritmi tutarli kalsin.
+        W0, H0 = im.size
+        bh = int(H0 * 0.42)
+        bw = bh * 2
+        x0 = (W0 - bw) // 2
+        y0 = int(H0 * 0.30)
+        im = im.crop((x0, y0, x0 + bw, y0 + bh))
         im = im.resize((384, 192), Image.LANCZOS)
         pth = os.path.join(OUT, f"thumb_level_{i:02d}.webp")
         im.save(pth, "WEBP", quality=76, method=6)

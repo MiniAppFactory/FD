@@ -6,6 +6,25 @@ yalan soyleyebiliyorlardi; surum notu artik kodla ayni gecmisi paylasiyor.
 
 ---
 
+## 2026-08-26 (g) — KUPUR TEMIZLIGI: gomulu isimler ve yanlis numara (v51)
+
+Kilitli perdeler cihazda gezilince paketin thumb'larinin TUTARSIZ oldugu
+goruldu: L02/L12 temiz ama L34/L42/L50 gibi gec bolum gorsellerinin ALT
+bandinda cift dilli GOMULU ISIM var ("Çayır Geçidi / Meadow Pass") — kart
+basligiyla cift isim gosteriyordu. L25'in kenarlarinda komsu kart cercevesi
+artigi, L50'nin gomulu rozetinde YANLIS NUMARA ("51") vardi.
+
+Cozum: 55 kupure UNIFORM merkez-bant kirpmasi (y 0,30-0,72 · x merkezden
+2:1). Rozet ustte, isim altta, cerceve artiklari kenarlarda — ucu birden
+disarida kaliyor; temiz gorseller de ayni kadraji aliyor ki serit boyunca
+kadraj ritmi tutarli kalsin. Yanlis "51" rozeti de goruntuyle birlikte gitti
+(bizim numara katmani zaten dogru sayiyi yaziyor).
+
+Kanit: test + lint yesil; cihazda Kisim I / III siniri / V gezilerek tum
+kartlarin gomulu metinsiz oldugu goruldu (docs/device_evidence 14/15).
+
+---
+
 ## 2026-08-26 (f) — 55-KART SABLON PAKETI ENTEGRE (v50)
 
 Kullanici 198 MB'lik "Frontline_Defender_55_Cards_COMPLETE" paketini GitHub
