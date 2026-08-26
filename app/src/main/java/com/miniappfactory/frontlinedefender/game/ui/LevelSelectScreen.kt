@@ -2,7 +2,9 @@ package com.miniappfactory.frontlinedefender.game.ui
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -17,6 +19,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -811,33 +814,75 @@ private fun LevelCard(
             .padding(10.dp)
             .alpha(if (unlocked) 1f else 0.62f)
     ) {
-        // Bolum numarasi
+        // ---------------------------------------------------------------
+        // HARITA KUPURU + BOLUM NUMARASI
+        //
+        // Eskiden burada yalnizca 38 dp'lik bir numara madalyonu vardi ve
+        // kart, oynanacak yerin NEREsi oldugunu yalnizca ADIYLA soyluyordu.
+        // Mockup'in kampanya ekraninda kartin tepesinde haritanin kendisi
+        // duruyor; oyuncu bolumu adindan degil GORUNTUSUNDEN taniyor.
+        //
+        // DIKEY MALIYET ~6 dp: kupur ic genisligin tamamini (106 dp) alir ve
+        // 106 / 2,424 = 43,7 dp yukselir; yerine gectigi madalyon 38 dp'ydi.
+        // Bu ekranda pay dar (bkz. ust seride plaka koyma denemesi, +32 dp
+        // kartlari kirpmisti), o yuzden numara madalyonu kupurun USTUNE
+        // bindirildi — ayri bir satir daha acmadi.
+        //
+        // Kupur neden `bg_level_NN` DEGIL: bellek. Ayrinti `levelThumbRes`.
+        // ---------------------------------------------------------------
         Box(
-            contentAlignment = Alignment.Center,
             modifier = Modifier
-                .size(38.dp)
-                .clip(RoundedCornerShape(19.dp))
-                // Tamamlanan kartin numara madalyonu da yesil okunur (0.55):
-                // 0.25'te zemin degisikligi madalyonu yutuyordu ve kart
-                // "bitmis" gorunmuyordu. Altin siradaki kart tek basina en
-                // parlak (0.9) kalmaya devam eder.
-                .background(
-                    borderColor.copy(
-                        alpha = when {
-                            isNext -> 0.9f
-                            completed -> 0.55f
-                            else -> 0.25f
-                        }
-                    )
-                )
+                .fillMaxWidth()
+                .aspectRatio(LEVEL_THUMB_ASPECT)
+                .clip(RoundedCornerShape(8.dp))
         ) {
-            Text(
-                text = stringResource(R.string.level_number, spec.levelId),
-                color = if (isNext) Color(0xFF1A1A0E) else Color(0xFFE8F0DC),
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Black,
-                maxLines = 1
+            Image(
+                painter = painterResource(levelThumbRes(spec.mapId)),
+                contentDescription = null, // ad hemen altinda yaziyor
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.matchParentSize()
             )
+
+            // KOYU PERDE. Kupur renkli ve parlak; uzerine binen numara
+            // madalyonunun okunur kalmasi buna bagli. Kilitli kartta perde
+            // daha koyu: kilit durumu RENKTEN BASKA bir kanaldan da
+            // okunmali ve kartin genel `alpha`si tek basina zayif kaliyordu.
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(Color(if (unlocked) 0x4D000000 else 0x99000000))
+            )
+
+            // Numara madalyonu — SOL USTTE, kupurun uzerinde.
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(4.dp)
+                    .size(30.dp)
+                    .clip(RoundedCornerShape(15.dp))
+                    // Tamamlanan kartin madalyonu da yesil okunur (0.55):
+                    // 0.25'te zemin degisikligi madalyonu yutuyordu ve kart
+                    // "bitmis" gorunmuyordu. Altin siradaki kart tek basina
+                    // en parlak (0.9) kalmaya devam eder.
+                    .background(
+                        borderColor.copy(
+                            alpha = when {
+                                isNext -> 0.95f
+                                completed -> 0.8f
+                                else -> 0.7f
+                            }
+                        )
+                    )
+            ) {
+                Text(
+                    text = stringResource(R.string.level_number, spec.levelId),
+                    color = if (isNext) Color(0xFF1A1A0E) else Color(0xFFE8F0DC),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Black,
+                    maxLines = 1
+                )
+            }
         }
 
         Spacer(Modifier.height(6.dp))

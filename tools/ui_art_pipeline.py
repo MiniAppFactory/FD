@@ -72,3 +72,46 @@ kb = os.path.getsize(p)/1024.0; total += kb
 print(f"  {'bg_camo':22s} {bg.size[0]}x{bg.size[1]}  {kb:7.1f} KB")
 
 print(f"\nTOPLAM: {total:.1f} KB ({total/1024:.2f} MB)")
+
+# -----------------------------------------------------------------------------
+# BOLUM KARTI KUCUK RESIMLERI
+# -----------------------------------------------------------------------------
+#
+# Kartlarda harita gorseli gosterilir. Kaynak olarak savas alani arka planlari
+# (`bg_level_01..11.webp`, 1920x1081) DOGRUDAN KULLANILAMAZ:
+#
+#   1920 x 1081 x 4 bayt = 7,92 MB / harita  ->  11 harita = **87 MB**
+#
+# Bolum seridi `horizontalScroll` (lazy DEGIL), yani 55 kartin hepsi ayni anda
+# besteleniyor ve 11 benzersiz bitmap'in tamami bellege girerdi. Galaxy S8'de
+# bu kesin OOM. Bu yuzden ayri, kucuk kupurler uretiliyor:
+#
+#   320 x 132 x 4 = 169 KB / harita  ->  11 harita = **1,86 MB**  (46 kat az)
+#
+# Kupur haritanin DIKEY ORTA seridinden alinir: rota oradan gecer, ustteki ve
+# alttaki dekor kenarlari kartta zaten okunmazdi.
+
+THUMB_W, THUMB_H = 320, 132
+
+def build_level_thumbs():
+    print("=== bolum karti kucuk resimleri ===")
+    total = 0.0
+    for i in range(1, 12):
+        src = os.path.join(OUT, f"bg_level_{i:02d}.webp")
+        if not os.path.isfile(src):
+            print(f"  ATLANDI (kaynak yok): {src}")
+            continue
+        im = Image.open(src).convert("RGB")
+        w, h = im.size
+        band = round(w * THUMB_H / THUMB_W)
+        top = max(0, (h - band) // 2)
+        im = im.crop((0, top, w, min(h, top + band))).resize((THUMB_W, THUMB_H), Image.LANCZOS)
+        name = f"thumb_level_{i:02d}"
+        path = os.path.join(OUT, name + ".webp")
+        im.save(path, "WEBP", quality=78, method=6)
+        kb = os.path.getsize(path) / 1024.0
+        total += kb
+        print(f"  {name:22s} {THUMB_W}x{THUMB_H}  {kb:7.1f} KB")
+    print(f"  kupur toplami: {total:.1f} KB")
+
+build_level_thumbs()

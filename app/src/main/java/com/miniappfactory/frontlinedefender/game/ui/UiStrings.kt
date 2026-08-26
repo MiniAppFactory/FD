@@ -1,5 +1,6 @@
 package com.miniappfactory.frontlinedefender.game.ui
 
+import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -105,6 +106,40 @@ fun mapNameRes(mapId: Int): Int = when (mapId) {
     11 -> R.string.map_name_11
     else -> R.string.map_name_01
 }
+
+/**
+ * Bolum kartinda gosterilen HARITA KUPURU.
+ *
+ * Savas alani arka planinin (`bg_level_NN`, 1920x1081) KENDISI DEGIL, ondan
+ * uretilmis 320x132'lik kupur. Sebep bellek: bolum seridi `horizontalScroll`
+ * (lazy degil), yani 55 kart ayni anda besteleniyor ve 11 benzersiz bitmap'in
+ * tamami bellege giriyor. Tam boy kullanilsaydi 11 x 7,92 MB = **87 MB**;
+ * kupurle **1,86 MB**. Galaxy S8'de aradaki fark OOM ile calisan uygulama
+ * arasindaki fark.
+ *
+ * Uretici: `tools/ui_art_pipeline.py` (`build_level_thumbs`).
+ *
+ * Biyom recolor'i kupurlere UYGULANMAZ: kart zaten "GECE" rozetiyle biyomu
+ * soyluyor ve 11 kupur yerine 55 kupur uretmek bellek kazancini geri verirdi.
+ */
+@DrawableRes
+fun levelThumbRes(mapId: Int): Int = when (mapId) {
+    1 -> R.drawable.thumb_level_01
+    2 -> R.drawable.thumb_level_02
+    3 -> R.drawable.thumb_level_03
+    4 -> R.drawable.thumb_level_04
+    5 -> R.drawable.thumb_level_05
+    6 -> R.drawable.thumb_level_06
+    7 -> R.drawable.thumb_level_07
+    8 -> R.drawable.thumb_level_08
+    9 -> R.drawable.thumb_level_09
+    10 -> R.drawable.thumb_level_10
+    11 -> R.drawable.thumb_level_11
+    else -> R.drawable.thumb_level_01
+}
+
+/** Kupurun en-boy orani (320/132). Kart yuksekligi bundan turer. */
+const val LEVEL_THUMB_ASPECT = 2.424f
 
 /**
  * Perde etiketi (KISIM I … KISIM V).

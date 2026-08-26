@@ -139,6 +139,18 @@ object Art {
     )
 
     /**
+     * [SecondaryButton] sanatinin SOL UCUNDAKI sekizgen ikon yuvasi.
+     *
+     * ⚠ ILK SURUMDE GOZ KARARI KONMUSTU (`padding(start = w * 0.055f)`) ve
+     * cihazda ikonlar yuvanin SOL-ALTINA kayip kenarindan tasti. Kutu artik
+     * olculdu: sanatin sol ucu 3x buyutulup sekizgenin IC kenari okundu.
+     *
+     * Kesirler butonun TAMAMINA goredir; kutu `ArtInset` semantigiyle
+     * (sol, ust, sag, alt kenar payi) yazilir.
+     */
+    val SecondaryIconSlot = ArtInset(0.070f, 0.203f, 0.785f, 0.242f)
+
+    /**
      * Modal panel govdesi — USTTE baslik seridi. 1040x720 px.
      *
      * ⚠ ALT SINIR CIHAZDA DUZELTILDI (Galaxy S8, 2026-08-26). Merkezden disa
@@ -345,17 +357,31 @@ fun ArtSecondaryButton(
         }
 
         if (icon != null) {
-            // Sekizgen yuva sanatin sol ucunda: x 0,02-0,20 · y 0,22-0,80.
-            Image(
-                painter = painterResource(icon),
-                contentDescription = null,
-                contentScale = ContentScale.Fit,
+            val h = maxHeight
+            // Ikon, OLCULEN yuvanin icine ORTALANIR. Once yuva kadar bir kutu
+            // konumlandirilir, sonra ikon o kutunun %72'sini kaplar — boylece
+            // ikonun kendi en-boy orani ne olursa olsun sekizgenin disina
+            // tasamaz ve merkezden kaymaz.
+            Box(
                 modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .padding(start = w * 0.055f)
-                    .fillMaxHeight(0.42f)
-                    .alpha(if (enabled) 0.95f else 0.45f)
-            )
+                    .matchParentSize()
+                    .padding(
+                        start = w * Art.SecondaryIconSlot.left,
+                        top = h * Art.SecondaryIconSlot.top,
+                        end = w * Art.SecondaryIconSlot.right,
+                        bottom = h * Art.SecondaryIconSlot.bottom
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Image(
+                    painter = painterResource(icon),
+                    contentDescription = null,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .fillMaxSize(0.72f)
+                        .alpha(if (enabled) 0.95f else 0.45f)
+                )
+            }
         }
     }
 }

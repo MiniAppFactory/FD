@@ -6,6 +6,48 @@ yalan soyleyebiliyorlardi; surum notu artik kodla ayni gecmisi paylasiyor.
 
 ---
 
+## 2026-08-26 (c) — BOLUM KARTLARINDA HARITA KUPURU + IKON HIZASI (v47)
+
+Kullanici iki sey bildirdi: ana menudeki ikincil buton ikonlari yuvadan
+kaymisti, ve bolum kartlari hâlâ eski gorunuyordu. Ikisi de kapandi.
+
+### Ikon hizasi — GOZ KARARI KONMUSTU, OLCULDU
+
+Ikincil butonun sol ucundaki sekizgen yuvaya ikon `padding(start = w * 0.055f)`
+ile konmustu; bu sayi OLCULMEMIS, tahmin edilmisti. Cihazda ikon yuvanin
+sol-altina kayip kenarindan tasti.
+
+Yuva artik olculu: sanatin sol ucu 3x buyutulup sekizgenin IC kenari okundu →
+`Art.SecondaryIconSlot = ArtInset(0.070, 0.203, 0.785, 0.242)`. Ikon once o
+kutuya konumlaniyor, sonra kutunun %72'sini kaplayacak sekilde ORTALANIYOR;
+yani ikonun kendi en-boy orani ne olursa olsun sekizgenin disina cikamiyor.
+
+### Bolum kartlarinda HARITA KUPURU
+
+Kart, oynanacak yerin neresi oldugunu yalnizca ADIYLA soyluyordu. Artik
+tepesinde haritanin kendisi var; oyuncu bolumu goruntusunden taniyor.
+
+- **Kupur AYRI bir varlik, savas arka plani DEGIL.** `bg_level_NN` 1920x1081
+  ve bolum seridi `horizontalScroll` (lazy DEGIL), yani 55 kart ayni anda
+  besteleniyor ve 11 benzersiz bitmap'in tamami bellege giriyor:
+      tam boy  11 x 7,92 MB = **87 MB**   -> Galaxy S8'de kesin OOM
+      kupur    11 x 0,17 MB = **1,86 MB** -> 46 kat az
+  Uretici `tools/ui_art_pipeline.py` (`build_level_thumbs`), 320x132, 118,8 KB.
+- **Dikey maliyet ~6 dp.** Kupur 43,7 dp (106 dp genislik / 2,424); yerine
+  gectigi numara madalyonu 38 dp'ydi. Numara ayri bir satir acmadi, kupurun
+  SOL USTUNE bindirildi — bu ekranda pay dar (ust seride plaka koyma denemesi
+  +32 dp ile kartlari kirpmisti).
+- Kupurun uzerine koyu perde biner ve **kilitli kartta perde daha koyu**:
+  kilit durumu renkten baska bir kanaldan da okunmali.
+- **Biyom recolor'i kupurlere uygulanmaz.** Kart zaten "GECE" rozetiyle biyomu
+  soyluyor; 11 yerine 55 kupur uretmek bellek kazancini geri verirdi.
+
+Kanit: `testDebugUnitTest lintDebug` yesil; cihazda kartlarin her birinin
+KENDI haritasini gosterdigi ve hicbir satirin kirpilmadigi, ikonlarin da
+yuvalara oturdugu ekran goruntusuyle dogrulandi.
+
+---
+
 ## 2026-08-26 (b) — ANA MENU: CEPHANELIK ve GOREVLER KISAYOLLARI (v46)
 
 Landing mockup'inda iki ikincil buton vardi, kodda yoktu. Eklendi.
