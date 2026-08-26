@@ -45,6 +45,9 @@ import com.miniappfactory.frontlinedefender.ui.theme.*
  * `ArtButtonTouchTargetTest` onu BURADAN okur — testin kendi kopyasi olsaydi
  * biri burayi 420'ye cekince test yesil kalirdi.
  */
+/** Erisilebilirlik dokunma hedefi tabani. Yuzde hesaplari bunu EZEMEZ. */
+private val MinTouchTarget = 44.dp
+
 internal val ResultModalMaxWidth = 480.dp
 
 /**
@@ -53,10 +56,21 @@ internal val ResultModalMaxWidth = 480.dp
  */
 internal val ResultModalInnerWidth = ResultModalMaxWidth - 24.dp - 28.dp
 
+/**
+ * Ana menu — oyuncunun gordugu ILK ekran.
+ *
+ * @param onOpenArmory null ise CEPHANELIK butonu HIC CIZILMEZ. Varsayilan
+ *   null cunku bu ekranin mevcut testleri ve onizlemeleri iki yeni argumani
+ *   vermek zorunda kalmasin; bagli olmayan bir cagri yeri menuyu BOZMAZ,
+ *   yalnizca kisayol gorunmez.
+ * @param onOpenMissions ayni sozlesme, GOREVLER butonu icin.
+ */
 @Composable
 fun MainMenuOverlay(
     gameEngine: GameEngine,
-    onStartGame: () -> Unit
+    onStartGame: () -> Unit,
+    onOpenArmory: (() -> Unit)? = null,
+    onOpenMissions: (() -> Unit)? = null
 ) {
     val highScore = gameEngine.saveManager.highScore
     var soundEnabled by remember { mutableStateOf(gameEngine.saveManager.soundEnabled) }
@@ -137,30 +151,40 @@ fun MainMenuOverlay(
         // binerdi. Burada tersini yapiyoruz: once her ogeye yuzde olarak
         // yukseklik payi ayrilir, genislik ORANDAN geri hesaplanir.
         //
-        //   baslik plakasi   %32
-        //   birincil buton   %21
-        //   disli + etiket   %17
-        //   bosluklar        %14
-        //   dis dolgu        %16
-        //                    ----
-        //                    %100
+        //   baslik plakasi     %30
+        //   birincil buton     %19
+        //   ikincil buton sat. %16
+        //   disli + etiket     %15
+        //   bosluk + dolgu     %20
+        //                      ----
+        //                      %100
         //
         // Ust sinir olarak ekran genisliginin bir yuzdesi de uygulanir ki
         // cok genis (tablet) ekranda plaka devlesip komik gorunmesin.
+        //
+        // ⚠ 44 dp TABANI YUZDEYI EZER. Ikincil butonlar ve disli
+        // `coerceAtLeast` ile dokunma tabaninin altina INEMEZ; cok kisa bir
+        // ekranda yuzde hesabi 36 dp verse bile taban kazanir. Erisilebilirlik
+        // yerlesim estetigine feda edilmez.
         // ---------------------------------------------------------------
         val availableHeight = maxHeight
         val availableWidth = maxWidth
 
         val headerWidth = minOf(
-            availableWidth * 0.86f,
-            availableHeight * 0.32f * Art.HeaderPlate.aspect
+            availableWidth * 0.80f,
+            availableHeight * 0.30f * Art.HeaderPlate.aspect
         )
         val primaryWidth = minOf(
-            availableWidth * 0.62f,
-            availableHeight * 0.21f * Art.PrimaryButton.aspect
+            availableWidth * 0.58f,
+            availableHeight * 0.19f * Art.PrimaryButton.aspect
         )
-        val gearSize = minOf(58.dp, availableHeight * 0.15f)
-        val gap = (availableHeight * 0.045f).coerceIn(6.dp, 16.dp)
+        // Genislik = 44 dp x oran, yani buton hicbir zaman 44 dp'den alcak olmaz.
+        val secondaryWidth = minOf(
+            availableWidth * 0.27f,
+            availableHeight * 0.16f * Art.SecondaryButton.aspect
+        ).coerceAtLeast(MinTouchTarget * Art.SecondaryButton.aspect)
+        val gearSize = minOf(56.dp, availableHeight * 0.15f).coerceAtLeast(MinTouchTarget)
+        val gap = (availableHeight * 0.035f).coerceIn(6.dp, 14.dp)
 
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -186,6 +210,45 @@ fun MainMenuOverlay(
                 modifier = Modifier.width(primaryWidth),
                 testTag = "play_game_button"
             )
+
+            // IKINCIL KISAYOLLAR — mockup'taki iki butonun karsiligi.
+            //
+            // Mockup "CAMPAIGN" ve "ARMORY" diyor; CAMPAIGN buraya
+            // KONULMADI cunku bu oyunda "HAREKATI BASLAT" ile ayni yere
+            // (bolum secim ekrani) gider ve ayni hedefe iki buton koymak
+            // oyuncuya bir secim varmis gibi yalan soyler. Yerine GOREVLER
+            // kondu: gercek, ayri ve o ana kadar YALNIZCA bolum secim
+            // ekranindan ulasilabilen bir yer.
+            //
+            // Ikisi de KOSULLU: cagri yeri lambda vermezse buton cizilmez.
+            if (onOpenArmory != null || onOpenMissions != null) {
+                Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+                    if (onOpenMissions != null) {
+                        ArtSecondaryButton(
+                            label = stringResource(R.string.mission_open),
+                            onClick = onOpenMissions,
+                            modifier = Modifier.width(secondaryWidth),
+                            // Sanatin sol ucundaki sekizgen yuva bos kalirsa
+                            // buton yarim cizilmis gorunuyor. Bu ikon
+                            // `spr_ic_objective_flag`: paket icinde vardi ama
+                            // hicbir yerden cagrilmiyordu (oksuz asset).
+                            icon = R.drawable.spr_ic_objective_flag,
+                            labelColor = ArtTextPrimary,
+                            testTag = "menu_open_missions"
+                        )
+                    }
+                    if (onOpenArmory != null) {
+                        ArtSecondaryButton(
+                            label = stringResource(R.string.shop_open),
+                            onClick = onOpenArmory,
+                            modifier = Modifier.width(secondaryWidth),
+                            icon = R.drawable.spr_ic_upgrade,
+                            labelColor = ArtTextPrimary,
+                            testTag = "menu_open_armory"
+                        )
+                    }
+                }
+            }
 
             // AYARLAR GIRISI.
             //

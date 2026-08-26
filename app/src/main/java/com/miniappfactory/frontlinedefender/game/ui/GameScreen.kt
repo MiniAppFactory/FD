@@ -244,6 +244,12 @@ fun GameScreen(
     /** Cephanelik (meta yukseltme dukkani) acik mi — LEVEL_SELECT ustunde katman. */
     var shopOpen by remember { mutableStateOf(false) }
 
+    // ANA MENUDEN acilan gorev paneli. `LevelSelectScreen` kendi
+    // `missionsOpen` durumunu ICINDE tutuyor ve o oyle KALIYOR — iki ekranin
+    // durumunu tek degiskende birlestirmek, bolum secimden menuye donuldugunde
+    // panelin kendiliginden acilmasina yol acardi.
+    var menuMissionsOpen by remember { mutableStateOf(false) }
+
     // Faz 10: YILDIZ ARBITRAJINI KAPATAN baglanti.
     //
     // "Us Tamiri" guclendiricisi kaybedilen us canini geri veriyor. Yildiz
@@ -583,10 +589,32 @@ fun GameScreen(
                     Box(modifier = Modifier.weight(1f)) {
                         MainMenuOverlay(
                             gameEngine = gameEngine,
-                            onStartGame = { gameEngine.openLevelSelect() }
+                            onStartGame = { gameEngine.openLevelSelect() },
+                            // CEPHANELIK ve GOREVLER artik ANA MENUDEN de
+                            // acilabiliyor. Ikisi de YENI EKRAN DEGIL —
+                            // bolum secim ekranindan zaten ulasilan aynı iki
+                            // panel, ayni durum degiskenleriyle. Tek degisen
+                            // giris noktasi sayisi.
+                            onOpenArmory = { shopOpen = true },
+                            onOpenMissions = { menuMissionsOpen = true }
                         )
                     }
                     BannerAdSlot(enabled = bannerEnabled)
+                }
+
+                // Iki panel de TAM EKRAN katman ve menunun USTUNDE: acikken
+                // "HAREKATI BASLAT"a kazara basilamaz.
+                if (shopOpen) {
+                    UpgradeShopScreen(
+                        progress = campaignProgress,
+                        onBack = { shopOpen = false }
+                    )
+                }
+                if (menuMissionsOpen) {
+                    MissionsScreen(
+                        progress = campaignProgress,
+                        onClose = { menuMissionsOpen = false }
+                    )
                 }
             }
             GameState.LEVEL_SELECT -> {

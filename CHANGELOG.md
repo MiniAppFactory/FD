@@ -6,6 +6,39 @@ yalan soyleyebiliyorlardi; surum notu artik kodla ayni gecmisi paylasiyor.
 
 ---
 
+## 2026-08-26 (b) — ANA MENU: CEPHANELIK ve GOREVLER KISAYOLLARI (v46)
+
+Landing mockup'inda iki ikincil buton vardi, kodda yoktu. Eklendi.
+
+- **GOREVLER** ve **CEPHANELIK** artik ana menuden de aciliyor. Ikisi de
+  YENI EKRAN DEGIL: bolum secim ekranindan zaten ulasilan ayni iki panel,
+  ayni durum ve ayni veri. Degisen tek sey giris noktasi sayisi.
+- **Mockup'taki "CAMPAIGN" butonu KONULMADI.** Bu oyunda "HAREKATI BASLAT"
+  ile ayni yere (bolum secim ekrani) gidiyor; ayni hedefe iki buton koymak
+  oyuncuya bir secim varmis gibi yalan soyler. Yerine GOREVLER kondu —
+  gercek, ayri ve o ana kadar yalnizca bolum secimden ulasilan bir yer.
+- Ikincil buton sanatinin sol ucundaki sekizgen yuva bos kalinca buton yarim
+  cizilmis gorunuyordu. GOREVLER'e `spr_ic_objective_flag`, CEPHANELIK'e
+  `spr_ic_upgrade` kondu. Birincisi **oksuz asset'ti** — paketteydi, hicbir
+  yerden cagrilmiyordu (HANDOVER acik isler §8).
+- Dikey butce yeniden bolusturuldu (%30 baslik / %19 birincil / %16 ikincil
+  satir / %15 disli). **44 dp dokunma tabani artik yuzdeyi EZIYOR**:
+  `coerceAtLeast(MinTouchTarget * oran)` ile ikincil butonlar ve disli, kisa
+  bir ekranda yuzde hesabi 36 dp verse bile 44 dp'nin altina inemiyor.
+- `MainMenuOverlay`in iki yeni parametresi de **varsayilani null**: cagri
+  yeri lambda vermezse buton hic cizilmez, yani bagli olmayan bir cagri yeri
+  (onizleme, test) menuyu bozmuyor.
+- `LevelSelectScreen` kendi `missionsOpen` durumunu ICINDE tutmaya devam
+  ediyor; menunun durumu AYRI (`menuMissionsOpen`). Tek degiskende
+  birlestirmek, bolum secimden menuye donuldugunde panelin kendiliginden
+  acilmasina yol acardi.
+
+Kanit: `testDebugUnitTest lintDebug` yesil, cihazda (Galaxy S8) iki butonun
+da dogru paneli actigi ve geri tusunun menuye dondugu ekran goruntusuyle
+dogrulandi.
+
+---
+
 ## 2026-08-26 — UI ART PACK v2 (menu / ayarlar / sonuc ekranlari) + UYGULAMA ICI DIL
 
 Yeni sanat paketi (`asset-pack/Frontline_Defender_assets_individual_full/`)
