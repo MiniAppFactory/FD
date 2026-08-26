@@ -408,11 +408,22 @@ fun GameScreen(
                 // Buradan ikinci bir `BattleReport` yollamak ayni olcumu iki
                 // kaynaktan gonderip alan bazinda maks alma kuralina gereksiz
                 // yuk bindirirdi.
+                if (gameEngine.isEliteMode.value) {
+                    // ELIT ZAFER — ayri muhasebe (ECONOMY_ANALYSIS C):
+                    // coin YOK, yildiz YOK, gorev sayaci OYNANMAZ; tek kalici
+                    // etki elit zafer sayaci. `lastClearResult` null kalir,
+                    // yani zafer modali coin satiri cizmez ve R3 "Cift Odeme"
+                    // teklifi (asagida doublable=0 uzerinden) hic acilmaz —
+                    // katlanacak taban odul yok.
+                    campaignProgress.onEliteCleared(gameEngine.levelSpec.levelId)
+                    lastClearResult = null
+                } else {
                 lastClearResult = campaignProgress.onLevelCleared(
                     levelId = gameEngine.levelSpec.levelId,
                     livesLeft = gameEngine.victoryStarHealth,
                     maxLives = gameEngine.levelSpec.maxBaseLives
                 )
+                }
                 // R3 — CARPILACAK TABAN YOKSA TEKLIF DE YOK.
                 //
                 // Eskiden kosul yalnizca `isRewardedOffered` idi, yani zafer
@@ -638,7 +649,18 @@ fun GameScreen(
                     Box(modifier = Modifier.weight(1f)) {
                         LevelSelectScreen(
                             progress = campaignProgress,
-                            onPlayLevel = { levelNo -> gameEngine.startNewGame(levelNo) },
+                            // `elite = false` ACIK: parametresiz varsayilan
+                            // "mevcut bayrak"tir (retry sozlesmesi icin) ve
+                            // buradan gelen her baslatma NORMALDIR.
+                            onPlayLevel = { levelNo -> gameEngine.startNewGame(levelNo, elite = false) },
+                            // ELIT SEVK: bilet ekonomide ODENDIKTEN sonra
+                            // motor elit bayrakla baslatilir. Bilet denemeye
+                            // degil SAVASA kesilir: retry ayni bilete dahil.
+                            onPlayElite = { levelNo ->
+                                if (campaignProgress.buyEliteTicket(levelNo)) {
+                                    gameEngine.startNewGame(levelNo, elite = true)
+                                }
+                            },
                             onBack = { gameEngine.returnToMainMenu() },
                             // CEPHANELIK girisi ARTIK BOLUM SECIM EKRANININ
                             // BASLIK SATIRINDA. Eskiden burada `TopEnd` +

@@ -516,6 +516,16 @@ class GameEngine(
     // Faz 4 — KAMPANYA DURUMU
     // ------------------------------------------------------------------------
 
+    /**
+     * ELIT MOD (ECONOMY_ANALYSIS C). Motor elit bilete/coine DOKUNMAZ — bilet
+     * ekonomide satin alinir, motor yalnizca "bu savas elit mi" bayragini tasir.
+     * Etkileri: us cani yarilanir (EconomyConfig.eliteLives), zafer skoru
+     * ELITE_SCORE_MULT ile carpilir, zafer ekonomiye onLevelCleared yerine
+     * onEliteCleared olarak gider (cagiran karar verir, bayragi buradan okur).
+     */
+    private val _eliteMode = MutableStateFlow(false)
+    val isEliteMode: StateFlow<Boolean> = _eliteMode.asStateFlow()
+
     private val _currentLevelId = MutableStateFlow(1)
     val currentLevelId: StateFlow<Int> = _currentLevelId.asStateFlow()
 
@@ -560,7 +570,14 @@ class GameEngine(
      * "tamir 20'yi asamaz ama savas 24 canla basliyor" turu sessiz bir
      * uyusmazlik dogar.
      */
-    val maxLives: Int get() = levelSpec.maxBaseLives + metaLivesBonus
+    val maxLives: Int
+        get() {
+            val base = levelSpec.maxBaseLives + metaLivesBonus
+            // Elit modda PAYDA da yarimdir: HUD "10/20" degil "10/10" okur.
+            // Aksi halde oyuncu elit kirpmayi "hasar aldim" sanirdi ve yildiz
+            // yuzdesi de yanlis paydadan hesaplanirdi.
+            return if (_eliteMode.value) EconomyConfig.eliteLives(base) else base
+        }
 
     /**
      * Bu savasta usse SIZAN dusman sayisi (kaybedilen can).
@@ -1009,7 +1026,14 @@ class GameEngine(
      * @param levelNo 1..22. Varsayilan degeri AKTIF bolum, yani parametresiz
      *   `startNewGame()` = "bu bolumu yeniden basla" (Retry / Restart).
      */
-    fun startNewGame(levelNo: Int = _currentLevelId.value) {
+    /**
+     * @param elite varsayilani MEVCUT bayrak: parametresiz cagri (Retry /
+     *   Restart) elit savasi ELIT olarak yeniden baslatir — oyuncu bileti
+     *   bir kez oder, deneme haklari bilete dahildir (tekrar odeme YOK;
+     *   odeme yalnizca bolum secim ekranindaki elit girisinden yapilir).
+     */
+    fun startNewGame(levelNo: Int = _currentLevelId.value, elite: Boolean = _eliteMode.value) {
+        _eliteMode.value = elite
         towers.clear()
         _towerCount.value = 0
         // Onceki savastan kalan ret mesaji yeni savasin uzerinde durmamali.
@@ -1037,7 +1061,13 @@ class GameEngine(
         // gercekten ayni butce olur.
         _gold.value = levelSpec.startingSupply + metaSupplyBonus +
             levelSpec.modifiers.startingSupplyBonus
-        _lives.value = levelSpec.maxBaseLives + metaLivesBonus
+        _lives.value = if (elite) {
+            // Elit: YARI US. Meta bonusu da yarilanir — yoksa maks Tahkimat
+            // (taban 20 + 10 meta) elit kirpmayi tek basina geri alirdi.
+            EconomyConfig.eliteLives(levelSpec.maxBaseLives + metaLivesBonus)
+        } else {
+            levelSpec.maxBaseLives + metaLivesBonus
+        }
         _score.value = 0
         _currentWaveIndex.value = 0
         // Yeni savas -> yukseltme kilidi yeniden kurulur (bkz.
@@ -1071,6 +1101,10 @@ class GameEngine(
      * bastan baslatiyordu.
      */
     fun returnToLevelSelect() {
+        // Sigorta: savastan cikan oyuncunun bir SONRAKI savasi, acikca elit
+        // baslatilmadikca normaldir. (LevelSelect zaten elite parametresini
+        // acik gecirir; bu satir parametresiz eski cagri yollarini korur.)
+        _eliteMode.value = false
         deselectAll()
         _gameSpeed.value = 1.0f
         _screenShake.value = Offset.Zero
@@ -2087,6 +2121,13 @@ class GameEngine(
             val completedIdx = _currentWaveIndex.value
             if (completedIdx >= levelWaves.lastIndex) {
                 // Victory!
+                if (_eliteMode.value) {
+                    // Elit skor carpani TEK NOKTADA, zafer aninda uygulanir.
+                    // Oldurme basina carpmak ayni carpani combo/satis gibi
+                    // ikincil yollara da sizdirir ve test edilemez hale
+                    // getirirdi; burada skorun tamami bir kez carpilir.
+                    _score.value = (_score.value * EconomyConfig.ELITE_SCORE_MULT).toInt()
+                }
                 _gameState.value = GameState.VICTORY
 
                 // Yildiz = kalan us cani YUZDESI (GDD B.3), mutlak can DEGIL.

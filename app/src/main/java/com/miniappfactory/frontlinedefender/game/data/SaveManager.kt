@@ -56,6 +56,10 @@ class SaveManager internal constructor(private val store: KeyValueStore) {
         private const val KEY_LIFETIME_EARNED = "eco_lifetime_earned"
         private const val KEY_LIFETIME_SPENT = "eco_lifetime_spent"
 
+        // Elit Sevk + Prestij (2026-08-26, ECONOMY_ANALYSIS C+B)
+        private const val KEY_ELITE_CLEARS = "eco_elite_clears"
+        private const val KEY_PRESTIGE_RANK = "eco_prestige_rank"
+
         private const val KEY_UPG_FIREPOWER = "eco_upg_firepower"
         private const val KEY_UPG_OPTICS = "eco_upg_optics"
         private const val KEY_UPG_SUPPLY = "eco_upg_supply"
@@ -344,6 +348,38 @@ class SaveManager internal constructor(private val store: KeyValueStore) {
         store.putInt(KEY_R1_COINS_PAID, state.coinsPaidToday)
     }
 
+    /**
+     * Bolum basina ELIT zafer sayisi ("7:2,12:1" bicimi — gorev ilerlemesiyle
+     * ayni encode dili). Yildizdan AYRI tutulur: elit yildiz vermez/dusurmez.
+     */
+    var eliteClears: Map<Int, Int>
+        get() = store.getString(KEY_ELITE_CLEARS, "")
+            .split(",")
+            .mapNotNull { entry ->
+                val parts = entry.split(":")
+                val level = parts.getOrNull(0)?.toIntOrNull() ?: return@mapNotNull null
+                val count = parts.getOrNull(1)?.toIntOrNull() ?: return@mapNotNull null
+                if (level > 0 && count > 0) level to count else null
+            }
+            .toMap()
+        set(value) {
+            store.putString(
+                KEY_ELITE_CLEARS,
+                value.entries
+                    .filter { it.value > 0 }
+                    .sortedBy { it.key }
+                    .joinToString(",") { "${it.key}:${it.value}" },
+            )
+        }
+
+    /** Prestij nisani kademesi (0..PRESTIGE_MAX). Tamamen kozmetik. */
+    var prestigeRank: Int
+        get() = store.getInt(KEY_PRESTIGE_RANK, 0)
+            .coerceIn(0, EconomyConfig.PRESTIGE_MAX)
+        set(value) {
+            store.putInt(KEY_PRESTIGE_RANK, value.coerceIn(0, EconomyConfig.PRESTIGE_MAX))
+        }
+
     var boostedReplaysUsedToday: Int
         get() = store.getInt(KEY_BOOSTED_REPLAYS, 0).coerceAtLeast(0)
         set(value) {
@@ -525,6 +561,8 @@ class SaveManager internal constructor(private val store: KeyValueStore) {
     fun resetProgress() {
         store.keys().filterNot { it in PRESERVED_ON_RESET }.forEach { store.remove(it) }
         store.putInt(KEY_SAVE_VERSION, EconomyConfig.SAVE_VERSION)
+        store.remove(KEY_ELITE_CLEARS)
+        store.remove(KEY_PRESTIGE_RANK)
     }
 
     // =================================================================================

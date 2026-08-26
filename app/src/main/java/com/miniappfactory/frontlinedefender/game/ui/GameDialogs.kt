@@ -281,13 +281,20 @@ fun MainMenuOverlay(
         // yukseklik butcesini bozardi ve skor 0 iken satir kaybolunca tum
         // menu zipllardi. Kosede duran bir cip, varligi ve yoklugu duzeni
         // DEGISTIRMEZ.
+        // SAG UST KOSE SUTUNU: yuksek skor + prestij nisani. Ikisi de
+        // yoklugunda yer kaplamaz; duzen degismez.
+        Column(
+            horizontalAlignment = Alignment.End,
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(10.dp)
+        ) {
         if (highScore > 0) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(5.dp),
                 modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(10.dp)
                     .background(
                         SleekSurfaceCard.copy(alpha = 0.85f),
                         RoundedCornerShape(10.dp)
@@ -308,6 +315,38 @@ fun MainMenuOverlay(
                     maxLines = 1
                 )
             }
+        }
+        // PRESTIJ NISANI (ECONOMY_ANALYSIS B) — mockup'taki "COMMANDER"
+        // rozetinin GERCEK VERIYLE dolmus hali. Rank 0'da hic cizilmez:
+        // uydurma unvan gosterilmez.
+        val prestige = gameEngine.saveManager.prestigeRank
+        if (prestige > 0) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                modifier = Modifier
+                    .background(
+                        SleekSurfaceCard.copy(alpha = 0.85f),
+                        RoundedCornerShape(10.dp)
+                    )
+                    .border(1.dp, Color(0xFF6B4F14), RoundedCornerShape(10.dp))
+                    .padding(horizontal = 10.dp, vertical = 5.dp)
+                    .testTag("prestige_chip")
+            ) {
+                SpriteIcon(
+                    id = R.drawable.spr_ic_victory_star,
+                    size = 14.dp,
+                    contentDescription = null
+                )
+                Text(
+                    text = stringResource(prestigeNameRes(prestige)),
+                    color = Color(0xFFF1C95D),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp,
+                    maxLines = 1
+                )
+            }
+        }
         }
 
         if (settingsOpen) {
@@ -440,17 +479,28 @@ fun VictoryModal(
                 // Baslik ARTIK sanat plakasinin uzerinde. Metin plakaya
                 // GOMULU DEGIL; `AutoShrinkText` ile ic alana cizilir, yani
                 // TR/EN ve `fontScale` degisimleri hâlâ calisir.
+                // ELIT zaferde baslik degisir ve ALTIN yazilir — oyuncunun
+                // parayla aldigi meydan okumanin karsiligi gorunur olmali.
+                val elite = gameEngine.isEliteMode.collectAsState().value
                 ArtHeaderPlate(
-                    title = stringResource(R.string.dialog_victory_title),
+                    title = stringResource(
+                        if (elite) R.string.elite_victory_title else R.string.dialog_victory_title
+                    ),
                     modifier = Modifier.fillMaxWidth(0.62f),
-                    titleColor = ArtTextPrimary,
+                    titleColor = if (elite) Color(0xFFF1C95D) else ArtTextPrimary,
                     titleSize = 24.sp,
                     testTag = "victory_title_plate"
                 )
 
                 // 3 Stars Display — Faz 3: asset pack icon_victory_star.
                 // Kazanilmayan yildiz ayni sprite'in soluk/gri hali (tek dosya).
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                //
+                // ELIT zaferde yildiz satiri HIC cizilmez: elit sonucu kayda
+                // yildiz yazmaz (GameScreen elit dalinda onLevelCleared
+                // cagrilmiyor) ve kaydedilmeyecek bir yildizi gostermek
+                // "yildizim dustu mu" kafasi yaratirdi. Elit'in karsiligi
+                // ALTIN baslik + kalici elit zafer sayacidir.
+                if (!elite) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     for (i in 1..3) {
                         val isEarned = i <= stars
                         SpriteIcon(
@@ -514,7 +564,10 @@ fun VictoryModal(
                     // SIRADAKI HEDEF. Yalnizca 3 yildizin altindayken ve hedef
                     // gercekten ulasilabilirken gosterilir; 3 yildizda "daha
                     // iyisini yap" demek anlamsiz olurdu.
-                    if (stars < 3) {
+                    // Elit'te yildiz IPUCU da yok: kaydedilmeyen bir yildiz
+                    // icin "su kadar sizinti daha az = 3 yildiz" soylemek
+                    // bos bir hedef gosterir.
+                    if (!elite && stars < 3) {
                         val needed = healthNeededForStars(
                             targetStars = 3,
                             maxLives = gameEngine.levelSpec.maxBaseLives.coerceAtLeast(1)

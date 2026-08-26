@@ -41,6 +41,51 @@ class CampaignProgressImpl(
     private var missionState by mutableStateOf(saveManager.loadMissionState())
     private var requisition by mutableStateOf(saveManager.loadRequisitionState())
     private var boostedReplaysToday by mutableStateOf(saveManager.boostedReplaysUsedToday)
+
+    // ---- Elit Sevk + Prestij (ECONOMY_ANALYSIS C+B) --------------------------
+    private var eliteClearsState by mutableStateOf(saveManager.eliteClears)
+    private var prestigeRankState by mutableStateOf(saveManager.prestigeRank)
+
+    /** Bolumun elit zafer sayisi (0 = hic). */
+    override fun eliteClearsOf(levelId: Int): Int = eliteClearsState[levelId] ?: 0
+
+    val prestigeRank: Int get() = prestigeRankState
+
+    override fun eliteDecision(levelId: Int): EliteDecision = eliteAllowed(wallet, levelId)
+
+    /**
+     * Bileti SATIN ALIR (cuzdan duser, kalicilasir) ve basari dondurur.
+     * Savasin baslatilmasi CAGIRANIN isi — ekonomi motoru tanimaz.
+     */
+    fun buyEliteTicket(levelId: Int): Boolean {
+        if (eliteAllowed(wallet, levelId) !is EliteDecision.Allowed) return false
+        commitWallet(applyEliteTicket(wallet, levelId))
+        return true
+    }
+
+    /**
+     * Elit zafer kaydi. `onLevelCleared`in elit karsiligi — COIN YOK, YILDIZ
+     * YOK, gorev sayaclari OYNANMAZ (elit gelir uretmedigi icin gorevle
+     * odullendirmek arka kapidan coin basmak olurdu). Tek etki: kalici sayac.
+     */
+    fun onEliteCleared(levelId: Int) {
+        val updated = eliteClearsState + (levelId to (eliteClearsOf(levelId) + 1))
+        eliteClearsState = updated
+        saveManager.eliteClears = updated
+    }
+
+    fun prestigeDecision(): PrestigeDecision = prestigeAllowed(wallet, prestigeRankState)
+
+    fun buyPrestige(): Boolean {
+        val d = prestigeAllowed(wallet, prestigeRankState)
+        if (d !is PrestigeDecision.Allowed) return false
+        val (w, newRank) = applyPrestige(wallet, prestigeRankState)
+        commitWallet(w)
+        prestigeRankState = newRank
+        saveManager.prestigeRank = newRank
+        return true
+    }
+
     private var daily by mutableStateOf<List<Mission>>(emptyList())
 
     /**

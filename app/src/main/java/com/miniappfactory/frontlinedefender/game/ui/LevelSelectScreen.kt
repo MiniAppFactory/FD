@@ -36,6 +36,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.miniappfactory.frontlinedefender.R
 import com.miniappfactory.frontlinedefender.game.data.SaveManager
+import com.miniappfactory.frontlinedefender.game.economy.EliteDecision
+import com.miniappfactory.frontlinedefender.game.economy.eliteTicketPrice
 import com.miniappfactory.frontlinedefender.game.economy.Mission
 import com.miniappfactory.frontlinedefender.game.economy.WeeklyMission
 import com.miniappfactory.frontlinedefender.game.model.GameConfig
@@ -91,6 +93,18 @@ interface CampaignProgress {
     // test sahteleri) hicbir sey yazmadan derlenmeye devam eder ve panel girisi
     // kendini gizler.
     // ---------------------------------------------------------------------------
+
+    // ---------------------------------------------------------------------------
+    // ELIT SEVK yuzeyi (ECONOMY_ANALYSIS C). Varsayilanlar "ozellik yok" der:
+    // elit tasimayan implementasyon hicbir sey yazmadan derlenir ve UI kendini
+    // gizler (gorev paneliyle ayni sozlesme).
+    // ---------------------------------------------------------------------------
+
+    /** Elit bilet karari; NotCleared donen bolumde elit girisi cizilmez. */
+    fun eliteDecision(levelId: Int): EliteDecision = EliteDecision.NotCleared
+
+    /** Bolumun elit zafer sayisi (rozet icin). */
+    fun eliteClearsOf(levelId: Int): Int = 0
 
     /** Bugunun 3 gorevi. Bos liste = panel girisi cizilmez. */
     val todaysMissions: List<Mission> get() = emptyList()
@@ -159,6 +173,11 @@ fun LevelSelectScreen(
     progress: CampaignProgress,
     onPlayLevel: (Int) -> Unit,
     onBack: () -> Unit,
+    /**
+     * Elit sevk istegi (bilet odemesi CAGIRANDA). null = ozellik kapali;
+     * tamamlanmis karta dokunmak eskisi gibi dogrudan tekrar baslatir.
+     */
+    onPlayElite: ((Int) -> Unit)? = null,
     /**
      * Faz 17: Cephanelik girisi ARTIK BU EKRANIN ISI.
      *
@@ -262,6 +281,13 @@ fun LevelSelectScreen(
     var pendingUnlock by remember { mutableStateOf<GameConfig.LevelSpec?>(null) }
 
     /**
+     * TEKRAR SECIMI bekleyen TAMAMLANMIS bolum (normal mi elit mi). `null` =
+     * pencere yok. Yalnizca [onPlayElite] bagliyken kullanilir.
+     */
+    var pendingReplay by remember { mutableStateOf<GameConfig.LevelSpec?>(null) }
+
+
+    /**
      * Sevk kapisi: perde acilisiysa ve kart daha once gorulmediyse ONCE kart,
      * sonra savas. Diger her durumda dogrudan savas — yani bu kapi kampanya
      * bolumlerinin 50'sinde hicbir sey yapmaz.
@@ -273,9 +299,19 @@ fun LevelSelectScreen(
             !store.isSeen(ActIntro.actOf(levelId))
         ) {
             pendingIntroLevel = levelId
-        } else {
-            onPlayLevel(levelId)
+            return
         }
+        // TAMAMLANMIS bolumde tekrar SECIMLIDIR (normal / elit) — ama yalnizca
+        // ozellik bagliysa VE bolum gercekten elit karari uretebiliyorsa.
+        // Ilk temizlik yolunda hicbir sey degismez.
+        if (onPlayElite != null &&
+            progress.starsFor(levelId) > 0 &&
+            progress.eliteDecision(levelId) !is EliteDecision.NotCleared
+        ) {
+            pendingReplay = GameConfig.levelSpec(levelId)
+            return
+        }
+        onPlayLevel(levelId)
     }
     val missionsAvailable = progress.todaysMissions.isNotEmpty() ||
         progress.weeklyMissions.isNotEmpty()
@@ -607,6 +643,24 @@ fun LevelSelectScreen(
             )
         }
 
+        pendingReplay?.let { spec ->
+            ReplayChoiceOverlay(
+                spec = spec,
+                decision = progress.eliteDecision(spec.levelId),
+                eliteClears = progress.eliteClearsOf(spec.levelId),
+                balance = progress.coins,
+                onNormal = {
+                    pendingReplay = null
+                    onPlayLevel(spec.levelId)
+                },
+                onElite = {
+                    pendingReplay = null
+                    onPlayElite?.invoke(spec.levelId)
+                },
+                onCancel = { pendingReplay = null },
+            )
+        }
+
         pendingUnlock?.let { spec ->
             UnlockConfirmOverlay(
                 spec = spec,
@@ -641,6 +695,165 @@ fun LevelSelectScreen(
  * acilir, ne kadar eksik oldugu yazar ve onay dugmesi kapalidir. ("Ret sessiz
  * olamaz" — bu deponun insa cubugunda zaten uyguladigi ilke.)
  */
+/**
+ * TEKRAR SECIMI — tamamlanmis bolumde normal tekrar mi, ELIT SEVK mi?
+ *
+ * ⛔ SANAT YUZEYI YOK — BILINCLI. `UnlockConfirmOverlay` ile ayni cihaz
+ * kisiti: bu tur onay pencerelerine konan sablon sanati Galaxy S8'de
+ * pencerenin `Surface` butonlarini metinsiz birakiyordu (dort denemeyle
+ * olculdu, ayrinti asagidaki overlay'in yorumunda). Duz Surface kaliyor.
+ *
+ * ELIT KURALLARI (ECONOMY_ANALYSIS C):
+ *  · bilet = bolumun 1-yildiz odulunun yarisi; REZERV kurali gecerli,
+ *  · yari us caniyla oynanir, odul coin DEGIL: skor x1,5 + kalici sayac,
+ *  · bilet SAVASA kesilir — yenilgi sonrasi TEKRAR DENE ayni bilete dahil.
+ */
+@Composable
+private fun ReplayChoiceOverlay(
+    spec: GameConfig.LevelSpec,
+    decision: EliteDecision,
+    eliteClears: Int,
+    balance: Int,
+    onNormal: () -> Unit,
+    onElite: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xD9000000))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onCancel
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = Color(0xFF1E2A18),
+            border = BorderStroke(1.dp, Color(0x66A8C48C)),
+            modifier = Modifier
+                .widthIn(max = 400.dp)
+                .padding(24.dp)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = {}
+                )
+                .testTag("replay_choice")
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = stringResource(R.string.elite_choice_title),
+                    color = Color(0xFFE8F0DC),
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Black,
+                    maxLines = 1
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = stringResource(
+                        R.string.elite_choice_body,
+                        spec.levelId,
+                        stringResource(mapNameRes(spec.mapId))
+                    ),
+                    color = Color(0xFFDCE8CC),
+                    fontSize = 12.sp,
+                    textAlign = TextAlign.Center
+                )
+                if (eliteClears > 0) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = stringResource(R.string.elite_clears_badge, eliteClears),
+                        color = Color(0xFFFFD54F),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
+                // Elit sartlari — oyuncu neye para verdigini GORMELI.
+                Text(
+                    text = stringResource(R.string.elite_terms),
+                    color = Color(0x99C5D6B4),
+                    fontSize = 11.sp,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(Modifier.height(14.dp))
+
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color(0xFF2A3320),
+                        modifier = Modifier
+                            .clickable(onClick = onNormal)
+                            .testTag("replay_normal")
+                    ) {
+                        Text(
+                            text = stringResource(R.string.level_replay),
+                            color = Color(0xFFC5D6B4),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp)
+                        )
+                    }
+                    val affordable = decision is EliteDecision.Allowed
+                    val price = when (decision) {
+                        is EliteDecision.Allowed -> decision.price
+                        is EliteDecision.InsufficientFunds -> decision.price
+                        is EliteDecision.ReserveLocked -> decision.price
+                        else -> eliteTicketPrice(spec.levelId)
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = if (affordable) Color(0xFF6B4F14) else Color(0xFF2A3320),
+                        modifier = Modifier
+                            .clickable(enabled = affordable, onClick = onElite)
+                            .testTag("replay_elite")
+                    ) {
+                        Text(
+                            text = stringResource(R.string.elite_deploy_price, price),
+                            color = if (affordable) Color(0xFFF1C95D) else Color(0x66C5D6B4),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp)
+                        )
+                    }
+                }
+                // Rezerv/bakiye engeli: sebep GORUNUR, sessiz devre disi degil.
+                when (decision) {
+                    is EliteDecision.InsufficientFunds -> {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = stringResource(R.string.level_unlock_short, decision.shortfall),
+                            color = Color(0xFFE59B9B),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    is EliteDecision.ReserveLocked -> {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = stringResource(R.string.elite_reserve_locked, decision.reserve),
+                            color = Color(0xFFE59B9B),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                    else -> Unit
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun UnlockConfirmOverlay(
     spec: GameConfig.LevelSpec,

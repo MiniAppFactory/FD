@@ -666,6 +666,88 @@ enum class AdOutcome {
 }
 
 /** R1 "Tedarik Talebi" gunluk durumu. Gun donusunde sifirlanir. */
+// =============================================================================
+// ELIT SEVK — saf muhasebe (ECONOMY_ANALYSIS S1 emicisi)
+// =============================================================================
+
+/** Elit bilet fiyati: 1-yildiz odulunun yarisi, 10'a yuvarlanmis. */
+fun eliteTicketPrice(level: Int): Int = (levelReward(level, 1) / 2 / 10) * 10
+
+/**
+ * Elit sevk karari. [PurchaseDecision] ile AYNI dil: UI karari degil,
+ * muhasebe karari; Compose kurmadan test edilir.
+ */
+sealed class EliteDecision {
+    data class Allowed(val price: Int, val balanceAfter: Int) : EliteDecision()
+
+    /** Bolum hic temizlenmemis — elit, ZAFERIN uzerine kurulur. */
+    data object NotCleared : EliteDecision()
+
+    data class InsufficientFunds(val price: Int, val shortfall: Int) : EliteDecision()
+
+    /**
+     * REZERV kurali burada da gecerli: elit bilet, siradaki bolumun kilidini
+     * odeyemez hale getiremez (GDD soft-lock garantisi meta agacla sinirli
+     * degil — coin dusuren HER yol icin gecerli).
+     */
+    data class ReserveLocked(val price: Int, val reserve: Int, val shortfall: Int) : EliteDecision()
+}
+
+fun eliteAllowed(wallet: PlayerWallet, level: Int): EliteDecision {
+    val price = eliteTicketPrice(level)
+    if (level !in wallet.clearedLevels) return EliteDecision.NotCleared
+    if (wallet.coins < price) {
+        return EliteDecision.InsufficientFunds(price, price - wallet.coins)
+    }
+    val reserve = reserveFor(wallet)
+    val spendable = spendableBalance(wallet.coins, reserve)
+    if (spendable < price) {
+        return EliteDecision.ReserveLocked(price, reserve, price - spendable)
+    }
+    return EliteDecision.Allowed(price, wallet.coins - price)
+}
+
+/** Bileti cuzdandan duser. Cagiran [eliteAllowed]'in Allowed dondugunu garanti eder. */
+fun applyEliteTicket(wallet: PlayerWallet, level: Int): PlayerWallet {
+    val d = eliteAllowed(wallet, level)
+    require(d is EliteDecision.Allowed) { "elit bilet alinamaz: $d" }
+    return wallet.debited(d.price)
+}
+
+// =============================================================================
+// PRESTIJ NISANLARI — saf muhasebe (ECONOMY_ANALYSIS B emicisi)
+// =============================================================================
+
+/** Siradaki nisanin fiyati; [currentRank] tavandaysa null. */
+fun prestigeCost(currentRank: Int): Int? =
+    EconomyConfig.PRESTIGE_COSTS.getOrNull(currentRank)
+
+sealed class PrestigeDecision {
+    data class Allowed(val price: Int, val balanceAfter: Int) : PrestigeDecision()
+    data object MaxRank : PrestigeDecision()
+    data class InsufficientFunds(val price: Int, val shortfall: Int) : PrestigeDecision()
+    data class ReserveLocked(val price: Int, val reserve: Int, val shortfall: Int) : PrestigeDecision()
+}
+
+fun prestigeAllowed(wallet: PlayerWallet, currentRank: Int): PrestigeDecision {
+    val price = prestigeCost(currentRank) ?: return PrestigeDecision.MaxRank
+    if (wallet.coins < price) {
+        return PrestigeDecision.InsufficientFunds(price, price - wallet.coins)
+    }
+    val reserve = reserveFor(wallet)
+    val spendable = spendableBalance(wallet.coins, reserve)
+    if (spendable < price) {
+        return PrestigeDecision.ReserveLocked(price, reserve, price - spendable)
+    }
+    return PrestigeDecision.Allowed(price, wallet.coins - price)
+}
+
+fun applyPrestige(wallet: PlayerWallet, currentRank: Int): Pair<PlayerWallet, Int> {
+    val d = prestigeAllowed(wallet, currentRank)
+    require(d is PrestigeDecision.Allowed) { "prestij alinamaz: $d" }
+    return wallet.debited(d.price) to (currentRank + 1)
+}
+
 data class RequisitionState(
     val filledViewsToday: Int = 0,
     val coinsPaidToday: Int = 0,

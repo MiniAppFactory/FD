@@ -26,6 +26,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.miniappfactory.frontlinedefender.R
 import com.miniappfactory.frontlinedefender.game.economy.CampaignProgressImpl
+import com.miniappfactory.frontlinedefender.game.economy.PrestigeDecision
+import com.miniappfactory.frontlinedefender.game.economy.EconomyConfig
 import com.miniappfactory.frontlinedefender.game.economy.MetaUpgrades
 import com.miniappfactory.frontlinedefender.game.economy.PurchaseDecision
 import com.miniappfactory.frontlinedefender.game.economy.UpgradeLine
@@ -157,6 +159,14 @@ fun UpgradeShopScreen(
                             onBought = { buyTick++ }
                         )
                     }
+                }
+                // PRESTIJ NISANI — 6. kart (ECONOMY_ANALYSIS B). `UpgradeLine`
+                // enum'una EKLENMEDI: o enum `MetaUpgrades` matematigine ve
+                // rank kapilarina bagli; kozmetik bir kalemi oraya sokmak
+                // ekonomi kapilarini prestije de uygulardi. Ayri kart, ayni
+                // sablon dili.
+                key(buyTick) {
+                    PrestigeCard(progress = progress, onBought = { buyTick++ })
                 }
             }
         }
@@ -429,3 +439,210 @@ private fun effectValue(line: UpgradeLine, rank: Int): Int {
         UpgradeLine.SALVAGE -> (m.salvageRatio * 100).toInt()
     }
 }
+
+/**
+ * Prestij Nisani karti — tamamen KOZMETIK derin emici (toplam 19.900).
+ *
+ * [UpgradeCard] ile ayni sablon yerlesimi; kopya olmasinin sebebi
+ * `UpgradeLine`a bagimli olmamasi (bkz. cagri yerindeki not).
+ */
+@Composable
+private fun PrestigeCard(
+    progress: CampaignProgressImpl,
+    onBought: () -> Unit
+) {
+    val rank = progress.prestigeRank
+    val decision = progress.prestigeDecision()
+    val satinAlinabilir = decision is PrestigeDecision.Allowed
+
+    BoxWithConstraints(
+        modifier = Modifier
+            .width(168.dp)
+            .aspectRatio(560f / 747f)
+            .then(
+                if (satinAlinabilir) {
+                    Modifier.clickable { if (progress.buyPrestige()) onBought() }
+                } else Modifier
+            )
+            .testTag("prestige_card")
+    ) {
+        val w = maxWidth
+        val h = maxHeight
+
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .padding(
+                    start = w * 0.110f,
+                    top = h * 0.085f,
+                    end = w * 0.116f,
+                    bottom = h * 0.615f
+                )
+                .fillMaxSize()
+                .background(Color(0xFF141A0E))
+        ) {
+            Image(
+                painter = painterResource(R.drawable.spr_ic_victory_star),
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize(0.62f)
+            )
+        }
+
+        Image(
+            painter = painterResource(R.drawable.ui_card_shop),
+            contentDescription = null,
+            contentScale = ContentScale.FillBounds,
+            modifier = Modifier.matchParentSize()
+        )
+
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .padding(start = w * 0.115f, top = h * 0.077f)
+                .size(w * 0.165f)
+        ) {
+            AutoShrinkText(
+                text = stringResource(R.string.level_number, rank),
+                color = Color(0xFFEAF2DC),
+                maxFontSize = 13.sp,
+                minFontSize = 9.sp,
+                fontWeight = FontWeight.Black,
+                maxLines = 1,
+                textAlign = TextAlign.Center
+            )
+        }
+
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .padding(
+                    start = w * 0.14f,
+                    end = w * 0.14f,
+                    top = h * 0.408f,
+                    bottom = h * 0.492f
+                )
+                .fillMaxSize()
+        ) {
+            AutoShrinkText(
+                text = stringResource(R.string.prestige_title),
+                color = Color(0xFFE8F0DC),
+                fontWeight = FontWeight.Black,
+                maxFontSize = 11.5.sp,
+                minFontSize = 7.sp,
+                maxLines = 1,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        Box(
+            contentAlignment = Alignment.CenterStart,
+            modifier = Modifier
+                .padding(
+                    start = w * 0.285f,
+                    end = w * 0.13f,
+                    top = h * 0.478f,
+                    bottom = h * 0.392f
+                )
+                .fillMaxSize()
+        ) {
+            AutoShrinkText(
+                text = if (rank >= EconomyConfig.PRESTIGE_MAX) {
+                    stringResource(R.string.prestige_effect_max)
+                } else {
+                    stringResource(
+                        R.string.prestige_effect_next,
+                        stringResource(prestigeNameRes(rank + 1))
+                    )
+                },
+                color = Color(0xFFAAB894),
+                maxFontSize = 9.sp,
+                minFontSize = 7.sp,
+                maxLines = 2,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        Box(
+            contentAlignment = Alignment.CenterStart,
+            modifier = Modifier
+                .padding(
+                    start = w * 0.285f,
+                    end = w * 0.13f,
+                    top = h * 0.605f,
+                    bottom = h * 0.315f
+                )
+                .fillMaxSize()
+        ) {
+            Text(
+                text = stringResource(
+                    R.string.prestige_rank_label, rank, EconomyConfig.PRESTIGE_MAX
+                ),
+                color = Color(0xFFD8C46A),
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1
+            )
+        }
+
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(3.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .padding(top = h * 0.695f)
+                .align(Alignment.TopCenter)
+        ) {
+            repeat(EconomyConfig.PRESTIGE_MAX) { i ->
+                Box(
+                    Modifier
+                        .size(if (i < rank) 8.dp else 6.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(if (i < rank) SleekGold else Color(0xFF49533E))
+                )
+            }
+        }
+
+        val etiket = when (decision) {
+            is PrestigeDecision.Allowed -> stringResource(R.string.shop_buy, decision.price)
+            is PrestigeDecision.MaxRank -> stringResource(R.string.shop_max)
+            is PrestigeDecision.InsufficientFunds ->
+                stringResource(R.string.shop_short, decision.shortfall)
+            is PrestigeDecision.ReserveLocked ->
+                stringResource(R.string.shop_reserve_blocked)
+        }
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .padding(
+                    start = w * 0.16f,
+                    end = w * 0.16f,
+                    top = h * 0.806f,
+                    bottom = h * 0.092f
+                )
+                .fillMaxSize()
+                .testTag("prestige_buy")
+        ) {
+            AutoShrinkText(
+                text = etiket,
+                color = if (satinAlinabilir) Color(0xFFDCE8CC) else Color(0x99C5D6B4),
+                maxFontSize = 10.sp,
+                minFontSize = 7.sp,
+                fontWeight = FontWeight.Black,
+                maxLines = 1,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    }
+}
+
+/** Nisan adi — kademe 1..5. */
+fun prestigeNameRes(rank: Int): Int = when (rank.coerceIn(1, 5)) {
+    1 -> R.string.prestige_name_1
+    2 -> R.string.prestige_name_2
+    3 -> R.string.prestige_name_3
+    4 -> R.string.prestige_name_4
+    else -> R.string.prestige_name_5
+}
+

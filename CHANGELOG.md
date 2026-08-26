@@ -6,6 +6,58 @@ yalan soyleyebiliyorlardi; surum notu artik kodla ayni gecmisi paylasiyor.
 
 ---
 
+## 2026-08-27 — ELIT SEVK + PRESTIJ NISANLARI: iki yeni coin emicisi (v53)
+
+ECONOMY_ANALYSIS'in S1 bulgusuna kullanici karari: "C+B birlikte". 3 yildiz
+bandinin 45.295 olu coin fazlasi icin iki emici eklendi.
+
+### C — ELIT SEVK (tekrarlanabilir emici)
+- Tamamlanmis bolum, bilet karsiligi YARI US CANIYLA tekrar oynanir. Bilet =
+  1-yildiz odulunun yarisi, 10'a yuvarlanmis (L7 160 -> L55 880; ortalama 472).
+  Elle tablo YOK: oran sabit, gelir egrisi degisirse bilet kendiliginden
+  olceklenir.
+- Odul coin DEGIL (enflasyon yasagi): skor x1,5 + kalici "Elit zafer" sayaci.
+  Yildiz da YAZILMAZ; zafer modali elitte yildiz satirini ve yildiz ipucunu
+  hic cizmez, baslik ALTIN "ELIT ZAFER!" olur.
+- BILET SAVASA KESILIR: yenilgi sonrasi TEKRAR DENE ayni bilete dahil
+  (motorda elit bayragi retry'da korunur; bolum secimden her baslatma acikca
+  elite=false). Rezerv kurali bilete de uygulanir — soft-lock garantisi.
+- Neden CAN kirpildi (Tedarik degil): baslangic Tedariki dalga ureticisinin
+  SPI sozlesmesine bagli; kirpmak erken bolumlerde cozulemezlik uretirdi.
+  Can yarilamak kule matematigini degistirmez. HUD paydasi da yarim okur
+  (10/10), yoksa oyuncu kirpmayi hasar sanirdi.
+- Cihazda olculen ilk elit kosu 4. dalgada dustu — meydan okuma GERCEK.
+
+### B — PRESTIJ NISANLARI (derin tek seferlik emici)
+- 5 kademe, tamamen KOZMETIK: Bronz/Gumus/Altin/Platin/Elmas Nisan.
+  Fiyatlar 1.500/2.600/3.800/5.200/6.800 = toplam 19.900. Rezerv kurali
+  gecerli; son nisan en kotu bandin fazlasinin (9.545) altinda — her bant
+  tamamlayabilir.
+- Cephanelikte 6. kart (ayni sablon dili); `UpgradeLine` enum'una BILINCLI
+  eklenmedi — o enum MetaUpgrades matematigine ve rank kapilarina bagli.
+- Ana menude nisan cipi (yuksek skorun altinda): mockup'taki "COMMANDER"
+  rozetinin gercek veriyle dolmus hali. Rank 0'da hic cizilmez.
+
+### Kapasite matematigi (EliteAndPrestigeTest kilidi)
+45.295 fazla - 19.900 prestij = 25.395; ortalama biletle ~53 elit kosu.
+Emici "iki dokunusta biten hazne" degil, kampanya sonrasi gercek dongu.
+
+### Teknik
+- Kalicilik: `eco_elite_clears` ("7:2,12:1" encode; bozuk girdiler sessizce
+  atilir, testli) + `eco_prestige_rank`; resetProgress ikisini de sifirlar.
+- `CampaignProgress` arayuzu varsayilanli genisledi (test sahteleri kirilmaz).
+- Secim penceresi `ReplayChoiceOverlay` DUZ Surface: onay pencerelerine
+  sablon sanati koyma yasagi (Galaxy S8 buton-gorunmezligi) burada da gecerli.
+- 8 yeni test; sayilar olculdu, tahminle yazilan ortalama (525) olcumle
+  duzeltildi (472).
+
+Kanit: 1101 test + lint yesil. Cihazda ucta uca zincir: secim penceresi
+(ELIT 70 COIN) -> bilet kesildi (140->70) -> 10/10 can -> yenilgi ->
+UCRETSIZ elit retry -> ELIT ZAFER (coin yok, yildiz yok, skor x1,5) ->
+"Elit zafer: 1" rozeti (docs/device_evidence 17-20).
+
+---
+
 ## 2026-08-26 (h) — CEPHANELIK SABLON DILINE GECTI + iki kucuk duzeltme (v52)
 
 Kullanici uc sey bildirdi: GOREVLER rozeti pill'e sigmiyor, kupur kalitesi

@@ -103,6 +103,55 @@ object EconomyConfig {
     /** GDD B.3 — "Kusursuz Savunma" madalyasi, bolum basina TEK SEFERLIK. */
     const val PERFECT_DEFENSE_BONUS: Int = 80
 
+    // =========================================================================
+    // ELIT SEVK — tekrarlanabilir COIN EMICISI (2026-08-26, ECONOMY_ANALYSIS S1)
+    // =========================================================================
+    //
+    // Sorunun olcusu `CoinLedgerTest`te kilitli: 3 yildiz bandi kampanyayi
+    // 45.295 OLU coinle bitiriyor cunku coin dusuren uc yerden ikisi (kilit,
+    // agac) tek seferlik. Elit Sevk, coin'in gideri olarak OYNANISIN KENDISINI
+    // koyar: bitirilmis bir bolum, bilet bedeli karsiliginda YARI USLE tekrar
+    // oynanir; odulu coin DEGIL (enflasyon yasagi), skor carpani ve kalici
+    // elit zafer sayacidir.
+    //
+    // FIYAT = bolumun 1-yildiz odulunun YARISI (10'a yuvarlanmis). Boylece:
+    //  · fiyat < 1 yildiz odulu (Us Tamiri'yle ayni GDD kisiti),
+    //  · gec bolum biletleri buyur (L7 160 -> L55 880) — fazlanin buyudugu
+    //    yerde emici de buyur,
+    //  · oran SABIT: gelir egrisi degisirse bilet kendiliginden olceklenir,
+    //    elle yazilmis ikinci bir tablo bayatlamaz.
+    const val ELITE_TICKET_ENABLED: Boolean = true
+    const val ELITE_SCORE_MULT: Double = 1.5
+
+    /**
+     * Elit modda us cani: normalin yarisi, yukari yuvarlanmis, en az 1.
+     *
+     * NEDEN CAN (Tedarik degil): baslangic Tedarikini kirpmak dalga ureticisinin
+     * SPI sozlesmesine dokunur ve erken bolumlerde cozulemezlik uretebilir
+     * (L1'de 120 -> 90 tek Gatling demek). Cani yarilamak kule matematigini
+     * DEGISTIRMEZ — cozulebilir olan cozulebilir kalir, yalnizca hata payi
+     * kirpilir. Simulator tam kadroda 19-20/20 canla geciyor; 10 can elit
+     * icin gercek bir esik ama imkansiz degil.
+     */
+    fun eliteLives(baseLives: Int): Int = ((baseLives + 1) / 2).coerceAtLeast(1)
+
+    // =========================================================================
+    // PRESTIJ NISANLARI — tek seferlik DERIN emici (ECONOMY_ANALYSIS B)
+    // =========================================================================
+    //
+    // Tamamen KOZMETIK: hicbir oynanis degeri yok, yalnizca unvan + rozet.
+    // Bes kademe, toplam 19.900 — yaklasik bir agac bedeli daha. 3 yildiz
+    // fazlasinin (45.295) yarisina yakinini tek basina emer; kalani Elit
+    // Sevk'in surekli emicisine kalir.
+    //
+    // Fiyatlar SATIN ALINABILIRLIK sirasiyla artar (1.500 kampanya ortasinda,
+    // 6.800 ancak gec oyunda) — erken oyunda rezerv kuralinin ustune binip
+    // kilit ilerlemesini bogmasin diye.
+    val PRESTIGE_COSTS: IntArray = intArrayOf(1_500, 2_600, 3_800, 5_200, 6_800)
+    val PRESTIGE_MAX: Int get() = PRESTIGE_COSTS.size
+    val PRESTIGE_TOTAL_COST: Int get() = PRESTIGE_COSTS.sum()
+
+
     /** GDD C.2 / C.4 katman 2 — tekrar oynama ham orani. */
     const val REPLAY_RATIO: Double = 0.20
 

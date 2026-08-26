@@ -405,4 +405,28 @@
     <string name="booster_ad_applied">%1$s is in play</string>
     <string name="booster_ad_unavailable">No ad right now — nothing was spent</string>
     <string name="booster_ad_failed">Could not deploy %1$s</string>
+
+    <!-- ==================== Elite Deploy + Prestige (ECONOMY_ANALYSIS C+B) ====
+         Elit Sevk: tekrarlanabilir coin emicisi. Bilet 1-yildiz odulunun
+         yarisi; yari us caniyla oynanir; odul coin DEGIL (enflasyon yasagi),
+         skor x1,5 + kalici elit zafer sayaci. Prestij: 5 kademeli kozmetik
+         nisan, toplam 19.900 — oynanisa etkisi SIFIR. -->
+    <string name="elite_choice_title">CHOOSE REPLAY</string>
+    <string name="elite_choice_body">Level %1$d — %2$s.
+Normal replay earns no coin; Elite Deploy is a challenge run.</string>
+    <string name="elite_terms">ELITE: half base lives · score ×1.5 · reward is an elite victory mark, not coin. The ticket covers the battle; retrying after defeat is free.</string>
+    <string name="elite_deploy_price">ELITE · %1$d COIN</string>
+    <string name="elite_clears_badge">Elite victories: %1$d</string>
+    <string name="elite_reserve_locked">Reserve lock: %1$d coin is set aside for the next level unlock.</string>
+    <string name="elite_victory_title">ELITE VICTORY!</string>
+
+    <string name="prestige_title">Prestige Insignia</string>
+    <string name="prestige_effect_next">Next: %1$s</string>
+    <string name="prestige_effect_max">All insignia earned</string>
+    <string name="prestige_rank_label">INSIGNIA %1$d / %2$d</string>
+    <string name="prestige_name_1">Bronze Insignia</string>
+    <string name="prestige_name_2">Silver Insignia</string>
+    <string name="prestige_name_3">Gold Insignia</string>
+    <string name="prestige_name_4">Platinum Insignia</string>
+    <string name="prestige_name_5">Diamond Insignia</string>
 </resources>

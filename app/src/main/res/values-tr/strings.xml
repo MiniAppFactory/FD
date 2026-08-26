@@ -290,4 +290,24 @@
     <string name="booster_ad_applied">%1$s devrede</string>
     <string name="booster_ad_unavailable">Şu an reklam yok — hiçbir hakkın harcanmadı</string>
     <string name="booster_ad_failed">%1$s uygulanamadı</string>
+
+    <!-- ==================== Elit Sevk + Prestij (ECONOMY_ANALYSIS C+B) ==== -->
+    <string name="elite_choice_title">TEKRAR SEÇ</string>
+    <string name="elite_choice_body">%1$d. bölüm — %2$s.
+Normal tekrar coin kazandırmaz; Elit Sevk bir meydan okumadır.</string>
+    <string name="elite_terms">ELİT: yarım üs canı · skor ×1,5 · ödül coin değil, elit zafer nişanı. Bilet savaşa kesilir; yenilgi sonrası tekrar denemek ücretsizdir.</string>
+    <string name="elite_deploy_price">ELİT · %1$d COIN</string>
+    <string name="elite_clears_badge">Elit zafer: %1$d</string>
+    <string name="elite_reserve_locked">Rezerv kilidi: sıradaki bölümün kilidi için %1$d coin ayrılmış durumda.</string>
+    <string name="elite_victory_title">ELİT ZAFER!</string>
+
+    <string name="prestige_title">Prestij Nişanı</string>
+    <string name="prestige_effect_next">Sıradaki: %1$s</string>
+    <string name="prestige_effect_max">Tüm nişanlar kazanıldı</string>
+    <string name="prestige_rank_label">NİŞAN %1$d / %2$d</string>
+    <string name="prestige_name_1">Bronz Nişan</string>
+    <string name="prestige_name_2">Gümüş Nişan</string>
+    <string name="prestige_name_3">Altın Nişan</string>
+    <string name="prestige_name_4">Platin Nişan</string>
+    <string name="prestige_name_5">Elmas Nişan</string>
 </resources>
