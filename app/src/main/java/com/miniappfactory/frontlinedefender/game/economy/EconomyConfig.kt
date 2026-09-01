@@ -699,6 +699,51 @@ object EconomyConfig {
     const val AIR_SUPPORT_SUPPLY_BASE: Int = 101
     const val AIR_SUPPORT_SUPPLY_STEP: Int = 8
 
+    // ---- Hava Destegi COIN YOLU (2026-09-02, IAP ile birlikte) -------------------
+    //
+    // Kullanici karari: *"hava destegini falan coinle satabiliriz."* Coin
+    // paketleri satisa cikinca coin'in HARCANACAK yeri olmali; hava destegi bu
+    // isin adiyla istenen kalemi.
+    //
+    // 2026-08-21 karari ("ad izlemeye tesvik etmeliyiz") GERI ALINMADI:
+    //  * Reklam yolu BIRINCIL kalir — savas basina 2 reklam hakki aynen durur.
+    //  * Coin yolu UZANTIDIR: BoosterRail reklam yolu aciksa onu, kapaliysa
+    //    (gunluk 12 gosterim bitti / savas ici 2 hak bitti / no-fill) coin
+    //    fiyatini gosterir. Sirayi [AIR_SUPPORT_PREFER_AD_PATH] cevirir.
+    //  * Toplam vurus SAVAS BASINA 2'DE SABIT ([AIR_SUPPORT_SHARED_USE_CAP]):
+    //    reklam+reklam, reklam+coin veya coin+reklam — ama asla 3. Boylece
+    //    `2 x AIR_SUPPORT_DAMAGE_FRACTION < 1,0` kisiti (asagida) bozulmaz ve
+    //    reklam izleyen oyuncu icin HICBIR SEY degismez (sifir regresyon).
+    //  * Arbitraj kalkani ("once ucretli, sonra reklam") bu tipe UYGULANMAZ:
+    //    kalkan reklamin bir para birimi sink'ini ikame etmesini engeller;
+    //    burada ise reklam zaten birincil yol, coin ikame degil ek.
+    //
+    // FIYAT: coin, bolumle dogrusal. Us Tamiri (120 + 20(L-1)) ile ayni
+    // egim ailesi, biraz daha pahali cunku etki daha guclu (ekrandaki HER
+    // dusmandan %45 vs +4 can). Kisitlar (`BoosterEconomyTest`):
+    //  * fiyat >= en ucuz meta rank-1 — "cheap farming" yok,
+    //  * fiyat < 1-yildiz odulu R(L) — kullanmak NET ZARAR olmaz,
+    //  * fiyat > Us Tamiri ayni bolumde — guclu olan pahali.
+    //
+    // TABAN 134 ELLE SECILMEDI: acilista (L4) fiyat 134 + 22x3 = **200**, yani
+    // TAM olarak en ucuz kalici meta yukseltmesi (Baslangic Tedariki / Hurda
+    // Degeri rank 1). Ilk deger 130 idi ve L4'te 196 veriyordu — 200'un ALTINDA.
+    // `airSupportNeverCostsLessThanAFullyUpgradedTower` bunu yakaladi ve haklyydi:
+    // guclendirici kalici yukseltmeden ucuz olursa en iyi strateji agaci
+    // birakip her savasta dugmeye basmak olur.
+    //
+    // Ankraj, 2026-08-21 oncesindeki "acilista fiyat TAM olarak bir kademe-2
+    // Gatling (125 Tedarik)" ankrajinin coin dilindeki karsiligidir: kalem
+    // hangi para biriminde odeniyorsa, o para biriminin en ucuz kalici
+    // alternatifiyle esitlenir.
+    //
+    // L4 (acilis) 200 · L22 596 · L55 1.322 (R(55,1) = 1.760'in %75'i).
+    const val AIR_SUPPORT_COIN_PATH_ENABLED: Boolean = true
+    const val AIR_SUPPORT_PREFER_AD_PATH: Boolean = true
+    const val AIR_SUPPORT_COIN_BASE: Int = 134
+    const val AIR_SUPPORT_COIN_STEP: Int = 22
+    const val AIR_SUPPORT_SHARED_USE_CAP: Int = 2
+
     /**
      * Ekrandaki her dusmandan silinen MAKS CAN orani.
      *

@@ -103,12 +103,29 @@ class SaveManager internal constructor(private val store: KeyValueStore) {
         // olu veri birakir, yanlis davranis uretmez.
         private const val KEY_HINT_PREFIX = "hint_seen_"
 
+        // ---- IAP (2026-09-02) — bkz. StoreCatalog / billing/BillingManager ----
+        /** "Reklamlari Kaldir" hakki. Play'den dogrulanir; RESET'TE KORUNUR. */
+        private const val KEY_IAP_REMOVE_ADS = "iap_remove_ads"
+        /** Odenmis purchaseToken'lar (virgullu). Ayni jetonun IKI kez coin yazmasini engeller; RESET'TE KORUNUR. */
+        private const val KEY_IAP_GRANTED_TOKENS = "iap_granted_tokens"
+        /** Satin alinan toplam coin — `lifetimeEarned`den AYRI (o oynanisla kazanilani olcer). */
+        private const val KEY_IAP_LIFETIME_COINS = "iap_lifetime_purchased_coins"
+
         private const val KEY_R1_FILLED_VIEWS = "eco_r1_filled_views_today"
         private const val KEY_R1_COINS_PAID = "eco_r1_coins_paid_today"
         private const val KEY_BOOSTED_REPLAYS = "eco_boosted_replays_today"
 
         /** Ayarlar ilerleme sifirlamasinda KORUNUR (GDD H.1). */
-        private val PRESERVED_ON_RESET = setOf(KEY_SOUND_ENABLED, KEY_SAVE_VERSION)
+        /**
+         * `resetProgress` bunlara DOKUNMAZ. Ses/surum eskiden beri; IAP anahtarlari
+         * 2026-09-02'de eklendi: **para odenmis bir hak ilerleme sifirlamasiyla
+         * silinemez** ve odenmis jeton listesi silinirse `queryPurchasesAsync`
+         * tuketilmemis bir paketi IKINCI kez coin'e cevirirdi.
+         */
+        private val PRESERVED_ON_RESET = setOf(
+            KEY_SOUND_ENABLED, KEY_SAVE_VERSION,
+            KEY_IAP_REMOVE_ADS, KEY_IAP_GRANTED_TOKENS, KEY_IAP_LIFETIME_COINS,
+        )
     }
 
     // =================================================================================
@@ -479,6 +496,55 @@ class SaveManager internal constructor(private val store: KeyValueStore) {
     var lifetimeBattlesCompleted: Int
         get() = store.getInt(KEY_LIFETIME_BATTLES, 0).coerceAtLeast(0)
         set(value) = store.putInt(KEY_LIFETIME_BATTLES, value.coerceAtLeast(0))
+
+    // =================================================================================
+    // IAP — "Reklamlari Kaldir" hakki ve coin paketleri (2026-09-02)
+    // =================================================================================
+
+    /**
+     * "Reklamlari Kaldir" satin alindi mi. `AdProgressStore.adsRemoved` bunu okur;
+     * yalnizca INTERSTITIAL kapanir (banner zaten kapali, rewarded oyuncunun kendi
+     * actigi musluk — kalir). Kaynak Play'dir (`BillingManager.restorePurchases`),
+     * bu alan onun cihazdaki kopyasi. [resetProgress] SILMEZ.
+     */
+    var adsRemoved: Boolean
+        get() = store.getBoolean(KEY_IAP_REMOVE_ADS, false)
+        set(value) = store.putBoolean(KEY_IAP_REMOVE_ADS, value)
+
+    /** Satin alinan toplam coin (rapor/telemetri icin). Oynanis kazancina karismaz. */
+    val lifetimePurchasedCoins: Int
+        get() = store.getInt(KEY_IAP_LIFETIME_COINS, 0).coerceAtLeast(0)
+
+    /** Bu jeton daha once coin'e cevrildi mi? */
+    fun isPurchaseTokenGranted(token: String): Boolean =
+        token.isNotBlank() && token in decodeTokens(store.getString(KEY_IAP_GRANTED_TOKENS, ""))
+
+    /**
+     * Satin alinan coin'i YAZAR — IDEMPOTENT. Ayni `purchaseToken` ikinci kez
+     * gelirse `false` doner ve bakiye DEGISMEZ.
+     *
+     * NEDEN BURADA (CampaignProgressImpl degil): `queryPurchasesAsync` her
+     * acilista tuketilmemis paketleri yeniden getirir; "odenmis mi" kaydi
+     * cuzdanla AYNI dosyada ve AYNI islemde yazilmali ki yarim kalan bir
+     * `consume` coin'i iki kez basmasin. Cuzdan `PlayerWallet.credited` ile
+     * DEGIL dogrudan yazilir: `credited` `lifetimeEarned`i artirir, o sayac
+     * oynanis kazancidir ve ekonomi raporlari onu okur.
+     *
+     * @return true = coin yazildi (cagiran simdi `consume` edebilir).
+     */
+    fun grantPurchasedCoins(purchaseToken: String, coins: Int): Boolean {
+        if (purchaseToken.isBlank() || coins <= 0) return false
+        val granted = decodeTokens(store.getString(KEY_IAP_GRANTED_TOKENS, ""))
+        if (purchaseToken in granted) return false
+        val wallet = loadWallet()
+        saveWallet(wallet.copy(coins = wallet.coins + coins))
+        store.putInt(KEY_IAP_LIFETIME_COINS, lifetimePurchasedCoins + coins)
+        store.putString(KEY_IAP_GRANTED_TOKENS, (granted + purchaseToken).joinToString(","))
+        return true
+    }
+
+    private fun decodeTokens(raw: String): Set<String> =
+        raw.split(',').map { it.trim() }.filter { it.isNotEmpty() }.toSet()
 
     /**
      * Bayrak eklenmeden ONCE olusmus kayitlar icin bir kerelik tohumlama.

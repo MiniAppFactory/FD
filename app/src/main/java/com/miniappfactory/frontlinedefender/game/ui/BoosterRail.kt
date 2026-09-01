@@ -50,6 +50,7 @@ import com.miniappfactory.frontlinedefender.game.audio.rememberHaptics
 import com.miniappfactory.frontlinedefender.game.economy.BoosterCurrency
 import com.miniappfactory.frontlinedefender.game.economy.BoosterDecision
 import com.miniappfactory.frontlinedefender.game.economy.BoosterType
+import com.miniappfactory.frontlinedefender.game.economy.EconomyConfig
 import com.miniappfactory.frontlinedefender.game.economy.CampaignProgressImpl
 import com.miniappfactory.frontlinedefender.game.economy.boosterCooldownMs
 import com.miniappfactory.frontlinedefender.game.economy.boostersAvailableAt
@@ -218,9 +219,21 @@ fun BoosterRail(
         // Ucretli hak duruyorsa ucretli yol, tukendiyse reklam yolu denenir.
         // Bu kural PaidPathNotExhausted / PaidPathUnavailable dallarini
         // YAPISAL OLARAK imkansiz kilar: UI onlari hic gormez.
+        //
+        // ISTISNA — adPathIsPrimary (Hava Destegi, 2026-09-02): sira TERS.
+        // Reklam yolu acikken (savas ici hak + gunluk gosterim var) REKLAM;
+        // reklam kapaninca coin fiyati. `EconomyConfig.AIR_SUPPORT_PREFER_AD_PATH`
+        // false ise coin one gecer (odeyen oyuncu reklam beklemez).
         val state = progress.boosterState
-        val viaAd = state == null ||
+        val viaAd = if (state == null) {
+            true
+        } else if (type.adPathIsPrimary && type.hasPaidPath) {
+            val adOpen = state.adUsesOf(type) < type.adUsesPerBattle && state.adViewsLeftToday > 0
+            val paidOpen = state.paidUsesOf(type) < type.paidUsesPerBattle
+            if (EconomyConfig.AIR_SUPPORT_PREFER_AD_PATH) adOpen || !paidOpen else !paidOpen && adOpen
+        } else {
             !(type.hasPaidPath && state.paidUsesOf(type) < type.paidUsesPerBattle)
+        }
         viaAd to progress.boosterDecision(
             type = type,
             viaAd = viaAd,

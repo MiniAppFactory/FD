@@ -46,6 +46,7 @@ import com.miniappfactory.frontlinedefender.game.ads.applySupplyDrop
 import com.miniappfactory.frontlinedefender.game.ads.findActivity
 import com.miniappfactory.frontlinedefender.game.audio.AudioManager
 import com.miniappfactory.frontlinedefender.game.audio.rememberHaptics
+import com.miniappfactory.frontlinedefender.game.billing.BillingManager
 import com.miniappfactory.frontlinedefender.game.economy.BoosterType
 import com.miniappfactory.frontlinedefender.game.economy.CampaignProgressImpl
 import com.miniappfactory.frontlinedefender.game.economy.EconomyConfig
@@ -243,6 +244,39 @@ fun GameScreen(
 
     /** Cephanelik (meta yukseltme dukkani) acik mi — LEVEL_SELECT ustunde katman. */
     var shopOpen by remember { mutableStateOf(false) }
+
+    // IKMAL DEPOSU (IAP, 2026-09-02) — Cephanelik'in USTUNDE katman: oyuncu
+    // Cephanelik'ten girer, geri deyince Cephanelik'e doner (yigin korunur).
+    var storeOpen by remember { mutableStateOf(false) }
+
+    // Play Billing koprusu. FD'de ViewModel yok; burada `remember` ile kurulur,
+    // her ON_RESUME'da `refresh()` (cevrimdisi acilista yazilamayan hak ve arka
+    // planda tamamlanan PENDING odeme icin — Kron-Drive 2026-09-01 dersi) ve
+    // kompozisyon dusunce `endConnection()`. Coin yazimi ve reklamsiz bayragi
+    // ekonomiye gider; reklam katmani `SaveManagerAdProgressStore` uzerinden
+    // ayni SharedPreferences dosyasini okur.
+    val billing = remember(campaignProgress) {
+        BillingManager(
+            context = context,
+            onCoinsPurchased = { token, coins -> campaignProgress.grantPurchasedCoins(token, coins) },
+            onRemoveAdsChanged = { purchased -> campaignProgress.setAdsRemoved(purchased) },
+        )
+    }
+    val billingLifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(billing, billingLifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) billing.refresh()
+        }
+        billingLifecycleOwner.lifecycle.addObserver(observer)
+        billing.connect()
+        onDispose {
+            billingLifecycleOwner.lifecycle.removeObserver(observer)
+            billing.endConnection()
+        }
+    }
+    val launchPurchase: (String) -> Unit = { productId ->
+        context.findActivity()?.let { billing.launchPurchase(it, productId) }
+    }
 
     // ANA MENUDEN acilan gorev paneli. `LevelSelectScreen` kendi
     // `missionsOpen` durumunu ICINDE tutuyor ve o oyle KALIYOR — iki ekranin
@@ -618,7 +652,16 @@ fun GameScreen(
                 if (shopOpen) {
                     UpgradeShopScreen(
                         progress = campaignProgress,
-                        onBack = { shopOpen = false }
+                        onBack = { shopOpen = false },
+                        onOpenStore = { storeOpen = true }
+                    )
+                }
+                if (storeOpen) {
+                    StoreScreen(
+                        progress = campaignProgress,
+                        billing = billing,
+                        onBack = { storeOpen = false },
+                        onPurchase = launchPurchase
                     )
                 }
                 if (menuMissionsOpen) {
@@ -708,7 +751,16 @@ fun GameScreen(
                 if (shopOpen) {
                     UpgradeShopScreen(
                         progress = campaignProgress,
-                        onBack = { shopOpen = false }
+                        onBack = { shopOpen = false },
+                        onOpenStore = { storeOpen = true }
+                    )
+                }
+                if (storeOpen) {
+                    StoreScreen(
+                        progress = campaignProgress,
+                        billing = billing,
+                        onBack = { storeOpen = false },
+                        onPurchase = launchPurchase
                     )
                 }
 

@@ -86,6 +86,39 @@ class CampaignProgressImpl(
         return true
     }
 
+    // ---- IAP (2026-09-02) — coin paketleri + "Reklamlari Kaldir" ----------------
+
+    private var adsRemovedState by mutableStateOf(saveManager.adsRemoved)
+
+    /** "Reklamlari Kaldir" alinmis mi (Compose'un izledigi kopya). */
+    val adsRemoved: Boolean get() = adsRemovedState
+
+    /** Satin alinan toplam coin — rapor/telemetri. */
+    val lifetimePurchasedCoins: Int get() = saveManager.lifetimePurchasedCoins
+
+    /**
+     * Play'den (veya debug'da FakeBilling'den) gelen coin paketini yazar.
+     * IDEMPOTENT: kayit `SaveManager`da, burasi yalnizca cuzdan state'ini
+     * yeniler. `true` = yazildi, cagiran `consume` edebilir.
+     */
+    fun grantPurchasedCoins(purchaseToken: String, coins: Int): Boolean {
+        val ok = saveManager.grantPurchasedCoins(purchaseToken, coins)
+        if (ok) {
+            wallet = saveManager.loadWallet()
+            analytics("iap_coins_granted", mapOf("coins" to coins))
+        }
+        return ok
+    }
+
+    /** Play'in soyledigi son durum. Her `restorePurchases`te cagrilir. */
+    fun setAdsRemoved(purchased: Boolean) {
+        if (saveManager.adsRemoved != purchased) {
+            saveManager.adsRemoved = purchased
+            analytics("iap_remove_ads", mapOf("purchased" to purchased))
+        }
+        adsRemovedState = purchased
+    }
+
     private var daily by mutableStateOf<List<Mission>>(emptyList())
 
     /**

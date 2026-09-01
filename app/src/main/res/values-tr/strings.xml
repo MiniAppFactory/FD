@@ -310,4 +310,27 @@ Normal tekrar coin kazandırmaz; Elit Sevk bir meydan okumadır.</string>
     <string name="prestige_name_3">Altın Nişan</string>
     <string name="prestige_name_4">Platin Nişan</string>
     <string name="prestige_name_5">Elmas Nişan</string>
+
+    <!-- ==================== store (StoreScreen) — IAP, 2026-09-02 ==================== -->
+    <string name="store_open">İKMAL DEPOSU</string>
+    <string name="store_title">İKMAL DEPOSU</string>
+    <string name="store_section_remove_ads">REKLAMSIZ HAREKÂT</string>
+    <string name="store_remove_ads_title">REKLAMLARI KALDIR</string>
+    <string name="store_remove_ads_body">Savaşlar arasındaki tam ekran reklamlar kalkar. Tek seferlik; Google hesabına bağlıdır.</string>
+    <string name="store_remove_ads_note">İsteğe bağlı ödüllü reklamlar (bedava coin, güçlendirici) istersen açık kalır.</string>
+    <string name="store_owned">✓ SATIN ALINDI</string>
+    <string name="store_section_coins">COIN PAKETLERİ</string>
+    <string name="store_pack_coins">%1$s COIN</string>
+    <string name="store_best_value">EN İYİ DEĞER</string>
+    <string name="store_unavailable">şu an satın alınamıyor</string>
+    <string name="store_connecting">Google Play\'e bağlanılıyor…</string>
+    <string name="store_restore">SATIN ALMALARI GERİ YÜKLE</string>
+    <string name="store_restore_running">KONTROL EDİLİYOR…</string>
+    <string name="store_restore_done">Hesabındaki satın almalar kontrol edildi.</string>
+    <string name="store_restore_failed">Google Play\'e ulaşılamadı. Bağlantını kontrol edip tekrar dene.</string>
+    <string name="store_restore_hint">Cihaz veya hesap değiştiysen reklamsız hakkını buradan geri al. Coin paketleri anında yazılır, geri yükleme gerektirmez.</string>
+    <string name="store_coins_hint">Coin ile bölüm kilidi açar, Cephanelik yükseltmesi, Prestij Nişanı, Elit Sevk ve savaş içi Hava Desteği alırsın.</string>
+    <string name="store_card_title">İkmal Deposu</string>
+    <string name="store_card_body">Coin al veya reklamları kaldır</string>
+    <string name="store_card_open">AÇ</string>
 </resources>

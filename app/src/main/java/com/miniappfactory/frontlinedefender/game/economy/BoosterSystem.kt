@@ -110,6 +110,18 @@ enum class BoosterType(
     val currency: BoosterCurrency,
     val paidUsesPerBattle: Int,
     val adUsesPerBattle: Int,
+    /**
+     * Savas basina TOPLAM kullanim tavani (ucretli + reklam BIRLIKTE). null =
+     * tavan yok, toplam = paid + ad. Hava Destegi 2'de sabitlenir ki coin yolu
+     * eklenince ucuncu bir vurus dogmasin (bkz. EconomyConfig.AIR_SUPPORT_SHARED_USE_CAP).
+     */
+    val sharedUseCap: Int? = null,
+    /**
+     * Reklam yolu BIRINCIL mi? true ise arbitraj kalkani ("ucretli tukenmeden
+     * reklam acilmaz") bu tipe uygulanmaz: reklam her zaman acik, ucretli yol
+     * uzanti. Yalnizca Hava Destegi (2026-09-02).
+     */
+    val adPathIsPrimary: Boolean = false,
 ) {
     /**
      * **Acil Tedarik** — aninda Tedarik enjeksiyonu.
@@ -144,9 +156,16 @@ enum class BoosterType(
      */
     AIR_SUPPORT(
         unlockLevel = EconomyConfig.AIR_SUPPORT_UNLOCK_LEVEL,
-        currency = BoosterCurrency.AD_ONLY,
-        paidUsesPerBattle = 0,
+        // 2026-09-02 — COIN YOLU EKLENDI (kullanici: "hava destegini coinle
+        // satabiliriz"). Reklam yolu birincil ve 2 hak aynen; coin uzanti; toplam
+        // vurus sharedUseCap ile 2'de sabit. Gerekce ve kisitlar:
+        // EconomyConfig.AIR_SUPPORT_COIN_PATH_ENABLED blogu. Bayrak kapaliysa
+        // davranis 2026-08-21'deki AD_ONLY haline BIREBIR doner.
+        currency = if (EconomyConfig.AIR_SUPPORT_COIN_PATH_ENABLED) BoosterCurrency.COIN else BoosterCurrency.AD_ONLY,
+        paidUsesPerBattle = if (EconomyConfig.AIR_SUPPORT_COIN_PATH_ENABLED) 1 else 0,
         adUsesPerBattle = 2,
+        sharedUseCap = EconomyConfig.AIR_SUPPORT_SHARED_USE_CAP,
+        adPathIsPrimary = true,
     ),
 
     /**
@@ -161,8 +180,10 @@ enum class BoosterType(
     ),
     ;
 
-    /** Savas basina toplam kullanim tavani (ucretli + reklam). */
-    val maxUsesPerBattle: Int get() = paidUsesPerBattle + adUsesPerBattle
+    /** Savas basina toplam kullanim tavani (ucretli + reklam; [sharedUseCap] varsa o). */
+    val maxUsesPerBattle: Int
+        get() = sharedUseCap?.coerceAtMost(paidUsesPerBattle + adUsesPerBattle)
+            ?: (paidUsesPerBattle + adUsesPerBattle)
 
     /** Ucretli bir yolu var mi? */
     val hasPaidPath: Boolean get() = currency != BoosterCurrency.AD_ONLY
@@ -300,9 +321,13 @@ fun boosterPrice(type: BoosterType, level: Int): Int {
     require(level in 1..EconomyConfig.CAMPAIGN_LEVELS) { "level $level aralik disi" }
     return when (type) {
         BoosterType.EMERGENCY_SUPPLY -> 0
+        // 2026-09-02: fiyat artik COIN (ucretli yol coin'e cevrildi). Eski
+        // Tedarik tablosu (101 + 8(L-1)) EconomyConfig'te duruyor ama okunmuyor;
+        // coin yolu bayrakla kapatilirsa tip AD_ONLY olur ve KDoc geregi 0 doner.
         BoosterType.AIR_SUPPORT ->
-            EconomyConfig.AIR_SUPPORT_SUPPLY_BASE +
-                EconomyConfig.AIR_SUPPORT_SUPPLY_STEP * (level - 1)
+            if (BoosterType.AIR_SUPPORT.currency == BoosterCurrency.AD_ONLY) 0
+            else EconomyConfig.AIR_SUPPORT_COIN_BASE +
+                EconomyConfig.AIR_SUPPORT_COIN_STEP * (level - 1)
         BoosterType.BASE_REPAIR ->
             EconomyConfig.BASE_REPAIR_COIN_BASE +
                 EconomyConfig.BASE_REPAIR_COIN_STEP * (level - 1)
@@ -406,11 +431,24 @@ fun boosterAllowed(
     if (!type.enabled) return BoosterDecision.Disabled
     if (state.level < type.unlockLevel) return BoosterDecision.Locked(type.unlockLevel)
 
+    // PAYLASIMLI TAVAN (Hava Destegi): ucretli + reklam toplami savas basina
+    // sharedUseCap'i asamaz. Yol ne olursa olsun ilgili "limit doldu" karari
+    // doner; UI ikisini de "USED" olarak cizer.
+    val cap = type.sharedUseCap
+    if (cap != null && state.usesOf(type) >= cap) {
+        return if (viaAd) BoosterDecision.AdLimitReached else BoosterDecision.PaidLimitReached
+    }
+
     if (viaAd) {
         if (state.adUsesOf(type) >= type.adUsesPerBattle) return BoosterDecision.AdLimitReached
         // ARBITRAJ KALKANI: ucretli yolu olan bir guclendiricide reklam, ucretli
         // kullanim tukenmeden acilmaz. Reklam ikame degil, uzantidir.
-        if (type.hasPaidPath) {
+        //
+        // ISTISNA — adPathIsPrimary (Hava Destegi, 2026-09-02): orada reklam
+        // zaten birincil yol, coin ikame degil EK. Kalkan uygulanirsa oyuncu
+        // reklam izleyebilmek icin once coin harcamak zorunda kalirdi — bu,
+        // 2026-08-21 "reklam izlemeye tesvik" kararinin tam tersi olurdu.
+        if (type.hasPaidPath && !type.adPathIsPrimary) {
             val left = type.paidUsesPerBattle - state.paidUsesOf(type)
             if (left > 0) return BoosterDecision.PaidPathNotExhausted(left)
         }

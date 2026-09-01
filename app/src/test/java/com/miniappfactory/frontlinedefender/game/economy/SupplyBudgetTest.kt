@@ -3,6 +3,7 @@ package com.miniappfactory.frontlinedefender.game.economy
 import com.miniappfactory.frontlinedefender.game.model.GameConfig
 import com.miniappfactory.frontlinedefender.game.model.WaveDefinitions
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -785,12 +786,20 @@ class SupplyBudgetTest {
                 "L$level guclendiricisiz butce kadroyu karsilamiyor",
                 withoutBoosters >= SupplyBudgetModel.designedLoadoutCost(level),
             )
-            // Hava Destegi Tedarik HARCAR; onu almak kadroyu imkansiz kilmamali.
-            if (boosterUnlocked(BoosterType.AIR_SUPPORT, level)) {
-                assertTrue(
-                    "L$level: hava destegi alan oyuncu kadroyu kuramaz hale geliyor",
-                    withoutBoosters - boosterPrice(BoosterType.AIR_SUPPORT, level) >=
-                        SupplyBudgetModel.designedLoadoutCost(level) * 80 / 100,
+            // ⚠ 2026-09-02 — HAVA DESTEGI ARTIK TEDARIK HARCAMIYOR (COIN'e
+            // cevrildi, IAP ile birlikte). Eski kontrol butceden hava destegi
+            // fiyatini DUSUYORDU; o cikarma artik iki ayri para birimini
+            // toplamak demek ve butceyi olmadigi kadar dar gosterirdi.
+            //
+            // Yerine gecen kisit: SAVAS ICI Tedarik harcayan bir guclendirici
+            // KALMADI, yani pay-to-win kalkani bu tarafta yapisal olarak
+            // saglaniyor. Kontrol bunu KANITLAR — biri yarin Tedarik yolu olan
+            // yeni bir guclendirici eklerse burasi patlar ve butce kisiti
+            // yeniden yazilmasi gerektigi gorunur.
+            BoosterType.entries.filter { boosterUnlocked(it, level) }.forEach { type ->
+                assertNotEquals(
+                    "L$level: $type Tedarik harciyor — butce kisiti yeniden yazilmali",
+                    BoosterCurrency.SUPPLY, type.currency,
                 )
             }
         }

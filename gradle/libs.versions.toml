@@ -30,6 +30,8 @@ robolectric = "4.16.1"
 # calisiyor.
 playServicesAds = "25.4.0"
 userMessagingPlatform = "4.0.0"
+# IAP (2026-09-02) — Kron-Drive ile ayni surum; ~/.gradle cache'te mevcut (offline build gecer).
+billingKtx = "8.0.0"
 
 
 [libraries]
@@ -59,6 +61,7 @@ androidx-runner = { group = "androidx.test", name = "runner", version.ref = "run
 robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
 play-services-ads = { group = "com.google.android.gms", name = "play-services-ads", version.ref = "playServicesAds" }
 user-messaging-platform = { group = "com.google.android.ump", name = "user-messaging-platform", version.ref = "userMessagingPlatform" }
+billing-ktx = { group = "com.android.billingclient", name = "billing-ktx", version.ref = "billingKtx" }
 
 
 [plugins]

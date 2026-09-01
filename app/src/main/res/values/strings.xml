@@ -429,4 +429,40 @@ Normal replay earns no coin; Elite Deploy is a challenge run.</string>
     <string name="prestige_name_3">Gold Insignia</string>
     <string name="prestige_name_4">Platinum Insignia</string>
     <string name="prestige_name_5">Diamond Insignia</string>
+
+    <!-- ==================== store (StoreScreen) — IAP, 2026-09-02 ====================
+         FIYAT METNI BURADA YOK: her fiyat Play'den (ProductDetails.formattedPrice)
+         gelir. Koda yazilan fiyat bir gun yalan soyler. -->
+    <string name="store_open">SUPPLY DEPOT</string>
+    <string name="store_title">SUPPLY DEPOT</string>
+    <string name="store_section_remove_ads">AD-FREE CAMPAIGN</string>
+    <string name="store_remove_ads_title">REMOVE ADS</string>
+    <string name="store_remove_ads_body">Removes the full-screen ads between battles. One-time purchase, tied to your Google account.</string>
+    <!-- BU CUMLE ZORUNLU: rewarded kalkmaz, oyuncu bunu SATIN ALMADAN ONCE bilmeli. -->
+    <string name="store_remove_ads_note">Optional rewarded ads (free coin, boosters) stay available if you want them.</string>
+    <string name="store_owned">✓ PURCHASED</string>
+    <string name="store_section_coins">COIN PACKS</string>
+    <!-- %1$s = binlik ayracli coin miktari -->
+    <string name="store_pack_coins">%1$s COIN</string>
+    <string name="store_best_value">BEST VALUE</string>
+    <string name="store_unavailable">unavailable right now</string>
+    <string name="store_connecting">Connecting to Google Play…</string>
+    <string name="store_restore">RESTORE PURCHASES</string>
+    <string name="store_restore_running">CHECKING…</string>
+    <string name="store_restore_done">Purchases on your account were checked.</string>
+    <string name="store_restore_failed">Could not reach Google Play. Check your connection and try again.</string>
+    <string name="store_restore_hint">Changed device or account? Restore Remove Ads here. Coin packs are credited instantly and do not need restoring.</string>
+    <string name="store_coins_hint">Coins unlock levels, buy Armory upgrades, Prestige Insignia, Elite deployments and in-battle Air Support.</string>
+    <!-- Cephanelik'teki giris karti -->
+    <string name="store_card_title">Supply Depot</string>
+    <string name="store_card_body">Buy coin or remove ads</string>
+    <string name="store_card_open">OPEN</string>
+    <!-- Debug paneli — release'te cizilmez, cevrilmez -->
+    <string name="store_debug_title" translatable="false">DEBUG · SAHTE SATIN ALMA</string>
+    <string name="store_debug_body" translatable="false">Play Console gerekmez; release derlemesinde bu panel YOKTUR. Dugmeler yalnizca CIHAZDAKI test durumunu degistirir, Play\'e dokunmaz. Sahte reklamsiz bayragi uygulama yeniden acilip Play\'e baglaninca silinir (Play sahte satin almayi bilmez).</string>
+    <string name="store_debug_fake_pack" translatable="false">+%1$s COIN (sahte)</string>
+    <string name="store_debug_same_token" translatable="false">AYNI JETONU TEKRAR GONDER (bakiye degismemeli)</string>
+    <string name="store_debug_ads_on" translatable="false">TEST: reklamsiz bayragini AC</string>
+    <string name="store_debug_ads_off" translatable="false">TEST: reklamsiz bayragini SIFIRLA</string>
+    <string name="store_debug_status" translatable="false">Bakiye: %1$s · Reklamsiz: %2$s · Satin alinan toplam: %3$s</string>
 </resources>

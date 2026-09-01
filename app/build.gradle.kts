@@ -30,8 +30,8 @@ android {
     //
     // Play e HENUZ yuklenmedi; yuklendikten sonra versionCode geri alinamaz
     // ve denenen her kod tukenir — o noktadan sonra artirmadan once sorulmali.
-    versionCode = 53
-    versionName = "0.53"
+    versionCode = 54
+    versionName = "0.54"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -153,6 +153,8 @@ dependencies {
   // uyumlu (dogrulama: docs/ADMOB_INTEGRATION.md §1).
   implementation(libs.play.services.ads)
   implementation(libs.user.messaging.platform)
+  // IAP — coin paketleri + "Reklamlari Kaldir" (2026-09-02). Kopru: billing/BillingManager.kt
+  implementation(libs.billing.ktx)
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)
   testImplementation(libs.androidx.junit)

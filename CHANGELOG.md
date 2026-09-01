@@ -6,6 +6,111 @@ yalan soyleyebiliyorlardi; surum notu artik kodla ayni gecmisi paylasiyor.
 
 ---
 
+## 2026-09-02 — IAP: COIN PAKETLERI + REKLAMSIZ MOD, HAVA DESTEGI COIN YOLU (v54)
+
+Kullanici karari (gece oturumu): *"oyunda coin satacagiz ... ayrica hava
+destegini falan coinle satabiliriz, bunun yaninda reklamsiz mod satacagiz
+(kron drive da yaptigimiz gibi)."* Referans uygulama Kron-Drive'in
+`billing/` paketi; desen oradan alindi, sayilar FD ekonomisine gore yeniden
+kalibre edildi.
+
+### Yeni: Play Billing kopruleri
+
+- `game/economy/StoreCatalog.kt` — **saf Kotlin** katalog (Android importu yok,
+  `EconomyConfig` ile ayni sozlesme). 5 coin paketi + `remove_ads`.
+  Fiyat metni BURADA YOK: ekrandaki her fiyat Play'den
+  (`ProductDetails.formattedPrice`) gelir; `usdReference` yalnizca denge
+  testleri icindir.
+- `game/billing/BillingManager.kt` — Billing 8.0.0 koprusu. Kron-Drive'in
+  2026-09-01 dersi dahil: `refresh()` HER `ON_RESUME`da satin almalari
+  sorgular. Onceki hali yalnizca ilk baglantida sorguluyordu ve cevrimdisi
+  acilan bir oturumda hak yazilamayip surec omru boyunca bir daha
+  denenmiyordu — "odedim, hala reklam goruyorum".
+- `game/billing/FakeBilling.kt` — yalniz debug. Play Console beklemeden
+  magazanin KENDI mantigini (coin yazimi, idempotenlik, reklamsiz kapisi)
+  dogrular. `BuildConfig.DEBUG`e bagli, R8'de sabit `false`a katlanir.
+- `game/ui/StoreScreen.kt` — Ikmal Deposu. Cephanelik ile ayni ekran dili;
+  ayri ekran cunku ayni kart sirasina gercek para ile oyun parasini
+  karistirmak oyuncuya her kartta "bu bana kac lira?" sorusunu sordurur.
+  Giris: Cephanelik'te 7. kart **ve** coin cipine dokunma.
+
+### Kalicilik ve idempotenlik (SaveManager)
+
+- `grantPurchasedCoins(token, coins)` — ayni `purchaseToken` ikinci kez
+  gelirse `false` doner ve **bakiye degismez**. `queryPurchasesAsync` her
+  acilista tuketilmemis satin almalari yeniden getirdigi icin bu kayit sart.
+- Coin `PlayerWallet.credited` ile DEGIL dogrudan yazilir: `credited`
+  `lifetimeEarned`i artirir ve o sayac **oynanisla kazanilan** coin'i olcer;
+  ekonomi raporlari onu okur. Satin alma ayri sayacta
+  (`iap_lifetime_purchased_coins`).
+- ⚠ **`resetProgress()` IAP anahtarlarina DOKUNMAZ** (`PRESERVED_ON_RESET`):
+  para odenmis bir hak ilerleme sifirlamasiyla silinemez, ve odenmis jeton
+  listesi silinseydi Play tuketilmemis bir paketi IKINCI kez coin'e cevirirdi.
+
+### Reklamsiz mod — ne kalkar, ne KALMAZ
+
+- `AdProgressStore.adsRemoved` artik `SaveManager`dan okunuyor
+  (`SaveManagerAdProgressStore`; oncesinde sabit `false` idi ve KDoc'u
+  "eklenirse tek degisecek yer burasi" diyordu).
+- Kalkan: **interstitial** (`InterstitialPolicy.decide` ilk dalda
+  `ADS_REMOVED` doner). Banner zaten kapali (`BANNER_ENABLED = false`).
+- Kalan: **rewarded**. Rewarded bir reklam degil, oyuncunun kendi actigi coin
+  muslugudur; kapatmak para odeyeni cezalandirirdi. Magaza ekrani bunu satin
+  almadan ONCE yazar (`store_remove_ads_note`) — sonradan ogrenmek "bozuk
+  urun" olarak okunur.
+
+### Hava Destegi: coin yolu (AD_ONLY -> COIN)
+
+2026-08-21'de kalem tamamen reklam yoluna cevrilmisti ("ad izlemeye tesvik
+etmeliyiz"). O karar **geri alinmadi**, uzerine bir yol eklendi:
+
+- `currency = COIN`, `paidUsesPerBattle = 1`, `adUsesPerBattle = 2` ve YENI
+  `sharedUseCap = 2`: iki yol AYNI iki vurusu paylasir. Ucuncu vurus YOK —
+  `2 x AIR_SUPPORT_DAMAGE_FRACTION = 0,90 < 1,0` pay-to-win kalkani aynen
+  durur (3 vurus 1,35 ederdi ve guclendirici tek basina oldururdu).
+- YENI `adPathIsPrimary = true`: **arbitraj kalkani bu tipe uygulanmaz.**
+  Kalkan ("ucretli yol tukenmeden reklam acilmaz") reklamin bir para birimi
+  emicisini ikame etmesini engellemek icin var. Hava destegine oldugu gibi
+  uygulansaydi oyuncu **reklam izleyebilmek icin once coin harcamak zorunda
+  kalirdi** — 21 Agustos kararinin tam tersi. Us Tamiri'nde kalkan aynen
+  gecerli.
+- `BoosterRail` yol sirasini tersine cevirir: reklam hakki acikken REKLAM,
+  kapandiginda coin fiyati. `AIR_SUPPORT_PREFER_AD_PATH` ile cevrilebilir.
+- Fiyat 130 + 22(L-1) COIN (L4 196 · L22 592 · L55 1.318). Kisitlar:
+  en ucuz meta rank-1'den pahali, 1-yildiz odulunden ucuz (%75-85), ve
+  Us Tamiri'nden pahali (etkisi daha guclu). Eski Tedarik tablosu
+  (101 + 8(L-1)) `EconomyConfig`te duruyor ama artik okunmuyor.
+- Sonuc: hava destegi savas ici Tedarige DOKUNMAZ. Tedarik harcayan
+  guclendirici KALMADI ve `SupplyBudgetTest` bunu artik dogrudan kanitliyor.
+
+### Bayat testler temizlendi
+
+`BoosterEconomyTest`te 2026-08-21'den kalan "olu sayiyi koruyan" testler
+vardi ve kendi KDoc'lari bunu itiraf ediyordu (*"ARTIK OLU BIR SAYIYI
+KORUYOR. GECIYOR AMA HICBIR OYUNCU DAVRANISINI KILITLEMIYOR"*). Coin yolu
+gelince hepsi gercek bir sozlesmeye baglandi:
+
+- `airSupportNeverCostsLessThanAFullyUpgradedTower` — kule maliyetiyle
+  karsilastirma artik CAPRAZ PARA BIRIMI (GDD D.4 donusumu yasakliyor).
+  Olcut coin dilinde yeniden yazildi: en ucuz meta rank-1.
+- `airSupportCostsAboutOneFullyUpgradedGatlingAtUnlock` — "125 = bir kademe-2
+  Gatling" ankraji dustu, BUTCE TAVANI kaldi (olcut Tedarik butcesi degil
+  1-yildiz coin odulu).
+- `airSupportHasNoPaidPathSoItStartsEveryBattleDeactivated` ->
+  `airSupportKeepsTheAdPathPrimaryEvenAfterTheCoinPathWasAdded`: reklam
+  yolunun BOS CUZDANDA da acik oldugunu kanitlar — kalkanin yanlislikla geri
+  gelmesinin en net belirtisi "coin yoksa reklam da yok" olurdu.
+- YENI `airSupportCoinPlusAdStillCannotExceedTwoStrikesInOneBattle`.
+- `BoosterEffectsTest.airSupportDecreasesSupplyByExactlyItsPrice` uretimde
+  HIC olusmayan bir aktivasyonu test ediyordu (coin yolunda `supplyCharged`
+  hep 0); gercege gore yeniden yazildi.
+- YENI `StoreCatalogTest` — paket siralamasi, artan birim deger, "tek paket
+  oyunu bitiremez" (%50 tavani) ve urun id'sinin coin miktarini yansitmasi.
+  Cipa `EconomyConfig`ten hesaplanir (62.605 = 23.105 kilit + 19.600 agac +
+  19.900 prestij), elle yazilmaz.
+
+---
+
 ## 2026-08-27 — ELIT SEVK + PRESTIJ NISANLARI: iki yeni coin emicisi (v53)
 
 ECONOMY_ANALYSIS'in S1 bulgusuna kullanici karari: "C+B birlikte". 3 yildiz

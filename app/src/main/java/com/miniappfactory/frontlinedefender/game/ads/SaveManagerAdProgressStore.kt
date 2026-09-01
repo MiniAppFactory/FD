@@ -26,8 +26,8 @@ import com.miniappfactory.frontlinedefender.game.data.SaveManager
  * ediliyor — `MainActivity` `SaveManager`i zaten kuruyor.
  *
  * ## adsRemoved
- * v1.0'da satin alma yok; arayuzun sozlesmesine sadik kalmak icin `false`.
- * "Reklamlari Kaldir" eklenirse tek degisecek yer burasi.
+ * 2026-09-02'ye kadar satin alma yoktu ve `false` donuyordu. Artik
+ * `SaveManager.adsRemoved` okunur — kaynak Play, kopya cihaz.
  */
 class SaveManagerAdProgressStore(
     private val saveManager: SaveManager
@@ -39,5 +39,10 @@ class SaveManagerAdProgressStore(
             saveManager.lifetimeBattlesCompleted = value
         }
 
-    override val adsRemoved: Boolean get() = false
+    /**
+     * 2026-09-02 — "Reklamlari Kaldir" IAP eklendi; deger artik `SaveManager`dan
+     * gelir (Play'den dogrulanip oraya yazilir, bkz. `billing/BillingManager`).
+     * Yalnizca interstitial kapisi bunu okur; rewarded teklifleri okumaz.
+     */
+    override val adsRemoved: Boolean get() = saveManager.adsRemoved
 }

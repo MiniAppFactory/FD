@@ -50,6 +50,11 @@ import com.miniappfactory.frontlinedefender.ui.theme.*
 fun UpgradeShopScreen(
     progress: CampaignProgressImpl,
     onBack: () -> Unit,
+    /**
+     * IKMAL DEPOSU (IAP) girisi — 2026-09-02. null ise kart HIC cizilmez ve coin
+     * cipi dokunulmaz kalir (testler ve eski cagri yerleri icin sifir fark).
+     */
+    onOpenStore: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     // Tam ekran katman: geri tusu ile de kapanmali. Bkz. MissionsScreen —
@@ -94,13 +99,17 @@ fun UpgradeShopScreen(
                 )
                 Spacer(Modifier.weight(1f))
                 key(buyTick) {
+                    // Bakiyeye dokunmak = "daha fazla coin" (Ikmal Deposu). Giris
+                    // lambda'si yoksa cip eskisi gibi salt okunur.
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         modifier = Modifier
                             .clip(RoundedCornerShape(10.dp))
                             .background(Color(0x33FFD700))
+                            .clickable(enabled = onOpenStore != null) { onOpenStore?.invoke() }
                             .padding(horizontal = 12.dp, vertical = 6.dp)
+                            .testTag("shop_coin_chip")
                     ) {
                         SpriteIcon(
                             id = R.drawable.spr_ic_coins,
@@ -168,8 +177,66 @@ fun UpgradeShopScreen(
                 key(buyTick) {
                     PrestigeCard(progress = progress, onBought = { buyTick++ })
                 }
+                // IKMAL DEPOSU — 7. kart (IAP, 2026-09-02). Gercek para burada
+                // HARCANMAZ; kart yalnizca ayri ekrana gecis. Ayni sablon dili,
+                // ama coin fiyati yerine "AC": oyuncu bu kartta kac lira
+                // odeyecegini gormez, cunku fiyat Play'den ancak o ekranda gelir.
+                if (onOpenStore != null) {
+                    StoreEntryCard(onOpen = onOpenStore)
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun StoreEntryCard(onOpen: () -> Unit) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.SpaceBetween,
+        modifier = Modifier
+            .width(150.dp)
+            .fillMaxHeight()
+            .clip(RoundedCornerShape(14.dp))
+            .background(SleekSurfaceCard)
+            .border(1.dp, SleekGoldBorder, RoundedCornerShape(14.dp))
+            .clickable(onClick = onOpen)
+            .padding(horizontal = 12.dp, vertical = 12.dp)
+            .testTag("store_entry_card")
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            SpriteIcon(id = R.drawable.spr_ic_coins, size = 40.dp, contentDescription = null)
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = stringResource(R.string.store_card_title),
+                color = SleekGold,
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = 14.sp,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = stringResource(R.string.store_card_body),
+                color = SleekTextAccent.copy(alpha = 0.75f),
+                fontSize = 11.sp,
+                textAlign = TextAlign.Center,
+                maxLines = 3,
+            )
+        }
+        Text(
+            text = stringResource(R.string.store_card_open),
+            color = Color.White,
+            fontWeight = FontWeight.Black,
+            fontSize = 13.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .background(SleekPrimaryGreen)
+                .padding(vertical = 10.dp)
+                .testTag("store_entry_open")
+        )
     }
 }
 

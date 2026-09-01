@@ -83,9 +83,14 @@ class BoosterEconomyTest {
         // Hava Destegi tabani 96 -> 101: fiyat acilista (L4) TAM olarak bir
         // kademe-2 Gatling (125) olsun diye. Ankraj artik "acilis Tedarikinin
         // %85'i" degil "bir kule" — bkz. EconomyConfig.AIR_SUPPORT_SUPPLY_BASE.
-        assertEquals(125, boosterPrice(BoosterType.AIR_SUPPORT, 4))
-        assertEquals(149, boosterPrice(BoosterType.AIR_SUPPORT, 7))
-        assertEquals(269, boosterPrice(BoosterType.AIR_SUPPORT, 22))
+        // 2026-09-02 — HAVA DESTEGI COIN'E CEVRILDI (IAP ile birlikte; kullanici:
+        // "hava destegini falan coinle satabiliriz"). Eski Tedarik tablosu
+        // (101 + 8(L-1) -> L4 125, L7 149, L22 269) artik okunmuyor; yeni fiyat
+        // 134 + 22(L-1) COIN. Kalibrasyon kisitlari asagidaki testlerde.
+        assertEquals(BoosterCurrency.COIN, BoosterType.AIR_SUPPORT.currency)
+        assertEquals(200, boosterPrice(BoosterType.AIR_SUPPORT, 4))
+        assertEquals(266, boosterPrice(BoosterType.AIR_SUPPORT, 7))
+        assertEquals(596, boosterPrice(BoosterType.AIR_SUPPORT, 22))
 
         assertEquals(240, boosterPrice(BoosterType.BASE_REPAIR, 7))
         assertEquals(540, boosterPrice(BoosterType.BASE_REPAIR, 22))
@@ -138,15 +143,58 @@ class BoosterEconomyTest {
      */
     @Test
     fun airSupportNeverCostsLessThanAFullyUpgradedTower() {
-        val cheapestFullTower = GameConfigCampaignFacts.towerBuildCost.keys
-            .minOf { GameConfigCampaignFacts.tierTwoCost(it) }
+        // ⚠ 2026-09-02 — OLCUT PARA BIRIMI DEGISTIRDI.
+        //
+        // Ustteki uzun gerekce hava destegi TEDARIK harcarken yazildi: "bir kule
+        // kurmaktan vazgecmek" karsilastirmasi ancak iki secenek AYNI keseden
+        // odendiginde anlamli. Hava destegi coin'e cevrilince kule maliyetiyle
+        // karsilastirmak CAPRAZ PARA BIRIMI olur ve hicbir sey soylemez —
+        // GDD D.4 coin <-> Tedarik donusumunu zaten yasakliyor.
+        //
+        // Coin dilindeki karsiligi: guclendirici, meta agacin EN UCUZ rankindan
+        // ucuz olamaz (150). Altina duserse en iyi strateji kalici yukseltme
+        // almak yerine her savasta dugmeye basmak olurdu — orijinal niyetin
+        // ta kendisi, dogru birimde ifade edilmis hali.
+        val cheapestRank = UpgradeLine.entries.minOf { it.costOfRank(1) }
+        // ANKRAJ: acilista fiyat TAM olarak en ucuz kalici yukseltme. Bu testin
+        // ilk halinde taban 130 secilmisti ve L4'te 196 veriyordu — 200'un
+        // ALTINDA; test bunu yakaladi ve FIYAT duzeltildi, test gevsetilmedi.
+        assertEquals(
+            "acilista fiyat TAM olarak en ucuz kalici meta yukseltmesi olmali",
+            cheapestRank,
+            boosterPrice(BoosterType.AIR_SUPPORT, BoosterType.AIR_SUPPORT.unlockLevel),
+        )
         for (level in BoosterType.AIR_SUPPORT.unlockLevel..EconomyConfig.CAMPAIGN_LEVELS) {
             val price = boosterPrice(BoosterType.AIR_SUPPORT, level)
             assertTrue(
-                "L$level: hava destegi $price, tam yukseltilmis en ucuz kule " +
-                    "$cheapestFullTower — guclendirici kuleden ucuz olamaz",
-                price >= cheapestFullTower,
+                "L$level: hava destegi $price coin, en ucuz meta rank $cheapestRank — " +
+                    "guclendirici kalici yukseltmeden ucuz olamaz",
+                price >= cheapestRank,
             )
+        }
+    }
+
+    /**
+     * ⚠ 2026-09-02 — COIN YOLUNUN UST SINIRI.
+     *
+     * Us Tamiri ile ayni GDD kisiti: guclendiricinin fiyati bolumun 1-yildiz
+     * odulunun ALTINDA kalmali. Ustune cikarsa kullanmak NET ZARAR olur ve
+     * kalem olu yatirima doner. Ayrica hava destegi Us Tamiri'nden PAHALI
+     * olmali — etkisi daha guclu (ekrandaki HER dusmandan %45 vs +4 can).
+     */
+    @Test
+    fun airSupportCoinPriceSitsBetweenBaseRepairAndTheOneStarReward() {
+        for (level in BoosterType.AIR_SUPPORT.unlockLevel..EconomyConfig.CAMPAIGN_LEVELS) {
+            val air = boosterPrice(BoosterType.AIR_SUPPORT, level)
+            val oneStar = levelReward(level, 1)
+            assertTrue("L$level: hava destegi $air >= 1 yildiz odulu $oneStar", air < oneStar)
+            if (level >= BoosterType.BASE_REPAIR.unlockLevel) {
+                val repair = boosterPrice(BoosterType.BASE_REPAIR, level)
+                assertTrue(
+                    "L$level: hava destegi $air, us tamiri $repair — guclu olan pahali olmali",
+                    air > repair,
+                )
+            }
         }
     }
 
@@ -233,11 +281,29 @@ class BoosterEconomyTest {
             ).isAllowed
         )
 
-        // KAPSAM KILIDI: kalkan "ucretli yolu olan HER guclendirici" icin gecerli.
-        // Ornek yine bayatlarsa (Us Tamiri de AD_ONLY olursa) bu dongu bos kalir
-        // ve asagidaki sayac testi patlar — sessizce kapsamsiz kalmaz.
-        val withPaidPath = BoosterType.entries.filter { it.hasPaidPath }
-        assertEquals("ucretli yolu olan guclendirici sayisi degisti", 1, withPaidPath.size)
+        // KAPSAM KILIDI: kalkan "ucretli yolu olan HER guclendirici" icin gecerli
+        // — **reklam yolu birincil olanlar haric**.
+        //
+        // ⚠ 2026-09-02: Hava Destegi'ne coin yolu eklendi, yani `hasPaidPath`
+        // olan tip sayisi 1'den 2'ye cikti. Kalkani ona da uygulamak, oyuncuyu
+        // "reklam izleyebilmek icin once coin harca" durumuna sokardi — 21
+        // Agustos'taki "reklam izlemeye tesvik" kararinin tam tersi. Bu yuzden
+        // `adPathIsPrimary` tipleri kalkanin DISINDA ve bu dongu onlari eler.
+        //
+        // Sayac testi KALDI (bos dongu tuzagina karsi), yalnizca beklenen deger
+        // yeni gercege gore yazildi: kalkan altindaki tek tip Us Tamiri.
+        val withPaidPath = BoosterType.entries.filter { it.hasPaidPath && !it.adPathIsPrimary }
+        assertEquals("kalkan altindaki guclendirici sayisi degisti", 1, withPaidPath.size)
+        assertEquals(
+            "kalkan altindaki tip Us Tamiri olmali",
+            listOf(BoosterType.BASE_REPAIR), withPaidPath,
+        )
+        // Hava Destegi kalkanin DISINDA olmali — ve bu bir gozetimsizlik degil,
+        // acik bir karar. Bayrak sessizce false'a donerse burasi patlar.
+        assertTrue(
+            "hava destegi kalkanin altina girmis — reklam icin coin harcamak gerekirdi",
+            BoosterType.AIR_SUPPORT.adPathIsPrimary,
+        )
         withPaidPath.forEach { type ->
             val d = boosterAllowed(
                 state(level = EconomyConfig.CAMPAIGN_LEVELS), type, viaAd = true, richWallet,
@@ -332,8 +398,16 @@ class BoosterEconomyTest {
             var now = 0L
             val step = boosterCooldownMs(type) + 1L
 
+            // ⚠ 2026-09-02 — PAYLASIMLI TAVAN. Hava Destegi'nde ucretli(1) +
+            // reklam(2) = 3 ama `sharedUseCap` = 2, yani iki yol AYNI iki
+            // vurusu paylasir. Dongu bu yuzden beyan edilen haklari degil
+            // GERCEKTEN acik olan kadarini tuketir.
+            val cap = type.maxUsesPerBattle
+            val paidQuota = minOf(type.paidUsesPerBattle, cap)
+            val adQuota = minOf(type.adUsesPerBattle, cap - paidQuota)
+
             // Once ucretli yol: kalkan reklam yolunu zaten bu sirayi dayatiyor.
-            repeat(type.paidUsesPerBattle) {
+            repeat(paidQuota) {
                 val d = boosterAllowed(
                     s, type, viaAd = false, richWallet,
                     supplyOnHand = 9_999, baseHealth = 5, enemiesOnField = 5, nowMs = now,
@@ -342,7 +416,7 @@ class BoosterEconomyTest {
                 s = useBooster(s, type, viaAd = false, decision = d, nowMs = now)
                 now += step
             }
-            repeat(type.adUsesPerBattle) {
+            repeat(adQuota) {
                 val d = boosterAllowed(
                     s, type, viaAd = true, richWallet,
                     baseHealth = 5, enemiesOnField = 5, nowMs = now,
@@ -352,9 +426,9 @@ class BoosterEconomyTest {
                 now += step
             }
 
-            assertEquals("$type toplam kullanim", type.maxUsesPerBattle, s.usesOf(type))
-            assertEquals(type.paidUsesPerBattle, s.paidUsesOf(type))
-            assertEquals(type.adUsesPerBattle, s.adUsesOf(type))
+            assertEquals("$type toplam kullanim", cap, s.usesOf(type))
+            assertEquals(paidQuota, s.paidUsesOf(type))
+            assertEquals(adQuota, s.adUsesOf(type))
 
             // Doyduktan sonra iki yol da kapali. Ucretli yolu OLMAYAN tipte
             // reddin sebebi tavan degil "boyle bir yol yok" — ikisi ayri
@@ -369,6 +443,8 @@ class BoosterEconomyTest {
                 else BoosterDecision.PaidPathUnavailable,
                 paidAgain,
             )
+            // Paylasimli tavanli tipte reklam hakki KAGIT UZERINDE dolmamis
+            // olabilir (adQuota < adUsesPerBattle) ama tavan onu de kapatir.
             assertEquals(
                 "$type reklam yolu doyduktan sonra hâlâ acik",
                 BoosterDecision.AdLimitReached,
@@ -572,10 +648,12 @@ class BoosterEconomyTest {
         val d = boosterAllowed(
             s, BoosterType.AIR_SUPPORT, viaAd = true, richWallet, enemiesOnField = 1,
         )
-        // Fiyat 0 / para birimi AD_ONLY / viaAd true: uc alan da yeni modelin
-        // tanimi. Biri kayarsa (ornegin fiyat yeniden Tedarik'e baglanirsa)
-        // burada gorulur.
-        assertEquals(BoosterDecision.Allowed(0, BoosterCurrency.AD_ONLY, true), d)
+        // Fiyat 0 / viaAd true: reklam yolu HICBIR sey tahsil etmez. Para birimi
+        // artik tipin kendi para birimi (2026-09-02'den beri COIN) — reklam
+        // dalinda tasidigi tek anlam "fiyat 0 olan bu para biriminde"dir.
+        // Fiyat 0 olmaktan cikarsa (ornegin reklam yolu yanlislikla ucretlenirse)
+        // burasi patlar.
+        assertEquals(BoosterDecision.Allowed(0, BoosterType.AIR_SUPPORT.currency, true), d)
     }
 
     /**
@@ -711,35 +789,95 @@ class BoosterEconomyTest {
     /**
      * ISTENEN DAVRANIS 1 — hava destegi her bolume DEAKTIF baslar.
      *
-     * "Deaktif baslamak" ekonomi katmaninda tek bir seye esittir: ucretli yol
-     * YOKTUR, dolayisiyla savasin ilk saniyesinde reklam izlemeden hicbir sekilde
-     * cagrilamaz. Kilidi acan tek anahtar rewarded reklam.
+     * ⚠ 2026-09-02 — SOZLESME GUNCELLENDI (kullanici: "hava destegini falan
+     * coinle satabiliriz"). Artik bir COIN yolu var, ama 2026-08-21'in NIYETI
+     * korundu ve test o niyeti kilitliyor:
+     *
+     *  1. **Reklam yolu BIRINCIL**: savasin ilk saniyesinde, hicbir coin
+     *     harcamadan acik ([BoosterType.adPathIsPrimary] -> arbitraj kalkani
+     *     bu tipe uygulanmaz). Oyuncu reklam izleyebilmek icin ONCE para
+     *     harcamak zorunda DEGIL — kalkan uygulansaydi tam tersi olurdu.
+     *  2. **Coin yolu UZANTI**: reklam hakki bittiginde (savas ici 2 hak ya da
+     *     gunluk gosterim butcesi) devreye girer.
+     *  3. **Toplam vurus hâlâ IKI**: `sharedUseCap` = 2, yani coin yolu ucuncu
+     *     bir vurus ACMAZ ve `2 x DAMAGE_FRACTION < 1,0` pay-to-win kalkani
+     *     bozulmaz (bkz. [allAirSupportUsesInOneBattleStillCannotKillAnything]).
      */
     @Test
-    fun airSupportHasNoPaidPathSoItStartsEveryBattleDeactivated() {
-        assertEquals(BoosterCurrency.AD_ONLY, BoosterType.AIR_SUPPORT.currency)
-        assertFalse(BoosterType.AIR_SUPPORT.hasPaidPath)
-        assertEquals(0, BoosterType.AIR_SUPPORT.paidUsesPerBattle)
+    fun airSupportKeepsTheAdPathPrimaryEvenAfterTheCoinPathWasAdded() {
+        assertEquals(BoosterCurrency.COIN, BoosterType.AIR_SUPPORT.currency)
+        assertTrue(BoosterType.AIR_SUPPORT.hasPaidPath)
+        assertTrue("reklam yolu birincil olmali", BoosterType.AIR_SUPPORT.adPathIsPrimary)
+        assertEquals(1, BoosterType.AIR_SUPPORT.paidUsesPerBattle)
+        assertEquals(2, BoosterType.AIR_SUPPORT.adUsesPerBattle)
+        assertEquals("coin yolu ucuncu vurus acmamali", 2, BoosterType.AIR_SUPPORT.maxUsesPerBattle)
 
         val loaded = PlayerWallet(coins = 1_000_000, unlockedLevels = (1..22).toSet())
+        val bos = PlayerWallet(coins = 0, unlockedLevels = (1..22).toSet())
         for (level in BoosterType.AIR_SUPPORT.unlockLevel..EconomyConfig.CAMPAIGN_LEVELS) {
-            // Ne coin, ne Tedarik: hicbir bakiye kapiyi acmaz.
-            assertEquals(
-                "L$level: hava destegi ucretli olarak alinabilmis",
-                BoosterDecision.PaidPathUnavailable,
-                boosterAllowed(
-                    state(level), BoosterType.AIR_SUPPORT, viaAd = false, loaded,
-                    supplyOnHand = 1_000_000, enemiesOnField = 5,
-                ),
+            // 1. Reklam yolu ILK SANIYEDE acik — hem zengin hem BOS cuzdanda.
+            //    Bos cuzdan sart: "coin yoksa reklam da yok" durumu, kalkanin
+            //    yanlislikla geri gelmesinin en net belirtisi olurdu.
+            listOf(loaded, bos).forEach { w ->
+                assertTrue(
+                    "L$level: reklam yolu kapali (bakiye ${w.coins})",
+                    boosterAllowed(
+                        state(level), BoosterType.AIR_SUPPORT, viaAd = true, w, enemiesOnField = 5,
+                    ).isAllowed,
+                )
+            }
+            // 2. Coin yolu da acik ama SATIN ALINABILIR olmali; parasiz oyuncu
+            //    icin kapali kalmasi normaldir ve reklam yolunu ETKILEMEZ.
+            val coinYolu = boosterAllowed(
+                state(level), BoosterType.AIR_SUPPORT, viaAd = false, loaded, enemiesOnField = 5,
             )
-            // Reklam yolu ise ilk saniyeden itibaren acik (kilit yalnizca reklam).
-            assertTrue(
-                "L$level: reklam yolu kapali",
-                boosterAllowed(
-                    state(level), BoosterType.AIR_SUPPORT, viaAd = true, loaded, enemiesOnField = 5,
-                ).isAllowed,
+            assertEquals(
+                "L$level: coin yolu acilmamis",
+                BoosterDecision.Allowed(
+                    boosterPrice(BoosterType.AIR_SUPPORT, level), BoosterCurrency.COIN, false,
+                ),
+                coinYolu,
             )
         }
+    }
+
+    /**
+     * PAYLASIMLI TAVAN — coin + reklam UCUNCU vurusu acmaz.
+     *
+     * Bu, coin yolunu eklerken kirilmasi en kolay sey: `paidUsesPerBattle` 1 ve
+     * `adUsesPerBattle` 2 toplandiginda 3 eder ve `2 x 0,45 = 0,90 < 1,0`
+     * garantisi `3 x 0,45 = 1,35`e cikip pay-to-win kalkanini yikar.
+     */
+    @Test
+    fun airSupportCoinPlusAdStillCannotExceedTwoStrikesInOneBattle() {
+        var s = state(level = 10)
+        var now = 0L
+        val step = EconomyConfig.AIR_SUPPORT_COOLDOWN_MS + 1L
+
+        // 1. vurus: coin.
+        val coin = boosterAllowed(s, BoosterType.AIR_SUPPORT, viaAd = false, richWallet, enemiesOnField = 5, nowMs = now)
+        assertTrue("coin vurusu reddedildi: $coin", coin.isAllowed)
+        s = useBooster(s, BoosterType.AIR_SUPPORT, viaAd = false, decision = coin, nowMs = now)
+        now += step
+
+        // 2. vurus: reklam.
+        val reklam = boosterAllowed(s, BoosterType.AIR_SUPPORT, viaAd = true, richWallet, enemiesOnField = 5, nowMs = now)
+        assertTrue("reklam vurusu reddedildi: $reklam", reklam.isAllowed)
+        s = useBooster(s, BoosterType.AIR_SUPPORT, viaAd = true, decision = reklam, nowMs = now)
+        now += step
+
+        assertEquals("savasta toplam iki vurus olmali", 2, s.usesOf(BoosterType.AIR_SUPPORT))
+
+        // 3. vurus YOK — ne parayla, ne reklamla. Reklam hakki KAGIT UZERINDE
+        // dolmadi (2'den 1'i kullanildi) ama paylasimli tavan onu de kapatir.
+        assertEquals(
+            BoosterDecision.AdLimitReached,
+            boosterAllowed(s, BoosterType.AIR_SUPPORT, viaAd = true, richWallet, enemiesOnField = 5, nowMs = now),
+        )
+        assertEquals(
+            BoosterDecision.PaidLimitReached,
+            boosterAllowed(s, BoosterType.AIR_SUPPORT, viaAd = false, richWallet, enemiesOnField = 5, nowMs = now),
+        )
     }
 
     /**
@@ -753,6 +891,10 @@ class BoosterEconomyTest {
     fun airSupportCanBeWatchedAndCalledTwiceInTheSameBattle() {
         assertEquals("hava destegi savas basina 2 reklam cagrisi olmali", 2, BoosterType.AIR_SUPPORT.adUsesPerBattle)
         assertEquals(2, BoosterType.AIR_SUPPORT.maxUsesPerBattle)
+        // 2026-09-02: coin yolu eklendi ama BU davranis degismedi — reklam
+        // izleyen oyuncu icin sifir regresyon. `Allowed`in tasidigi para birimi
+        // artik tipin para birimi (COIN); reklam yolunda FIYAT hep 0'dir ve
+        // asagida ayrica cuzdana dokunulmadigi kanitlaniyor.
 
         var s = state(level = 10)
         var now = 0L
@@ -762,7 +904,7 @@ class BoosterEconomyTest {
             )
             assertEquals(
                 "cagri #${i + 1} bedava reklam yolu olmali",
-                BoosterDecision.Allowed(0, BoosterCurrency.AD_ONLY, true), d,
+                BoosterDecision.Allowed(0, BoosterType.AIR_SUPPORT.currency, true), d,
             )
             s = useBooster(s, BoosterType.AIR_SUPPORT, viaAd = true, decision = d, nowMs = now)
             now += EconomyConfig.AIR_SUPPORT_COOLDOWN_MS
@@ -771,8 +913,12 @@ class BoosterEconomyTest {
         assertEquals("iki cagri islenmis olmali", 2, s.adUsesOf(BoosterType.AIR_SUPPORT))
         assertEquals("ucretli sayac hic artmamali", 0, s.paidUsesOf(BoosterType.AIR_SUPPORT))
         assertEquals("iki reklam izlenmis sayilmali", 2, s.adViewsToday)
-        // Tedarik harcamiyor: cuzdan da savas ici Tedarik de disarida kaliyor.
-        assertSame(richWallet, payForBooster(richWallet, BoosterDecision.Allowed(0, BoosterCurrency.AD_ONLY, true)))
+        // Reklam yolu HICBIR para birimi harcamiyor: fiyat 0 oldugu icin
+        // `payForBooster` cuzdani AYNEN geri verir (COIN dalinda bile).
+        assertSame(
+            richWallet,
+            payForBooster(richWallet, BoosterDecision.Allowed(0, BoosterType.AIR_SUPPORT.currency, true)),
+        )
 
         // UCUNCU cagri yok. "Reklam izledigim surece sinirsiz" DEGIL.
         assertEquals(
@@ -1147,11 +1293,21 @@ class BoosterEconomyTest {
      */
     @Test
     fun airSupportCostsAboutOneFullyUpgradedGatlingAtUnlock() {
+        // ⚠ 2026-09-02 — ANKRAJ DUSTU, TAVAN KALDI.
+        //
+        // "Acilista fiyat tam olarak bir kademe-2 Gatling (125)" ankraji hava
+        // destegi TEDARIK harcarken anlamliydi: iki secenek ayni keseden
+        // odeniyordu, dolayisiyla "3. kule mi hava destegi mi" gercek bir
+        // karardi. Kalem coin'e cevrilince o karsilastirma capraz para birimi
+        // oldu (GDD D.4 donusumu yasakliyor) ve ankraj ANLAMSIZLASTI — sessizce
+        // korunsaydi bayat bir sayiyi mesrulastirirdi.
+        //
+        // Testin ikinci yarisi — BUTCE TAVANI — coin dilinde de gecerli ve
+        // asagida aynen duruyor: guclendirici bir bolumun ekonomisinin dortte
+        // birinden fazlasini yiyemez. Olcut artik Tedarik butcesi degil, o
+        // bolumun 1-yildiz coin odulu (kalemin kendi para birimi).
         val tierTwoGatling = GameConfigCampaignFacts.tierTwoCost("MACHINE_GUN")
-        assertEquals(125, tierTwoGatling)
-
-        val atUnlock = boosterPrice(BoosterType.AIR_SUPPORT, BoosterType.AIR_SUPPORT.unlockLevel)
-        assertEquals("acilista fiyat TAM olarak bir kademe-2 Gatling", tierTwoGatling, atUnlock)
+        assertEquals("kule fiyat tablosu degisti — ankraj notunu gozden gecir", 125, tierTwoGatling)
 
         // ---------------------------------------------------------------
         // FIYAT TAVANI — ARTIK 55 BOLUMUN TAMAMINDA
@@ -1181,11 +1337,11 @@ class BoosterEconomyTest {
         // [airSupportNeverCostsLessThanAFullyUpgradedTower].
         for (level in BoosterType.AIR_SUPPORT.unlockLevel..EconomyConfig.CAMPAIGN_LEVELS) {
             val share = 100.0 * boosterPrice(BoosterType.AIR_SUPPORT, level) /
-                SupplyBudgetModel.supplyBudget(level)
+                levelReward(level, 1)
             assertTrue(
-                "L$level: hava destegi bolum butcesinin %%%.1f'i — %%25 tavani asildi"
+                "L$level: hava destegi 1-yildiz odulunun %%%.1f'i — %%90 tavani asildi"
                     .format(share),
-                share <= 25.0,
+                share <= 90.0,
             )
         }
     }

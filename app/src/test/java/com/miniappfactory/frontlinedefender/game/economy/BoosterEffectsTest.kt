@@ -94,20 +94,36 @@ class BoosterEffectsTest {
         assertEquals("can degismemeli", res.lives, out.lives)
     }
 
+    /**
+     * ⚠ 2026-09-02 — HAVA DESTEGI TEDARIK DEGIL COIN HARCIYOR.
+     *
+     * Eski ad `airSupportDecreasesSupplyByExactlyItsPrice` idi ve `supplyCharged`
+     * alanina fiyati ELLE koyup Tedarigin dustugunu dogruluyordu. Kalem coin'e
+     * cevrilince (`CampaignProgressImpl.activateBooster` artik `supplyCharged`i
+     * yalnizca `currency == SUPPLY` dalinda dolduruyor) o kurgu URETIMDE HIC
+     * OLUSMAYAN bir aktivasyonu test ediyordu — gecen ama hicbir sey soylemeyen
+     * bir test.
+     *
+     * Yeni olcut uretimin gercegi: coin yolunda `supplyCharged` SIFIRDIR, yani
+     * hava destegi savas ici ekonomiye DOKUNMAZ. Coin dususu ayri katmanda
+     * (`payForBooster`) ve orasi `BoosterEconomyTest`te kilitli.
+     */
     @Test
-    fun airSupportDecreasesSupplyByExactlyItsPrice() {
-        val price = boosterPrice(BoosterType.AIR_SUPPORT, level = 4)
-        val rich = BattleResources(supply = price + 50, lives = 12)
+    fun airSupportLeavesBattleSupplyUntouchedBecauseItIsPaidInCoin() {
+        assertEquals(BoosterCurrency.COIN, BoosterType.AIR_SUPPORT.currency)
+        val rich = BattleResources(supply = 250, lives = 12)
         val out = applyBoosterToResources(
             rich,
             allowed(
                 BoosterType.AIR_SUPPORT,
-                supplyCharged = price,
+                // Uretimde coin yolunda bu alan 0 kalir; testin tam olarak
+                // dogrulamasi gereken sey de bu.
+                supplyCharged = 0,
                 airSupportDamageFraction = EconomyConfig.AIR_SUPPORT_DAMAGE_FRACTION,
             ),
             maxLives,
         )
-        assertEquals(50, out.supply)
+        assertEquals("hava destegi savas ici Tedarige dokunmamali", 250, out.supply)
         assertEquals("can degismemeli", rich.lives, out.lives)
     }
 
