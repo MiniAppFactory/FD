@@ -64,13 +64,18 @@ internal val ResultModalInnerWidth = ResultModalMaxWidth - 24.dp - 28.dp
  *   vermek zorunda kalmasin; bagli olmayan bir cagri yeri menuyu BOZMAZ,
  *   yalnizca kisayol gorunmez.
  * @param onOpenMissions ayni sozlesme, GOREVLER butonu icin.
+ * @param prestigeRank REAKTIF prestij nisani rank'i (`CampaignProgressImpl.prestigeRank`).
+ *   null ise `SaveManager`dan OKUNUR — ama o okuma Compose state'i DEGILDIR
+ *   ve degistiginde recomposition tetiklemez. Ayrintili gerekce cip
+ *   ciziminin yanindaki yorumda.
  */
 @Composable
 fun MainMenuOverlay(
     gameEngine: GameEngine,
     onStartGame: () -> Unit,
     onOpenArmory: (() -> Unit)? = null,
-    onOpenMissions: (() -> Unit)? = null
+    onOpenMissions: (() -> Unit)? = null,
+    prestigeRank: Int? = null
 ) {
     val highScore = gameEngine.saveManager.highScore
     var soundEnabled by remember { mutableStateOf(gameEngine.saveManager.soundEnabled) }
@@ -319,7 +324,26 @@ fun MainMenuOverlay(
         // PRESTIJ NISANI (ECONOMY_ANALYSIS B) — mockup'taki "COMMANDER"
         // rozetinin GERCEK VERIYLE dolmus hali. Rank 0'da hic cizilmez:
         // uydurma unvan gosterilmez.
-        val prestige = gameEngine.saveManager.prestigeRank
+        //
+        // ⚠ 2026-09-02 — CIHAZDA GORULEN HATA: nisan satin alindiktan sonra cip
+        // ANA MENUDE CIKMIYORDU; ancak uygulama yeniden baslatilinca goruluyordu.
+        //
+        // KOK NEDEN: burada `gameEngine.saveManager.prestigeRank` okunuyordu —
+        // duz bir `SharedPreferences` okumasi, Compose snapshot state'i DEGIL.
+        // Deger degistiginde Compose'un recomposition yapmasi icin hicbir sebep
+        // yok; cip yalnizca kompozisyon baska bir nedenle yeniden kosarsa
+        // (surec yeniden baslarsa) ortaya cikiyordu.
+        //
+        // NEDEN ONEMLI: Prestij Nisani TAMAMEN KOZMETIKTIR — 1.500 coin'in
+        // satin aldigi tek sey bu cipin GORUNMESIDIR. Gorunmedigi surece
+        // oyuncu parasini hicbir seye vermis olur; bu, kozmetik bir kalemde
+        // olabilecek en agir hatadir.
+        //
+        // COZUM: reaktif kaynak (`CampaignProgressImpl.prestigeRank`,
+        // `mutableStateOf` ile destekli) disaridan gecirilir. Parametre null
+        // ise eski davranisa duser — yalnizca cip degerini gecmeyen cagri
+        // yerleri (ve testler) icin; URETIMDE `GameScreen` her zaman gecer.
+        val prestige = prestigeRank ?: gameEngine.saveManager.prestigeRank
         if (prestige > 0) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,

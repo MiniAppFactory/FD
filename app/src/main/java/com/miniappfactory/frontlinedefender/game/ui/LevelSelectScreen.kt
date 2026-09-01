@@ -1193,8 +1193,18 @@ private fun LevelCard(
                     .padding(
                         start = w * 0.285f,
                         end = w * 0.13f,
-                        top = h * 0.497f,
-                        bottom = h * 0.423f
+                        // ⚠ 2026-09-02 — BANDLAR SABLONUN KENDI CIZGILERINE OTURTULDU.
+                        // Olcum: `ui_card_available.webp` (560x747) uzerinde yatay
+                        // ayrac cizgileri y/h = 0,5033 · 0,5837 · 0,6667. Yani sablonun
+                        // metin yuvalari 0,5033-0,5837 (hedef) ve 0,5837-0,6667 (dalga).
+                        // Eski degerler elle ayarlanmisti ve yuvalarla hizali degildi:
+                        // hedef merkezi 0,537 (yuva 0,5435) ve dalga merkezi 0,645
+                        // (yuva 0,6252 — 0,02xh, yani ~3 dp ASAGIDA). Cihazda sonuc:
+                        // Turkce alt-uzantilar (Bogazi, dalga) alt ayrac cizgisinin
+                        // altinda kaliyor, cizgi yazinin icinden geciyordu.
+                        // Bugun bandlar yuvanin KENDISI; sayi elle secilmedi.
+                        top = h * 0.5033f,
+                        bottom = h * (1f - 0.5837f)
                     )
                     .fillMaxSize()
             ) {
@@ -1216,18 +1226,24 @@ private fun LevelCard(
                 .padding(
                     start = w * 0.285f,
                     end = w * 0.13f,
-                    top = h * 0.605f,
-                    bottom = h * 0.315f
+                    // Ikinci yuva: 0,5837-0,6667 (bkz. hedef satirindaki olcum notu).
+                    top = h * 0.5837f,
+                    bottom = h * (1f - 0.6667f)
                 )
                 .fillMaxSize()
         ) {
-            Text(
+            // AutoShrinkText (duz `Text` degil): hedef satiri zaten kuculebiliyordu,
+            // bu satir kuculemiyordu. Cogul biçimi dile gore uzar ("6 waves" 7 karakter,
+            // Almanca "6 Angriffswellen" 16) ve sabit 9 sp o dilde tasardi. Ayni
+            // yuvadaki iki satirin ayni davranmamasi icin bir sebep yok.
+            AutoShrinkText(
                 text = pluralStringResource(
                     R.plurals.level_wave_count, spec.waveCount, spec.waveCount
                 ),
                 color = Color(0xFFAAB894),
-                fontSize = 9.sp,
                 fontWeight = FontWeight.Bold,
+                maxFontSize = 9.sp,
+                minFontSize = 7.sp,
                 maxLines = 1
             )
         }

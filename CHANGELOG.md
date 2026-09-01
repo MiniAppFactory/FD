@@ -6,6 +6,82 @@ yalan soyleyebiliyorlardi; surum notu artik kodla ayni gecmisi paylasiyor.
 
 ---
 
+## 2026-09-02 (ikinci tur) — CIHAZDA BULUNAN UC HATA (v55)
+
+Hepsi IAP turunun cihaz dogrulamasi sirasinda cikti; ucu de yalnizca gercek
+cihazda gorulebilecek cinsten.
+
+### 1. Prestij cipi satin alindiginda GORUNMUYORDU (agir)
+
+Cephanelik'ten 1.500 coine Bronz Nisan alindi, coin dustu
+(`eco_prestige_rank = 1`, bakiye 3.670 -> 2.170 `shared_prefs`te dogrulandi)
+ama ana menudeki nisan cipi CIKMADI; ancak uygulama yeniden baslatilinca
+goruldu.
+
+KOK NEDEN: `MainMenuOverlay` rank'i `gameEngine.saveManager.prestigeRank` ile
+okuyordu — duz bir `SharedPreferences` okumasi, Compose snapshot state'i DEGIL.
+Compose'un recomposition yapmasi icin hicbir sebep yoktu. Reaktif kaynak
+(`CampaignProgressImpl.prestigeRank`, `mutableStateOf` ile destekli) ekrana
+HIC gecirilmiyordu.
+
+NEDEN AGIR: Prestij Nisani tamamen KOZMETIKTIR — `EconomyConfig` bunu acikca
+yazar. 1.500 coinin satin aldigi TEK sey bu cipin gorunmesidir. Gorunmedigi
+surece oyuncu parasini hicbir seye vermis olur.
+
+NEDEN 1113 TESTIN HICBIRI YAKALAMADI: `EliteAndPrestigeTest` prestij
+matematigini ve kaliciligini eksiksiz kilitliyor (fiyat, rezerv, tavan,
+`resetProgress`) ama hicbiri cipin CIZILDIGINI kontrol etmiyordu —
+`prestige_chip` testTag'i depoda hicbir testte gecmiyordu. Bu, deponun
+4 numarali tekrar eden hata sinifinin ("kod var, cagiran yok") UI tarafindaki
+kardesi: veri dogru, ekran onu okumuyor.
+
+COZUM: rank `GameScreen`den reaktif olarak geciriliyor (parametre null ise eski
+davranisa duser — geri uyum). YENI `PrestigeChipReactivityTest`: kompozisyon
+YENIDEN KURULMADAN cip cikmali; kalici depo test boyunca 0'da birakiliyor, yani
+eski koda donulurse test GECEMEZ.
+
+CIHAZ KANITI: Gumus Nisan alindi (3.370 -> 770 = tam -2.600), menuye donuldu,
+cip yeniden baslatma OLMADAN "Gumus Nisan" olarak guncellendi.
+
+### 2. FakeBilling yeniden baslatmadan sonra SESSIZCE hicbir sey yapmiyordu
+
+`counter` surec icindeydi; uygulama yeniden baslatilinca sayac 0'a donuyor ve
+ilk sahte satin alma yine `debug-coins_1200-1` uretiyordu. O jeton ZATEN odenmis
+oldugu icin `SaveManager.grantPurchasedCoins` dogru sekilde `false` donuyor ve
+dugme hicbir sey yapmiyordu — hicbir geri bildirim de vermeden.
+
+Yani idempotenlik korumasi CALISIYORDU; bozuk olan TEST ARACIYDI. Gelistirici
+dugmeye basiyor, bakiye degismiyor ve bunun bir HATA mi yoksa KORUMA mi oldugunu
+ayirt edemiyordu — bu deponun "sessizce yanlis" deseni.
+
+COZUM: jetona surece ozgu bir onek eklendi (`debug-<urun>-<tag>-<sayac>`).
+Cihazda dogrulandi: yeniden baslatma sonrasi `debug-coins_1200-hvm7-1` uretildi
+ve bakiye 2.170 -> 3.370 oldu.
+
+### 3. Bolum kartlarinda metin bandlari sablon yuvalarina hizali DEGILDI
+
+Cihazda Turkce alt-uzantili metinler ("Bogazi verme", "5 dalga") sablonun ayrac
+cizgisiyle cakisiyordu; dalga satirinda cizgi harflerin ORTASINDAN geciyordu.
+
+OLCUM (tahmin turu YOK): `ui_card_available.webp` (560x747) uzerinde yatay ayrac
+cizgileri y/h = 0,5033 · 0,5837 · 0,6667 olarak olculdu. Sablonun metin yuvalari
+bu cizgilerin arasidir. Koddaki bandlar ise elle ayarlanmisti:
+
+  hedef satiri  merkez 0,537  ·  yuva merkezi 0,5435  ->  0,0065xh yukarida
+  dalga satiri  merkez 0,645  ·  yuva merkezi 0,6252  ->  0,0198xh ASAGIDA
+
+Ikinci sapma ~3 dp'ye denk geliyor ve cizginin yaziyi kesmesinin sebebi buydu.
+
+COZUM: bandlar artik yuvanin KENDISI (0,5033-0,5837 ve 0,5837-0,6667); sayilar
+sablondan turetildi, elle secilmedi. Dalga satiri ayrica `AutoShrinkText`e
+cevrildi — hedef satiri zaten oyleydi ve ayni yuvadaki iki satirin farkli
+davranmasi icin bir sebep yok; cogul bicimi dile gore uzar ("6 waves" 7 karakter,
+Almanca "6 Angriffswellen" 16) ve sabit 9 sp o dilde tasardi.
+
+KANIT: 1113 test / 0 basarisiz, lintDebug 0 hata, cihazda once/sonra kareleri.
+
+---
+
 ## 2026-09-02 — IAP: COIN PAKETLERI + REKLAMSIZ MOD, HAVA DESTEGI COIN YOLU (v54)
 
 Kullanici karari (gece oturumu): *"oyunda coin satacagiz ... ayrica hava

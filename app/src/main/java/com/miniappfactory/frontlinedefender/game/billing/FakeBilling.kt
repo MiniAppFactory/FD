@@ -35,14 +35,35 @@ object FakeBilling {
     private var counter = 0
 
     /**
-     * Sahte satin alma jetonu uretir. HER CAGRIDA FARKLI. Idempotenlik testi
-     * icin ayni jetonu ikinci kez gondermek gerekirse [lastToken] kullanilir —
-     * boylece "ayni satin alma iki kez odeniyor mu" sorusu kod degistirmeden
-     * ekrandan denenir.
+     * Bu SURECE ozgu onek.
+     *
+     * ⚠ 2026-09-02 — CIHAZDA GORULEN HATA. Onceki surum jetonu yalnizca
+     * `debug-<urun>-<sayac>` olarak uretiyordu ve [counter] SUREC ICINDEYDI:
+     * uygulama yeniden baslayinca sayac 0'a donuyor, ilk "sahte satin alma"
+     * yine `debug-coins_1200-1` uretiyordu. O jeton ZATEN odenmis oldugu icin
+     * `SaveManager.grantPurchasedCoins` dogru sekilde `false` donuyor ve
+     * dugme HICBIR SEY YAPMIYORDU — hicbir geri bildirim de vermeden.
+     *
+     * Yani idempotenlik korumasi calisiyordu; bozuk olan TEST ARACIYDI. Bu,
+     * bu deponun "sessizce yanlis" desenidir: gelistirici dugmeye basar,
+     * bakiye degismez ve bunun bir HATA mi yoksa KORUMA mi oldugunu
+     * ayirt edemez.
+     *
+     * `nanoTime` yeterli: amac kriptografik benzersizlik degil, aciliş
+     * arasinda CAKISMAMAK. Ayni surecte artan [counter] ile birlikte ayni
+     * milisaniyede iki cagri da farkli jeton uretir.
+     */
+    private val processTag: String by lazy { java.lang.Long.toString(System.nanoTime() % 1_000_000L, 36) }
+
+    /**
+     * Sahte satin alma jetonu uretir. HER CAGRIDA FARKLI — **uygulama yeniden
+     * baslatildiktan sonra da**. Idempotenlik testi icin ayni jetonu ikinci kez
+     * gondermek gerekirse [lastToken] kullanilir; boylece "ayni satin alma iki
+     * kez odeniyor mu" sorusu kod degistirmeden ekrandan denenir.
      */
     fun newToken(productId: String): String {
         counter++
-        return "debug-$productId-$counter"
+        return "debug-$productId-$processTag-$counter"
     }
 
     /** Son uretilen jeton — idempotenlik denemesi icin. */

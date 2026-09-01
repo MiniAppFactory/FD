@@ -641,7 +641,12 @@ fun GameScreen(
                             // panel, ayni durum degiskenleriyle. Tek degisen
                             // giris noktasi sayisi.
                             onOpenArmory = { shopOpen = true },
-                            onOpenMissions = { menuMissionsOpen = true }
+                            onOpenMissions = { menuMissionsOpen = true },
+                            // REAKTIF prestij rank'i. `MainMenuOverlay` bunu
+                            // eskiden `SaveManager`dan okuyordu ve satin alma
+                            // sonrasi cip ANCAK yeniden baslatmada cikiyordu
+                            // (2026-09-02 cihaz bulgusu).
+                            prestigeRank = campaignProgress.prestigeRank
                         )
                     }
                     BannerAdSlot(enabled = bannerEnabled)
