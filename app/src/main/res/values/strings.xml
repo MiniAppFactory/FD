@@ -433,7 +433,6 @@ Normal replay earns no coin; Elite Deploy is a challenge run.</string>
     <!-- ==================== store (StoreScreen) — IAP, 2026-09-02 ====================
          FIYAT METNI BURADA YOK: her fiyat Play'den (ProductDetails.formattedPrice)
          gelir. Koda yazilan fiyat bir gun yalan soyler. -->
-    <string name="store_open">SUPPLY DEPOT</string>
     <string name="store_title">SUPPLY DEPOT</string>
     <string name="store_section_remove_ads">AD-FREE CAMPAIGN</string>
     <string name="store_remove_ads_title">REMOVE ADS</string>

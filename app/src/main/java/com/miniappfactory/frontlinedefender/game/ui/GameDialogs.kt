@@ -64,6 +64,11 @@ internal val ResultModalInnerWidth = ResultModalMaxWidth - 24.dp - 28.dp
  *   vermek zorunda kalmasin; bagli olmayan bir cagri yeri menuyu BOZMAZ,
  *   yalnizca kisayol gorunmez.
  * @param onOpenMissions ayni sozlesme, GOREVLER butonu icin.
+ * @param onResetProgress ILERLEMEYI SIFIRLAMA. null ise yalnizca
+ *   `SaveManager.resetProgress()` cagrilir — bu, calisan oturumdaki ekonomiyi
+ *   TAZELEMEZ ve silinen kayit ilk coin hareketinde geri yazilir. URETIMDE
+ *   `GameScreen` her zaman `saveManager.resetProgress()` + ekonomiyi yeniden
+ *   yukleyen bir lambda gecer; varsayilan yalnizca geriye donuk uyum icindir.
  * @param prestigeRank REAKTIF prestij nisani rank'i (`CampaignProgressImpl.prestigeRank`).
  *   null ise `SaveManager`dan OKUNUR — ama o okuma Compose state'i DEGILDIR
  *   ve degistiginde recomposition tetiklemez. Ayrintili gerekce cip
@@ -75,7 +80,8 @@ fun MainMenuOverlay(
     onStartGame: () -> Unit,
     onOpenArmory: (() -> Unit)? = null,
     onOpenMissions: (() -> Unit)? = null,
-    prestigeRank: Int? = null
+    prestigeRank: Int? = null,
+    onResetProgress: (() -> Unit)? = null
 ) {
     val highScore = gameEngine.saveManager.highScore
     var soundEnabled by remember { mutableStateOf(gameEngine.saveManager.soundEnabled) }
@@ -402,7 +408,12 @@ fun MainMenuOverlay(
                 // olarak alir, motoru/kaydi TANIMAZ.
                 onResetHints = { gameEngine.saveManager.resetHints() },
                 onResetTutorial = { gameEngine.saveManager.resetTutorial() },
-                onResetProgress = { gameEngine.saveManager.resetProgress() },
+                // SIFIRLAMA IKI ADIMLIDIR (2026-09-02). Yalnizca `resetProgress()`
+                // cagirmak depoyu siler ama CALISAN OTURUMU bilgilendirmez: ekran
+                // silinmis veriyi gostermeye devam eder ve ilk coin hareketi eski
+                // cuzdani silinmis kaydin uzerine geri yazar. Cagri yeri artik
+                // ekonomiyi de tazeleyen bir lambda geciyor.
+                onResetProgress = onResetProgress ?: { gameEngine.saveManager.resetProgress() },
                 onDismiss = { settingsOpen = false }
             )
         }
@@ -765,7 +776,9 @@ fun PauseMenuModal(
     gameEngine: GameEngine,
     onResume: () -> Unit,
     onRestart: () -> Unit,
-    onMainMenu: () -> Unit
+    onMainMenu: () -> Unit,
+    /** Bkz. [MainMenuOverlay] ayni adli parametre — ayni sozlesme, ayni gerekce. */
+    onResetProgress: (() -> Unit)? = null
 ) {
     var soundEnabled by remember { mutableStateOf(gameEngine.saveManager.soundEnabled) }
     // Faz 14 - muzik ve dokunsal geri bildirim. Tercihler `SaveManager`da
@@ -946,7 +959,12 @@ fun PauseMenuModal(
                 // olarak alir, motoru/kaydi TANIMAZ.
                 onResetHints = { gameEngine.saveManager.resetHints() },
                 onResetTutorial = { gameEngine.saveManager.resetTutorial() },
-                onResetProgress = { gameEngine.saveManager.resetProgress() },
+                // SIFIRLAMA IKI ADIMLIDIR (2026-09-02). Yalnizca `resetProgress()`
+                // cagirmak depoyu siler ama CALISAN OTURUMU bilgilendirmez: ekran
+                // silinmis veriyi gostermeye devam eder ve ilk coin hareketi eski
+                // cuzdani silinmis kaydin uzerine geri yazar. Cagri yeri artik
+                // ekonomiyi de tazeleyen bir lambda geciyor.
+                onResetProgress = onResetProgress ?: { gameEngine.saveManager.resetProgress() },
                 onDismiss = { settingsOpen = false }
             )
         }

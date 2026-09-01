@@ -336,6 +336,25 @@ object GameConfig {
             // sigmiyordu — palet kenarlari surekli cimde yuruyordu ve
             // "dusmanlar yoldan cikiyor" sikayetinin bir parcasi buydu.
             //
+            // ⚠ 2026-09-02 — YUKARIDAKI IKI SAYI BAYAT, ASAGISI OLCULDU.
+            //
+            // (a) "37-49": rota basina MEDYAN yol yarim genisligi maske v2
+            //     uzerinde **34-47** ref-px (en dar harita 5 A, en genis
+            //     harita 1 A). Yani koridor sanildigindan ~3 ref-px dar.
+            // (b) "TAM sigiyor / ~3 ref-px tasma": hicbir rota icin dogru degil.
+            //     `RouteBodyClearanceTest` olcumu (govdenin cim/kaya uzerinde
+            //     kalan ORANI): boss %2,4 (harita 2 A) - %14,8 (harita 10 A);
+            //     piyade ayni rotalarda %0,1 - %7,9. Yani boss'un tasmasi
+            //     piyadenin ~1,9 kati ve SIFIR DEGIL.
+            // (c) Bu blok 2026-08-19'da yazildi; rotalar 2026-08-21'de SANATTAN
+            //     yeniden uretildi (v5) ve maske v2 ayni gun pisirildi — yani
+            //     olcumun zemini yorumdan SONRA degisti.
+            //
+            // 80 karari GECERLI KALIYOR (96 belirgin sekilde daha kotuydu ve
+            // boss'un daha agir okunmasi gerekiyor); duzeltilen sey yalnizca
+            // sayilarin dogrulugu. Tasmanin kendisi artik `RouteBodyClearanceTest`
+            // ile OLCULUYOR ve buyumesi engelleniyor.
+            //
             // 80 secildi: normal TANK'tan (72) %11 daha genis, yani boss
             // hala belirgin sekilde daha agir okunuyor; yari genisligi 40+
             // olan rotalara TAM sigiyor. En dar rotada (37) taraf basina

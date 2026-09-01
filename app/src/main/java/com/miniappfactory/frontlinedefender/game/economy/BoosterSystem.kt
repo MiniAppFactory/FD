@@ -19,20 +19,33 @@ package com.miniappfactory.frontlinedefender.game.economy
  * uygular: ucretli yolu olan bir guclendiricide `viaAd = true` cagrisi, ucretli
  * kullanim tukenmeden [BoosterDecision.PaidPathNotExhausted] doner.
  *
- * Istisna, ucretli yolu HIC OLMAYAN tiplerdir ([BoosterCurrency.AD_ONLY]):
- * [BoosterType.EMERGENCY_SUPPLY] ve — 2026-08-21'den beri —
- * [BoosterType.AIR_SUPPORT]. Ikame edecek bir yol olmadigi icin arbitraj bu
- * tiplerde yapisal olarak imkansizdir; kalkanin uzerinde calistigi TEK
- * guclendirici artik [BoosterType.BASE_REPAIR]'dir.
+ * Istisna IKI TURLUDUR:
+ *
+ *  a. **Ucretli yolu HIC OLMAYAN tipler** ([BoosterCurrency.AD_ONLY]):
+ *     [BoosterType.EMERGENCY_SUPPLY]. Ikame edecek bir yol olmadigi icin
+ *     arbitraj yapisal olarak imkansizdir.
+ *
+ *  b. **Reklam yolu BIRINCIL olan tipler** ([BoosterType.adPathIsPrimary]):
+ *     [BoosterType.AIR_SUPPORT] (2026-09-02'den beri). Burada kalkan BILEREK
+ *     uygulanmaz — uygulansaydi oyuncu reklam izleyebilmek icin ONCE coin
+ *     harcamak zorunda kalirdi ve bu, 2026-08-21'deki "reklam izlemeye tesvik"
+ *     kararinin tam tersi olurdu. Reklam acik kalir, coin UZANTIDIR.
+ *
+ * Kalkanin uzerinde calistigi TEK guclendirici [BoosterType.BASE_REPAIR]'dir.
  *
  * ---------------------------------------------------------------------------------
  * 2. PARA BIRIMI KARARLARI (gerekceli)
  * ---------------------------------------------------------------------------------
- * - [BoosterType.AIR_SUPPORT] -> **YALNIZCA REKLAM** (2026-08-21'den beri).
- *   Eskiden Tedarikle fiyatlanmisti ve "3. kule mi, hava destegi mi" savas ici
- *   taktik karariydi. O karar KALKTI: guclendirici artik Tedarik harcamiyor,
- *   bedeli para degil ZAMAN (reklam izleme + 45 sn bekleme). Pay-to-win kalkani
- *   korunuyor, hatta guclendi — hicbir bakiye bu guclendiriciyi satin alamaz.
+ * - [BoosterType.AIR_SUPPORT] -> **REKLAM BIRINCIL + COIN UZANTI**
+ *   (2026-09-02'den beri; oncesinde 2026-08-21'den beri yalnizca reklamdi).
+ *   En eski hali Tedarikle fiyatlanmisti ve "3. kule mi, hava destegi mi" savas
+ *   ici taktik karariydi; o karar KALKTI ve GERI GELMEDI — guclendirici hala
+ *   Tedarik HARCAMIYOR. IAP turunda uzerine bir coin yolu eklendi (kullanici
+ *   karari: coin satiliyorsa harcanacak yeri olmali), ama reklam BIRINCIL kaldi.
+ *   Pay-to-win kalkani korunuyor: [BoosterType.sharedUseCap] = 2 sayesinde
+ *   coin + reklam UCUNCU bir vurus acmaz, yani savas basina toplam hasar
+ *   2 x [EconomyConfig.AIR_SUPPORT_DAMAGE_FRACTION] = 0,90 < 1,0 sinirinda kalir
+ *   ve hicbir bakiye tam canli bir dusmani tek basina oldurtemez.
  *
  *   ⚠ BAYAT VERI: [boosterPrice] hâlâ AIR_SUPPORT icin sifir olmayan bir Tedarik
  *   fiyati donduruyor ve kendi sozlesmesiyle ("AD_ONLY tipler icin 0") celisiyor.
@@ -618,10 +631,17 @@ fun maxBoosterSupplyInjection(level: Int): Int =
 /**
  * Bir bolumde guclendiricilere harcanabilecek **en fazla** coin.
  * Gunluk coin cikisinin ust sinirini olcmek icin ECONOMY_SPEC B tablosunda kullanilir.
+ *
+ * 2026-09-02 — HAVA DESTEGI EKLENDI. Fonksiyon yalnizca Us Tamiri'ni sayiyordu
+ * cunku yazildiginda coin harcayan TEK guclendirici oydu. Hava Destegi coin
+ * yoluna cevrilince (IAP turu) tavan sessizce EKSIK olcmeye basladi: L7'de
+ * 240 yerine 240 + 266 = 506, L55'te 1.200 yerine 1.200 + 1.322 = 2.522.
+ * Yani gercek coin cikisinin yarisindan fazlasi gorunmez oldu.
+ *
+ * Elle liste YOK: coin para birimli TUM guclendiriciler taranir, boylece
+ * ucuncu bir coin kalemi eklendiginde tavan kendiliginden dogru kalir.
  */
 fun maxBoosterCoinSpend(level: Int): Int =
-    if (boosterUnlocked(BoosterType.BASE_REPAIR, level)) {
-        boosterPrice(BoosterType.BASE_REPAIR, level) * BoosterType.BASE_REPAIR.paidUsesPerBattle
-    } else {
-        0
-    }
+    BoosterType.entries
+        .filter { it.currency == BoosterCurrency.COIN && boosterUnlocked(it, level) }
+        .sumOf { boosterPrice(it, level) * it.paidUsesPerBattle }

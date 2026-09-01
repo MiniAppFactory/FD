@@ -312,7 +312,6 @@ Normal tekrar coin kazandırmaz; Elit Sevk bir meydan okumadır.</string>
     <string name="prestige_name_5">Elmas Nişan</string>
 
     <!-- ==================== store (StoreScreen) — IAP, 2026-09-02 ==================== -->
-    <string name="store_open">İKMAL DEPOSU</string>
     <string name="store_title">İKMAL DEPOSU</string>
     <string name="store_section_remove_ads">REKLAMSIZ HAREKÂT</string>
     <string name="store_remove_ads_title">REKLAMLARI KALDIR</string>

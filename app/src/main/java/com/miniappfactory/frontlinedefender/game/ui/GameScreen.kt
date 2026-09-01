@@ -278,6 +278,19 @@ fun GameScreen(
         context.findActivity()?.let { billing.launchPurchase(it, productId) }
     }
 
+    // ILERLEMEYI SIFIRLAMA — IKI ADIM, TEK YER.
+    //
+    // `SaveManager.resetProgress()` yalnizca DEPOYU siler. `CampaignProgressImpl`
+    // cuzdani/agaci/gorevleri kurulumda bir kez okur ve bu nesne hic yeniden
+    // kurulmaz (`remember(saveManager)`, `saveManager` da anahtarsiz `remember`).
+    // Tazeleme olmadan: ekran silinmis veriyi gostermeye devam eder ve ilk coin
+    // hareketi (bolum bitirme, yukseltme, elit bilet, gorev odulu) bellekteki
+    // ESKI cuzdani silinmis kaydin uzerine geri yazar.
+    val resetProgressAndReload: () -> Unit = {
+        saveManager.resetProgress()
+        campaignProgress.reloadFromStore()
+    }
+
     // ANA MENUDEN acilan gorev paneli. `LevelSelectScreen` kendi
     // `missionsOpen` durumunu ICINDE tutuyor ve o oyle KALIYOR — iki ekranin
     // durumunu tek degiskende birlestirmek, bolum secimden menuye donuldugunde
@@ -646,7 +659,8 @@ fun GameScreen(
                             // eskiden `SaveManager`dan okuyordu ve satin alma
                             // sonrasi cip ANCAK yeniden baslatmada cikiyordu
                             // (2026-09-02 cihaz bulgusu).
-                            prestigeRank = campaignProgress.prestigeRank
+                            prestigeRank = campaignProgress.prestigeRank,
+                            onResetProgress = resetProgressAndReload
                         )
                     }
                     BannerAdSlot(enabled = bannerEnabled)
@@ -1018,7 +1032,8 @@ fun GameScreen(
                                     onResume = { gameEngine.togglePause() },
                                     onRestart = { gameEngine.startNewGame() },
                                     // Yarida birakma: interstitial YOK (GDD §G.2/5).
-                                    onMainMenu = { gameEngine.returnToLevelSelect() }
+                                    onMainMenu = { gameEngine.returnToLevelSelect() },
+                                    onResetProgress = resetProgressAndReload
                                 )
                             }
                             GameState.VICTORY -> {

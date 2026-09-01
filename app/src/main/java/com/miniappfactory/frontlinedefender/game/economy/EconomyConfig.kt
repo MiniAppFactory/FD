@@ -640,7 +640,27 @@ object EconomyConfig {
      */
     const val R3_APPLIES_TO_REPLAY_FLOOR: Boolean = false
 
-    /** "Reklamlari Kaldir" IAP hediyesi (GDD D.2). v1.0'da IAP YOK; sabit hazir bekler. */
+    /**
+     * "Reklamlari Kaldir" IAP hediyesi (GDD D.2).
+     *
+     * 2026-09-02 — IAP GELDI AMA BU HEDIYE BAGLANMADI. Sabitin eski yorumu
+     * "v1.0'da IAP YOK; sabit hazir bekler" diyordu; IAP artik yayinda
+     * ([StoreCatalog.PRODUCT_REMOVE_ADS]) ve bu deger hala HICBIR YERDEN
+     * cagrilmiyor — yani "hazir bekleyen sabit" gerekcesi tukendi.
+     *
+     * BILINCLI OLARAK BAGLANMADI. Reklamsiz modun satis vaadi tek cumledir:
+     * "gecis reklamlari kalkar". Uzerine coin eklemek iki sorun uretirdi:
+     *  1. Coin PAKETLERI ayri urun; reklamsiz moda coin gomtmek iki urunu
+     *     birbirinin ikamesi yapar ve fiyatlamayi bulaniklastirir.
+     *  2. 500 coin, en kucuk paketin ([StoreCatalog.PACK_RECRUIT], 1.200)
+     *     %42'si — yani bedava bir "yarim paket" olurdu.
+     *
+     * Sabit SILINMEDI cunku GDD D.2 hala bu kalemi tanimliyor ve karar urun
+     * tarafinda yeniden acilabilir. Baglanacaksa yeri
+     * `BillingManager.handlePurchase`in `remove_ads` dalidir ve idempotenlik
+     * `SaveManager.grantPurchasedCoins` gibi ayri bir jetona baglanmalidir —
+     * aksi halde her `restorePurchases` cagrisinda 500 coin basar.
+     */
     const val REMOVE_ADS_GIFT: Int = 500
 
     // =================================================================================
@@ -654,7 +674,14 @@ object EconomyConfig {
     /** BAYRAK F-8 — Acil Tedarik (yalnizca rewarded). Kapatmak icin `= false`. */
     const val EMERGENCY_SUPPLY_ENABLED: Boolean = true
 
-    /** BAYRAK F-9 — Hava Destegi (Tedarik fiyatli). */
+    /**
+     * BAYRAK F-9 — Hava Destegi.
+     *
+     * ⚠ Etiketi "Tedarik fiyatli" idi ve 2026-08-21'de kalem tamamen reklam
+     * yoluna cevrilince BAYATLADI, 2026-09-02'de coin yolu eklenince iyice
+     * yanlis oldu. Bugunku hali: **reklam birincil, coin uzanti** — Tedarik
+     * HARCAMAZ. Fiyat [AIR_SUPPORT_COIN_BASE] / [AIR_SUPPORT_COIN_STEP].
+     */
     const val AIR_SUPPORT_ENABLED: Boolean = true
 
     /**
@@ -696,6 +723,17 @@ object EconomyConfig {
      * Guclendirici hicbir bolumde bir kuleden ucuz olamaz; aksi halde en iyi
      * strateji kule kurmak yerine dugmeye basmak olur.
      */
+    // ⚠ OLU SABITLER — 2026-09-02'den beri HICBIR KOD YOLUNDAN OKUNMUYOR.
+    //
+    // Hava Destegi'nin Tedarik fiyatiydi (101 + 8(L-1)). Kalem once tamamen
+    // reklam yoluna (2026-08-21), sonra reklam+coin'e (2026-09-02) cevrildi;
+    // fiyat artik [AIR_SUPPORT_COIN_BASE] / [AIR_SUPPORT_COIN_STEP].
+    //
+    // SILINMEDILER cunku ustlerindeki uzun kalibrasyon notu ("acilista fiyat TAM
+    // olarak bir kademe-2 Gatling") Tedarik yolu geri getirilirse tekrar anlam
+    // kazanan bir ANKRAJ GEREKCESIDIR ve o gerekce baska hicbir yerde yazili
+    // degil. Ama bugun bir sey ANLATMIYORLAR: canli ankraj coin dilindedir
+    // (acilista fiyat = en ucuz kalici meta yukseltmesi, bkz. AIR_SUPPORT_COIN_BASE).
     const val AIR_SUPPORT_SUPPLY_BASE: Int = 101
     const val AIR_SUPPORT_SUPPLY_STEP: Int = 8
 

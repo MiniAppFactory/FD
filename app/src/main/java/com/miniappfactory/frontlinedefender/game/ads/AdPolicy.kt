@@ -256,7 +256,19 @@ interface AdProgressStore {
     /** Kurulumdan bu yana SONUNA KADAR oynanmis savas sayisi (GDD §G.2/1). */
     var lifetimeBattlesCompleted: Int
 
-    /** "Reklamlari Kaldir" satin alindi mi (GDD §G.2/7)? v1.0'da her zaman false. */
+    /**
+     * "Reklamlari Kaldir" satin alindi mi (GDD §G.2/7)?
+     *
+     * ⚠ Yorumu "v1.0'da her zaman false" idi; 2026-09-02'de IAP yayina girdi ve
+     * deger artik GERCEK: `SaveManagerAdProgressStore` bunu `SaveManager`dan
+     * okur, kaynagi Play'dir (`BillingManager.restorePurchases`).
+     *
+     * KAPSAMI DAR: yalnizca [InterstitialPolicy.decide] bunu okur, yani
+     * kalkan yalnizca INTERSTITIAL'dir. Banner zaten kapali
+     * ([AdPolicyConfig.BANNER_ENABLED]); rewarded teklifleri bu bayragi HIC
+     * okumaz ve okumamalidir — rewarded bir reklam degil, oyuncunun kendi actigi
+     * coin muslugudur ve kapatmak para odeyeni cezalandirirdi.
+     */
     val adsRemoved: Boolean
 }
 

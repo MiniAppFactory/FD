@@ -1571,12 +1571,44 @@ class BoosterEconomyTest {
                 }
             }
         }
-        // Coin AKISI yalnizca CIKIS yonunde: Us Tamiri bir sink'tir, kaynak degil.
+        // Coin AKISI yalnizca CIKIS yonunde: guclendiriciler sink'tir, kaynak degil.
         for (level in 1..EconomyConfig.CAMPAIGN_LEVELS) {
             assertTrue(maxBoosterCoinSpend(level) >= 0)
         }
-        assertEquals(0, maxBoosterCoinSpend(6))
-        assertEquals(240, maxBoosterCoinSpend(7))
+
+        // ⚠ 2026-09-02 — BEKLENEN DEGERLER DEGISTI VE BU DOGRU.
+        //
+        // Eskiden `maxBoosterCoinSpend(6) == 0` ve `(7) == 240` idi cunku coin
+        // harcayan TEK guclendirici Us Tamiri'ydi (acilis L7). Hava Destegi
+        // coin yoluna cevrilince (acilis L4) tavan degisti:
+        //
+        //   L4  200          (yalnizca hava destegi)
+        //   L6  244          (yalnizca hava destegi; us tamiri henuz kapali)
+        //   L7  266 + 240    (ikisi birden)
+        //
+        // Bu test degisiklikten sonra KIRILDI ve haklıydı: fonksiyon hala
+        // yalnizca Us Tamiri'ni sayiyordu, yani ECONOMY_SPEC B tablosunun
+        // okudugu gunluk coin cikisi tavani gercek degerin yarisindan azdi.
+        // Duzeltilen sey BEKLENTI DEGIL FONKSIYONDU (`maxBoosterCoinSpend`
+        // artik COIN para birimli tum guclendiricileri tariyor); buradaki
+        // sayilar o duzeltmenin sonucudur.
+        assertEquals("hava destegi acilmadan once coin cikisi olmamali", 0, maxBoosterCoinSpend(3))
+        assertEquals(
+            "L4: yalnizca hava destegi",
+            boosterPrice(BoosterType.AIR_SUPPORT, 4), maxBoosterCoinSpend(4),
+        )
+        assertEquals(
+            "L6: us tamiri henuz kapali, yalnizca hava destegi",
+            boosterPrice(BoosterType.AIR_SUPPORT, 6), maxBoosterCoinSpend(6),
+        )
+        assertEquals(
+            "L7: iki coin kalemi birden",
+            boosterPrice(BoosterType.AIR_SUPPORT, 7) + boosterPrice(BoosterType.BASE_REPAIR, 7),
+            maxBoosterCoinSpend(7),
+        )
+        // Belgelenen mutlak degerler (bayatlarsa gorulsun).
+        assertEquals(244, maxBoosterCoinSpend(6))
+        assertEquals(506, maxBoosterCoinSpend(7))
     }
 
     // =================================================================================

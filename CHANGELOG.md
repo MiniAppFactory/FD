@@ -152,7 +152,7 @@ etmeliyiz"). O karar **geri alinmadi**, uzerine bir yol eklendi:
   gecerli.
 - `BoosterRail` yol sirasini tersine cevirir: reklam hakki acikken REKLAM,
   kapandiginda coin fiyati. `AIR_SUPPORT_PREFER_AD_PATH` ile cevrilebilir.
-- Fiyat 130 + 22(L-1) COIN (L4 196 · L22 592 · L55 1.318). Kisitlar:
+- Fiyat 134 + 22(L-1) COIN (L4 200 · L22 596 · L55 1.322). Kisitlar:
   en ucuz meta rank-1'den pahali, 1-yildiz odulunden ucuz (%75-85), ve
   Us Tamiri'nden pahali (etkisi daha guclu). Eski Tedarik tablosu
   (101 + 8(L-1)) `EconomyConfig`te duruyor ama artik okunmuyor.

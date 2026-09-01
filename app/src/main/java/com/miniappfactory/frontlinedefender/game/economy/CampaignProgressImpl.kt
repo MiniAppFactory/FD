@@ -46,6 +46,57 @@ class CampaignProgressImpl(
     private var eliteClearsState by mutableStateOf(saveManager.eliteClears)
     private var prestigeRankState by mutableStateOf(saveManager.prestigeRank)
 
+    /**
+     * KALICI DEPODAN HER SEYI YENIDEN OKUR.
+     *
+     * 2026-09-02 — NEDEN VAR. "Ilerlemeyi sifirla" (Ayarlar, cift onayli)
+     * dogrudan `SaveManager.resetProgress()` cagiriyordu ve bu sinifa HABER
+     * VERMIYORDU. Bu sinif cuzdani, agaci, gorevleri, elit sayacini ve prestij
+     * rank'ini KURULUMDA BIR KEZ okur; `GameScreen` onu `remember(saveManager)`
+     * ile tutar ve `saveManager` anahtarsiz `remember` oldugu icin nesne asla
+     * yeniden kurulmaz. Uygulamada `recreate()` de yok.
+     *
+     * IKI SOMUT ZARAR olusuyordu:
+     *
+     *  1. **EKRAN YALAN SOYLUYORDU.** Sifirlamadan hemen sonra ana menu silinmis
+     *     prestij nisanini, bolum secim ekrani silinmis coini/yildizlari
+     *     gostermeye DEVAM ediyordu — ikisi de bu siniftan okur, depodan degil.
+     *     Oyuncuya "silindi" deniyor, ekranda her sey duruyordu.
+     *
+     *  2. **SIFIRLAMA SESSIZCE GERI ALINIYORDU.** Oyuncu bir bolumu bitirir
+     *     bitirmez `onLevelCleared` -> `commitWallet(...)` -> `saveWallet`
+     *     zinciri BELLEKTEKI ESKI cuzdani silinmis kaydin uzerine yaziyordu:
+     *     coin, acik bolumler, temizlenen bolumler, lifetime sayaclari ve TUM
+     *     yildizlar geri geliyordu. Ayni geri yazim `buyUpgrade`,
+     *     `buyEliteTicket`, `buyPrestige` ve gorev odulu icin de gecerli.
+     *     Yani yikici islemin tutup tutmamasi, oyuncunun bir sonraki
+     *     dokunustan ONCE uygulamayi kapatip kapatmadigina bagliydi.
+     *
+     * `boosterAdViewsToday` ve `battleBoosters` bilincli olarak SIFIRLANIR:
+     * ikisi de oturuma/savasa kapsamli ve sifirlanmis bir ilerlemenin uzerinde
+     * bayat kalmalari anlamsiz olurdu.
+     *
+     * `adsRemovedState` de yeniden okunur ama `resetProgress` ona DOKUNMAZ
+     * (`PRESERVED_ON_RESET`) — para odenmis hak silinmez; buradaki okuma
+     * yalnizca bellekteki kopyayi depoyla ayni tutar.
+     */
+    fun reloadFromStore() {
+        wallet = saveManager.loadWallet()
+        upgrades = saveManager.loadMetaUpgrades()
+        missionState = saveManager.loadMissionState()
+        requisition = saveManager.loadRequisitionState()
+        boostedReplaysToday = saveManager.boostedReplaysUsedToday
+        eliteClearsState = saveManager.eliteClears
+        prestigeRankState = saveManager.prestigeRank
+        adsRemovedState = saveManager.adsRemoved
+        boosterAdViewsToday = 0
+        battleBoosters = null
+        daily = emptyList()
+        refreshMissions()
+        // Sifirlanmis kayit soft-lock invariant'ini da saglamak zorunda.
+        enforceUnlockInvariant()
+    }
+
     /** Bolumun elit zafer sayisi (0 = hic). */
     override fun eliteClearsOf(levelId: Int): Int = eliteClearsState[levelId] ?: 0
 
