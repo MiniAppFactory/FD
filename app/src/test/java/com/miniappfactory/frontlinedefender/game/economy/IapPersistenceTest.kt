@@ -256,6 +256,48 @@ class IapPersistenceTest {
         assertEquals(StoreCatalog.coinPacks.sumOf { it.coins }, s.lifetimePurchasedCoins)
     }
 
+    // =========================================================================
+    // 7. GUNLUK GUCLENDIRICI-REKLAM SAYACI — artik KALICI
+    // =========================================================================
+
+    /**
+     * 2026-09-02'ye kadar bu sayac yalnizca bellekteydi ve her acilista
+     * sifirlaniyordu. Iki sonucu vardi:
+     *  1. `BOOSTER_AD_VIEWS_PER_DAY` "reklam yorgunlugu tavani" olarak
+     *     belgeliydi ama uygulamayi kapatip acmak onu sifirliyordu.
+     *  2. Hava Destegi'nin YENI coin yolunu acan TEK kapi bu sayacti; hic
+     *     dolmadigi icin IAP ile satilan coinin o kalemdeki harcama yolu OLU idi.
+     */
+    @Test
+    fun theDailyBoosterAdCounterSurvivesAProcessRestart() {
+        val store = InMemoryKeyValueStore()
+        SaveManager(store).boosterAdViewsToday = 7
+        // "Yeniden baslatma": AYNI depo uzerinde YENI bir SaveManager.
+        assertEquals(7, SaveManager(store).boosterAdViewsToday)
+    }
+
+    @Test
+    fun theDailyBoosterAdCounterIsClearedOnDayRollover() {
+        val s = save()
+        s.boosterAdViewsToday = 9
+        s.resetDailyCounters()
+        assertEquals(0, s.boosterAdViewsToday)
+    }
+
+    /**
+     * Gunluk sayac ILERLEMEDIR, odenmis hak degil: `resetProgress` onu
+     * goturmeli (IAP anahtarlarinin aksine).
+     */
+    @Test
+    fun resetProgressClearsTheDailyBoosterAdCounterButNotThePaidEntitlement() {
+        val s = save()
+        s.boosterAdViewsToday = 5
+        s.adsRemoved = true
+        s.resetProgress()
+        assertEquals(0, s.boosterAdViewsToday)
+        assertTrue("odenmis hak silinmis", s.adsRemoved)
+    }
+
     /** Tuketilmeyen urun bir coin paketi DEGIL — yanlislikla coin yazmamali. */
     @Test
     fun theRemoveAdsProductIsNotACoinPack() {

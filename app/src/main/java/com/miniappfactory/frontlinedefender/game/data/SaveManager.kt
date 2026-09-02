@@ -114,6 +114,8 @@ class SaveManager internal constructor(private val store: KeyValueStore) {
         private const val KEY_R1_FILLED_VIEWS = "eco_r1_filled_views_today"
         private const val KEY_R1_COINS_PAID = "eco_r1_coins_paid_today"
         private const val KEY_BOOSTED_REPLAYS = "eco_boosted_replays_today"
+        /** Gunluk guclendirici-reklam gosterimi. Bkz. [boosterAdViewsToday]. */
+        private const val KEY_BOOSTER_AD_VIEWS = "eco_booster_ad_views_today"
 
         /** Ayarlar ilerleme sifirlamasinda KORUNUR (GDD H.1). */
         /**
@@ -403,11 +405,48 @@ class SaveManager internal constructor(private val store: KeyValueStore) {
             store.putInt(KEY_BOOSTED_REPLAYS, value.coerceAtLeast(0))
         }
 
+    /**
+     * Gun boyunca guclendirici icin izlenen dolu reklam sayisi.
+     *
+     * ⚠ 2026-09-02'ye kadar bu sayac YALNIZCA BELLEKTEYDI
+     * (`CampaignProgressImpl.boosterAdViewsToday = mutableStateOf(0)`) ve her
+     * uygulama acilisinda sifirlaniyordu. Kardes gunluk sayaclarin
+     * ([KEY_R1_FILLED_VIEWS], [KEY_BOOSTED_REPLAYS]) hepsi kaliciydi; tutarsizlik
+     * ayni dosyada goruluyordu ve `ECONOMY_SPEC` 9. bolum devir listesi madde 5
+     * bunu zaten "SaveManager'a tek Int alani yeter" diye isaretlemisti.
+     *
+     * IKI SEBEPLE ARTIK KALICI:
+     *
+     *  1. **Reklam yorgunlugu tavani GERCEK OLDU.**
+     *     [EconomyConfig.BOOSTER_AD_VIEWS_PER_DAY] kendi KDoc'unda acikca
+     *     "reklam yorgunlugu tavani" olarak tanimli. Bellekteki bir sayac bu isi
+     *     YAPISAL OLARAK yapamaz: uygulamayi kapatip acmak tavani sifirlar.
+     *
+     *  2. **Hava Destegi'nin COIN yolunu acan tek kapi buydu** (2026-09-02 IAP
+     *     turu). `BoosterRail` reklam yolu acikken REKLAM gosterir; coin fiyati
+     *     ancak gunluk gosterim hakki bittiginde ortaya cikar. Sayac her
+     *     acilista sifirlandigi surece o kapi HIC acilmiyordu — yani IAP ile
+     *     satilan coinin bu kalemdeki harcama yolu OLU idi.
+     *
+     * Eski gerekce ("yeniden baslatmayla sifirlamak ekonomi exploit'i degil,
+     * oyuncu yalnizca daha fazla reklam izler, gelir yonu olumlu") kendi
+     * icinde tutarliydi ama iki seyi hesaba katmiyordu: tavanin OYUNCU KORUMASI
+     * olmasi ve coin satisinin baslamasi.
+     *
+     * [resetDailyCounters] ile gun donusunde sifirlanir.
+     */
+    var boosterAdViewsToday: Int
+        get() = store.getInt(KEY_BOOSTER_AD_VIEWS, 0).coerceAtLeast(0)
+        set(value) {
+            store.putInt(KEY_BOOSTER_AD_VIEWS, value.coerceAtLeast(0))
+        }
+
     /** Gun donusunde sifirlanan sayaclar. Bolum/coin/yukseltme ilerlemesi ETKILENMEZ. */
     fun resetDailyCounters() {
         store.putInt(KEY_R1_FILLED_VIEWS, 0)
         store.putInt(KEY_R1_COINS_PAID, 0)
         store.putInt(KEY_BOOSTED_REPLAYS, 0)
+        store.putInt(KEY_BOOSTER_AD_VIEWS, 0)
         store.putInt(KEY_REROLLS_USED, 0)
         store.putString(KEY_DAILY_PROGRESS, "")
     }

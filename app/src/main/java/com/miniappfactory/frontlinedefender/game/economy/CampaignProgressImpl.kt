@@ -72,9 +72,9 @@ class CampaignProgressImpl(
      *     Yani yikici islemin tutup tutmamasi, oyuncunun bir sonraki
      *     dokunustan ONCE uygulamayi kapatip kapatmadigina bagliydi.
      *
-     * `boosterAdViewsToday` ve `battleBoosters` bilincli olarak SIFIRLANIR:
-     * ikisi de oturuma/savasa kapsamli ve sifirlanmis bir ilerlemenin uzerinde
-     * bayat kalmalari anlamsiz olurdu.
+     * `battleBoosters` bilincli olarak SIFIRLANIR: savasa kapsamli ve
+     * sifirlanmis bir ilerlemenin uzerinde bayat kalmasi anlamsiz olurdu.
+     * `boosterAdViewsToday` artik KALICI oldugu icin depodan okunur.
      *
      * `adsRemovedState` de yeniden okunur ama `resetProgress` ona DOKUNMAZ
      * (`PRESERVED_ON_RESET`) — para odenmis hak silinmez; buradaki okuma
@@ -89,7 +89,11 @@ class CampaignProgressImpl(
         eliteClearsState = saveManager.eliteClears
         prestigeRankState = saveManager.prestigeRank
         adsRemovedState = saveManager.adsRemoved
-        boosterAdViewsToday = 0
+        // Depodan OKUNUR (sabit 0 degil): metodun sozlesmesi "her seyi depodan
+        // yeniden oku". Sifirlama sonrasi zaten 0 doner cunku anahtar
+        // PRESERVED_ON_RESET disinda; ama baska bir cagiran eklenirse bu satir
+        // sessizce yanlis olmaz.
+        boosterAdViewsToday = saveManager.boosterAdViewsToday
         battleBoosters = null
         daily = emptyList()
         refreshMissions()
@@ -199,7 +203,7 @@ class CampaignProgressImpl(
      * Kalici hale getirmek istenirse `SaveManager`'a tek `Int` alani yeter —
      * ECONOMY_SPEC 9 devir listesi madde 5.
      */
-    private var boosterAdViewsToday by mutableStateOf(0)
+    private var boosterAdViewsToday by mutableStateOf(saveManager.boosterAdViewsToday)
 
     /** Suren savasin guclendirici durumu. Savas disinda `null`. */
     private var battleBoosters by mutableStateOf<BoosterState?>(null)
@@ -421,7 +425,13 @@ class CampaignProgressImpl(
             repairedHealth = restored,
         )
         battleBoosters = updated
-        if (viaAd) boosterAdViewsToday = updated.adViewsToday
+        if (viaAd) {
+            boosterAdViewsToday = updated.adViewsToday
+            // KALICI (2026-09-02): gerekce `SaveManager.boosterAdViewsToday`
+            // KDoc'unda. Ozetle: tavan bir OYUNCU KORUMASI ve ayni zamanda
+            // Hava Destegi'nin coin yolunu acan tek kapi.
+            saveManager.boosterAdViewsToday = boosterAdViewsToday
+        }
 
         analytics(
             "booster_used",
@@ -855,6 +865,10 @@ class CampaignProgressImpl(
             boostedReplaysToday = 0
             saveManager.boostedReplaysUsedToday = 0
             boosterAdViewsToday = 0
+            // `resetDailyCounters` bu anahtari zaten sifirliyor; buradaki yazim
+            // bellekteki kopyayi depoyla ayni tutar (gun donusu depo yazimindan
+            // ONCE de olabilir).
+            saveManager.boosterAdViewsToday = 0
             battleBoosters = battleBoosters?.copy(adViewsToday = 0)
             missionState = missionState.copy(rerollsUsedToday = 0)
         }
