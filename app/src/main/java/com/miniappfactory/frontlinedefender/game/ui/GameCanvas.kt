@@ -1119,7 +1119,21 @@ private fun DrawScope.drawEnemy(
     var swayY = 0f
     var lean = 0f
     if (Gait.isFootUnit(enemy.type)) {
-        val phase = enemy.distanceTraveledPx / GAIT_STRIDE_REF_PX * (2.0 * Math.PI).toFloat()
+        // ⚠ `* s` UNUTULMUSTU (2026-09-02).
+        //
+        // `enemy.distanceTraveledPx` CANVAS pikselidir; [GAIT_STRIDE_REF_PX] ise
+        // REFERANS pikseldir (kendi KDoc'u boyle diyor). Ikisini donusumsuz
+        // bolmek, yuruyus dongusunun DALGA BOYUNU cozunurluge bagli hale
+        // getiriyordu: etkin adim = 34 / renderScale referans px.
+        //
+        // Tutarsizligin kaniti ayni fonksiyonun icinde: bir satir asagida
+        // salinim GENLIGI `GAIT_SWAY_REF_PX * s` ile dogru donusturuluyor ve
+        // yukarida `gateFadeAlpha` da `ENEMY_GATE_FADE_REF_PX * s` yapiyor.
+        // Yani bu bilincli bir karar degil, tek satirda atlanmis bir donusum.
+        //
+        // GORULEN ETKI: genlik olcekleniyor ama dalga boyu olceklenmiyordu,
+        // dolayisiyla askerin ne kadar zikzak yurudugu CIHAZA GORE degisiyordu.
+        val phase = enemy.distanceTraveledPx / (GAIT_STRIDE_REF_PX * s) * (2.0 * Math.PI).toFloat()
         val amp = GAIT_SWAY_REF_PX * s
         // Yurume yonune DIK eksen: heading + 90 derece.
         val perp = enemy.rotationAngleRad + (Math.PI / 2.0).toFloat()

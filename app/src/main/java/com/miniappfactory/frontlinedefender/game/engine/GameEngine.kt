@@ -1973,7 +1973,10 @@ class GameEngine(
 
         // 2. Enemy Movement & Status Decay
         val enemyIterator = enemies.iterator()
-        while (enemyIterator.hasNext()) {
+        // ETIKET SART: asagidaki hareket dongusu artik IC ICE. Etiketsiz bir
+        // `continue` ic dongude kalir ve dusman silindikten sonra bile
+        // hareket ettirilmeye calisilirdi.
+        enemyLoop@ while (enemyIterator.hasNext()) {
             val enemy = enemyIterator.next()
 
             // Flash effect decay
@@ -1990,15 +1993,46 @@ class GameEngine(
             }
 
             // Move along this enemy's OWN route (catallanan haritalarda 2 rota).
+            // ⚠ 2026-09-02 — ARTAN MESAFE ARTIK ATILMIYOR.
+            //
+            // Eski hali: bir karede waypoint'e varildiginda dusman TAM olarak o
+            // noktaya konuluyor ve `moveDist - distToTarget` kadar artan mesafe
+            // SESSIZCE ATILIYORDU; ayrica kare basina en fazla BIR waypoint
+            // gecilebiliyordu.
+            //
+            // NEDEN ONEMLI: motor sabit adimli DEGIL (`dt = deltaSeconds *
+            // gameSpeed`, `deltaSeconds` gercek vsync farki). Rotalar ~29,5
+            // ref-px araliklarla orneklendigi icin bu, dusmanin ETKIN hizini
+            // nominalin altina dusuren ve dt ile oyun hiziyla BUYUYEN bir
+            // kuantalama kaybiydi. Olculen acik (FAST_SOLDIER): 60fps/1x %3,1 ·
+            // 48fps/2x %11,3 · 24fps/2x %22,2. Yani oyun dusuk kare hizinda ve
+            // 2x hizda KOLAYLASIYORDU — zorluk cihaza ve bir dugmeye bagliydi.
+            // `CampaignSimulator` bu kaybi "~%0,6, ihmal edilebilir" diye
+            // belgeliyordu; gercek deger 1,4x ila ~25x daha buyuktu.
+            //
+            // Dongu artik `moveDist`i TUKETIR: kareye dusen toplam yol her
+            // zaman `currentSpeed * dt`dir, kac waypoint gecildigine bakilmaz.
             val route = routeFor(enemy)
-            if (route.size > 1 && enemy.currentWayPointIndex < route.size - 1) {
+            var remainingMove = enemy.currentSpeed * dt
+            // TAM GUVENLIK SINIRI: sifir uzunluklu bir segment (ust uste iki
+            // waypoint) `remainingMove`u hic azaltmaz ve dongu sonsuza kalirdi.
+            // Sevk edilen veride boyle bir segment YOK (olculen en kisa 9,19
+            // ref-px, `RouteStaysOnRoadTest`) — bu sinir gelecekteki bir veri
+            // hatasinin oyunu kilitlemesini engeller, bugunku davranisi degil.
+            var hopGuard = route.size
+            while (
+                remainingMove > 0f &&
+                hopGuard-- > 0 &&
+                route.size > 1 &&
+                enemy.currentWayPointIndex < route.size - 1
+            ) {
                 val targetPt = route[enemy.currentWayPointIndex + 1]
                 val dx = targetPt.x - enemy.posX
                 val dy = targetPt.y - enemy.posY
                 val distToTarget = sqrt(dx * dx + dy * dy)
 
                 enemy.rotationAngleRad = atan2(dy, dx)
-                val moveDist = enemy.currentSpeed * dt
+                val moveDist = remainingMove
 
                 if (distToTarget <= moveDist) {
                     // Reached waypoint
@@ -2006,6 +2040,8 @@ class GameEngine(
                     enemy.posY = targetPt.y
                     enemy.distanceTraveledPx += distToTarget
                     enemy.currentWayPointIndex++
+                    // Artan mesafe bir SONRAKI segmentte harcanir.
+                    remainingMove -= distToTarget
 
                     // Check if reached final base
                     if (enemy.currentWayPointIndex >= route.size - 1) {
@@ -2020,7 +2056,7 @@ class GameEngine(
                             // boylece bir seye dokunmaz ve dongu gecerli kalir.
                             enemyIterator.remove()
                             onEnemyKilled(enemy)
-                            continue
+                            continue@enemyLoop
                         }
                         _lives.value -= GameConfig.BASE_REACHED_PENALTY_LIVES
                         // Faz 3: us hasari = agir patlama + sarsinti. Eskiden
@@ -2053,12 +2089,16 @@ class GameEngine(
                             audioManager.playSound(AudioManager.SoundEffect.DEFEAT)
                             return
                         }
+                        // Dusman ARTIK YOK: kalan mesafeyi harcamaya calismak
+                        // silinmis bir varligi hareket ettirmek olurdu.
+                        continue@enemyLoop
                     }
                 } else {
                     val ratio = moveDist / distToTarget
                     enemy.posX += dx * ratio
                     enemy.posY += dy * ratio
                     enemy.distanceTraveledPx += moveDist
+                    remainingMove = 0f
                 }
             }
         }
