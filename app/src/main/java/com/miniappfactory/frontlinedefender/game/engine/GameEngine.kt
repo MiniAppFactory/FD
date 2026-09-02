@@ -881,6 +881,21 @@ class GameEngine(
         ) {
             return
         }
+        // ⚠ 2026-09-02 — ESKI DIKDORTGEN SAKLANIR.
+        //
+        // `rescaleGeometry()` rotalari ve pad'leri YENI dikdortgene tasiyordu
+        // ama CANLI VARLIKLAR (dusmanlar, mermiler) eski piksel uzayinda
+        // kaliyordu. Sonuc: rota altlarindan kayiyor, dusman bir anda yolun
+        // disinda beliriyor ve bir sonraki karede yeni rotaya CAPRAZ kesiyordu
+        // — tam olarak "yol olmayan yerden geciyorlar" goruntusu.
+        //
+        // Bu, Activity YENIDEN OLUSTURULMADAN olan yeniden boyutlandirmada
+        // dogar: manifest `screenSize|screenLayout|smallestScreenSize` bayraklarini
+        // sogurdugu icin savas hayatta kalir ama geometri altindan degisir.
+        // (Ayni yeniden boyutlandirma bu bayraklar OLMADAN savasi tumuyle
+        // yok ederdi — `smallestScreenSize` tam da bu yuzden eklendi.)
+        val previousRect = if (mapWidthPx > 0f && mapHeightPx > 0f) fieldRect else null
+
         mapWidthPx = width
         mapHeightPx = height
         dimsMapId = activeMapId
@@ -910,14 +925,60 @@ class GameEngine(
         // Faz 4: AKTIF bolumun geometrisi. Eskiden burada `LevelData.LEVEL_1`
         // sabit kodluydu, yani hangi bolum yuklenirse yuklensin ilk karede
         // harita 1'in yolu/pad'leri geri geliyordu.
-        rescaleGeometry()
-
         // Update positions of existing towers
         towers.forEach { tower ->
             scaledBuildSpots.find { it.id == tower.buildSpotId }?.let { spot ->
                 tower.posX = spot.normX
                 tower.posY = spot.normY
             }
+        }
+
+        // CANLI VARLIKLARI da yeni dikdortgene tasi.
+        //
+        // Kuleler yukarida pad KIMLIGINDEN yeniden konumlandi (saglam yol:
+        // konum veriden turuyor). Dusman ve mermilerin boyle bir capasi yok —
+        // konumlari SAF PIKSEL. Bu yuzden eski dikdortgenden normalize edilip
+        // yenisine geri yaziliyorlar; boylece rota altlarindan kaysa bile
+        // dusman rotanin AYNI noktasinda kalir.
+        //
+        // ⚠ HIZ TASINMIYOR ve bu BILINEN bir kalinti: `EnemyEntity.baseSpeed`
+        // bir `val` ve spawn'da `spec.baseSpeed * renderScale` ile
+        // dondurulmus PIKSEL hizidir. Yeniden boyutlandirmadan sonra o savasta
+        // yasayan dusmanlar eski olcegin hiziyla yurumeye devam eder.
+        // Gorunur etkisi KUCUK (yalnizca o dalganin kalanini etkiler) ve
+        // duzeltmesi entity sozlesmesini degistirmeyi gerektirir; konum
+        // kaymasi ise ANINDA ve carpici oldugu icin once o kapatildi.
+        previousRect?.let { old -> remapLiveEntities(old, rect) }
+    }
+
+    /**
+     * Canli varliklari ESKI oynanis dikdortgeninden YENISINE tasir.
+     *
+     * Yalnizca yeniden boyutlandirmada cagrilir. Oran korunmadigi durumlarda
+     * (letterbox degisimi) x ve y bagimsiz olceklenir — dogru olan budur,
+     * cunku rotalar da `normXToScreen`/`normYToScreen` ile bagimsiz olcekleniyor.
+     */
+    private fun remapLiveEntities(old: GameConfig.MapFieldRect, new: GameConfig.MapFieldRect) {
+        if (old.width <= 0f || old.height <= 0f) return
+        if (old.left == new.left && old.top == new.top &&
+            old.width == new.width && old.height == new.height
+        ) {
+            return
+        }
+
+        fun mapX(x: Float): Float = new.left + (x - old.left) / old.width * new.width
+        fun mapY(y: Float): Float = new.top + (y - old.top) / old.height * new.height
+
+        enemies.forEach { e ->
+            e.posX = mapX(e.posX)
+            e.posY = mapY(e.posY)
+            // Yuruyus dongusunun fazi da piksel cinsinden birikiyor; olcegi
+            // tasinmazsa asker yeniden boyutlandirmada bir adim "ziplar".
+            e.distanceTraveledPx *= new.renderScale / old.renderScale
+        }
+        projectiles.forEach { p ->
+            p.posX = mapX(p.posX)
+            p.posY = mapY(p.posY)
         }
     }
 
