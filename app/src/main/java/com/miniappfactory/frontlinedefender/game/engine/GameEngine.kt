@@ -1003,7 +1003,13 @@ class GameEngine(
         }
 
         activeLevel = LevelData.forMapId(activeMapId)
-        // IKINCI KOL yalnizca ogretme dilimi bittikten sonra (bolum 9+).
+        // IKINCI KOL yalnizca ogretme dilimi bittikten sonra
+        // (bolum >= GameConfig.ALT_ROUTE_FIRST_LEVEL).
+        //
+        // ⚠ Bu satir "(bolum 9+)" diyordu ve BAYATTI: esik 2026-08-19'da 3'e
+        // indirildi (commit 4a02424) ve gerekcesi GameConfig'te yazili —
+        // "baslangic Tedariginin birden fazla kule aldigi ILK bolum". Sayi
+        // artik burada TEKRARLANMIYOR.
         // Once burada kosulsuz `routesForMapId` cagriliyordu, yani harita 1/2/4
         // catallanmasi OGRETICI bolumlerde de acikti — bkz.
         // GameConfig.ALT_ROUTE_FIRST_LEVEL gerekcesi.

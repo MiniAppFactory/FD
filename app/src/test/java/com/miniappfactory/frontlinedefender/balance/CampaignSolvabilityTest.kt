@@ -86,11 +86,43 @@ class CampaignSolvabilityTest {
 
     private data class Sample(val arc: Float, val x: Float, val y: Float)
 
-    /** Motorun bolum 1..8'de kullandigi rota (ALT_ROUTE_FIRST_LEVEL = 9). */
+    /**
+     * Simulasyonun kullandigi rota — **her zaman BIRINCIL kol**.
+     *
+     * ⚠ 2026-09-02'de duzeltilen iki kusur:
+     *
+     * 1. Yorum "bolum 1..8'de kullandigi rota (ALT_ROUTE_FIRST_LEVEL = 9)"
+     *    diyordu; esik 2026-08-19'da **3**e indirildi ve yorum guncellenmedi.
+     * 2. Govdede iki dali AYNI olan bir `if` vardi
+     *    (`if (usesAlternateRoutes) all.first() else all.first()`). Kod bir
+     *    ayrim YAPIYOR gibi gorunuyor ama yapmiyordu — okuyani yaniltan
+     *    olu bir dal.
+     *
+     * SADELESTIRILDI, DAVRANIS DEGISMEDI: bu simulator TEK KOL modeller ve
+     * bu BILINCLI bir sadelestirmedir (dosya basindaki "bilincli
+     * sadelestirmeler" listesiyle ayni aile). Etkisi olculdu ve DAR: catal
+     * gercekten acik olan bolumler L4, L11 ve L12'dir (L1/L2'de catal kapali,
+     * L3'un kanonik rotasi zaten tek, L5..L10 catal harita degil).
+     *
+     * ⚠ MODELIN YONU HER TESTTE AYNI DEGIL — ve bu, kapsam disi birakilamayacak
+     * kadar onemli:
+     *  · Cozulebilirlik testlerinde tek kol IYIMSERDIR (tum dalga tek cepheden
+     *    gelir, savunma daha kolay yetisir) — yani YESIL hala "matematiksel
+     *    olarak mumkun" demektir, model gercekten mumkun olmayani mumkun
+     *    gostermez.
+     *  · Ama `carelessPlacementStartsCostingLivesEarlyInTheCampaign` icin
+     *    TERSTIR: gercek oyunda dalganin yarisi tek cepheli savunmayi hic
+     *    gormeden sizacagi icin dikkatsiz yerlestirme DAHA ERKEN isirirdi.
+     *    Yani o testin esigi (bugunku deger) gercekte olabileceginden GEC bir
+     *    bolumu isaret ediyor olabilir.
+     *
+     * Coklu rota modellemesi ACIK IS olarak birakildi: her dalgayi rotalara
+     * bolup kule kapsamasini rota basina hesaplamak gerekir ve bu, simulatorun
+     * gelir/atis matematigini de etkiler.
+     */
     private fun routeFor(level: Int): List<PointF> {
         val mapId = GameConfig.levelSpec(level).mapId
-        val all = LevelData.routesForMapId(mapId)
-        return if (GameConfig.usesAlternateRoutes(level)) all.first() else all.first()
+        return LevelData.routesForMapId(mapId).first()
     }
 
     private fun padsFor(level: Int): List<Triple<Int, Float, Float>> {

@@ -151,16 +151,22 @@ data class TutorialState(
  * BOLUM 1'IN GERCEGI — akis buna gore kuruldu, genel gecer bir "kule dizme"
  * ogreticisi DEGIL:
  *
- * 1. Baslangic Tedariki **80**, Gatling **60**. Yani oyuncunun TEK kule
- *    hakki var ve yanlis yere kurmak bolumu bitirir. Bu yuzden ogretici
+ * 1. Baslangic Tedariki **120** (kaynak: GameConfig icindeki private
+ *    EARLY_STARTING_SUPPLY listesinin ilk degeri), Gatling **60**. Yani oyuncunun iki kule hakki var ama
+ *    ikisini de yanlis yere kurmak bolumu bitirir. Bu yuzden ogretici
  *    "istedigin yere kur" DEMEZ, belirli bir pad'i isaretler.
+ *
+ *    ⚠ Bu satir "**80** ... TEK kule hakki" diyordu ve BAYATTI: acilis
+ *    sermayesi 80 -> 120 yukseltildi (Faz 10.1 denge kalibrasyonu). Sayi
+ *    artik TEKRARLANMIYOR, kaynagina isaret ediliyor — tekrarlanan sayi
+ *    bir daha ayni sekilde bayatlar.
  *
  * 2. Bolum 1'de 10 pad'in 5'i menzil disi oldugu icin GIZLI
  *    (`GameConfig.OUT_OF_RANGE_PADS[1] = {1,3,5,7,9}`), yani sahada
  *    **5 pad** var: 2, 4, 6, 8, 10.
  *
  * 3. Isaretlenen pad **[HIGHLIGHT_PAD_ID] = 2**. Gerekce: bolum 1'de
- *    catallanma kapali (`ALT_ROUTE_FIRST_LEVEL = 9`), yani tek aktif rota
+ *    catallanma kapali (bolum < [GameConfig.ALT_ROUTE_FIRST_LEVEL]), yani tek aktif rota
  *    var ve pad 2 o rotaya **121 ref-px** uzakta — Gatling'in 150 menzilinin
  *    rahat icinde. Ayrica gorunur pad'ler icinde rota uzerinde **en erken**
  *    olani, dolayisiyla tek kule en cok atisi yapar. Konumu (%31 x, %58 y)
