@@ -101,9 +101,46 @@ android {
       manifestPlaceholders["admobAppId"] = "ca-app-pub-3940256099942544~3347511713"
     }
     release {
-      manifestPlaceholders["admobAppId"] = "ca-app-pub-8582550349019790~1660929933"
+      // ⚠ ORNEK (TEST) APP ID ILE RELEASE DERLENEMEZ.
+      //
+      // Bugun deger gercek uretim ID'si ve `AdIdsConsistencyTest` bunu
+      // `AdIds.PRODUCTION_APP_ID` ile ayni tutuyor. Ama o test AdIds sabitini
+      // kontrol eder; BURADAKI dize elle degistirilse (ornegin bir deneme
+      // sirasinda test ID'sine cekilip geri alinmasa) release SESSIZCE
+      // derlenir ve Play'e test reklam yapilandirmasiyla bir yapi gider.
+      //
+      // Bu kontrol, o sessiz yolu kapatir: yapi ANLASILIR bir mesajla duser.
+      // Fikir Grid Crisis oturumundan (2026-09-02) — orada gercek bir yayin
+      // engeli olarak bulunmustu.
+      val releaseAdmobAppId = "ca-app-pub-8582550349019790~1660929933"
+      check(!releaseAdmobAppId.startsWith("ca-app-pub-3940256099942544")) {
+        "RELEASE derlemesi Google'in ORNEK AdMob App ID'siyle yapilandirilmis. " +
+          "Gercek App ID'yi gir (AdIds.PRODUCTION_APP_ID ile ayni olmali) " +
+          "ya da bu yapiyi yayinlama."
+      }
+      manifestPlaceholders["admobAppId"] = releaseAdmobAppId
       isCrunchPngs = false
-      isMinifyEnabled = false
+      // ⚠ R8 KAPALI — BILINCLI DEGIL, OLCULMEMIS.
+      //
+      // 2026-09-02'de fark edildi: bu bayrak hic acilmadi ve etkisi hic
+      // olculmedi. Kardes projede (Grid Crisis) acilinca APK 29,2 -> 15,7 MB
+      // dustu. FD'nin son release APK'si 16,9 MB, yani kazanc buyuk olabilir.
+      //
+      // ACMADAN ONCE GEREKENLER (bu yuzden bugun kapali birakildi):
+      //  1. Compose + reflection yollari icin proguard kurallari dogrulanmali.
+      //  2. Imzali release APK cihazda UCTAN UCA oynanmali — R8 sorunlari
+      //     derlemede degil CALISMA ANINDA cikar (eksik kural = crash).
+      //  3. Reklam ve Billing SDK'lari kendi kurallarini tasiyor ama
+      //     `StoreCatalog`/`SaveManager` gibi dize tabanli anahtarlar
+      //     karistirmadan etkilenmemeli (bugun etkilenmiyor: hepsi sabit).
+      // Olcum yapilmadan acmak, "build gecti = urun calisiyor" hatasidir.
+      //
+      // OLCMEK ICIN dosyayi DEGISTIRMEK gerekmez:
+      //   ./gradlew assembleRelease -PfdMinify=true
+      // Varsayilan KAPALIDIR; bayrak yalnizca olcum/deneme icindir ve yayina
+      // giden yapiyi kazara degistirmez.
+      isMinifyEnabled = (project.findProperty("fdMinify") == "true")
+      isShrinkResources = (project.findProperty("fdMinify") == "true")
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
       // Yalnizca yukaridaki kosul saglandiysa signingConfig atanir.
       signingConfig = signingConfigs.findByName("release")

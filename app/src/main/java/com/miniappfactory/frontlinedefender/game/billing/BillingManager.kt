@@ -32,7 +32,18 @@ import kotlinx.coroutines.flow.asStateFlow
  *
  * 1. **Coin ONCE yazilir, `consume` SONRA.** Tersi olursa tuketilmis ama
  *    yazilmamis bir satin alma KALICI olarak kaybolur — Play onu bir daha
- *    vermez. Tuketim yalnizca [onCoinsPurchased] `true` dondugunde yapilir.
+ *    vermez.
+ *
+ *    ⚠ Bu kuralin eski son cumlesi ("tuketim yalnizca [onCoinsPurchased]
+ *    `true` dondugunde yapilir") KODLA CELISIYORDU ve kod hakliydi: `consume`
+ *    DONUS DEGERINE BAKILMADAN cagrilir. Sebep, yazimin basarisiz olmasi
+ *    degil — `false` "zaten odenmis" demektir ve o durumda onceki oturumda
+ *    YARIM KALMIS bir `consumeAsync` olabilir. Kosulsuz yeniden tuketim, o
+ *    satin almayi tamamlayip urunu yeniden satin alinabilir yapan TEK yoldur;
+ *    kosula baglamak, jetonu sonsuza kadar tuketilmemis birakirdi.
+ *
+ *    Yani sira garantisi ("once yaz, sonra tuket") GECERLI; tuketimin
+ *    kosullu oldugu iddiasi YANLISTI.
  * 2. **Idempotenlik cagiranin isi.** `queryPurchasesAsync` her acilista
  *    tuketilmemis satin almalari yeniden getirir; ayni jetonun iki kez
  *    odenmesini engelleyen kayit `SaveManager.grantPurchasedCoins`tadir.
@@ -60,8 +71,8 @@ import kotlinx.coroutines.flow.asStateFlow
 class BillingManager(
     context: Context,
     /**
-     * Coin yazimi. **`true` = yazildi** ve ancak o zaman tuketilir. Ayni jeton
-     * daha once odenmisse `false` donmeli.
+     * Coin yazimi. **`true` = yazildi.** Ayni jeton daha once odenmisse `false`
+     * donmeli — ama `false` tuketimi ENGELLEMEZ (gerekce: sinif belgesi kural 1).
      */
     private val onCoinsPurchased: (purchaseToken: String, coins: Int) -> Boolean,
     /** "Reklamlari Kaldir" hakkinin son durumu — her kontrolde yazilir. */
@@ -89,6 +100,12 @@ class BillingManager(
 
     private val _restoreState = MutableStateFlow(RestoreState.IDLE)
     val restoreState: StateFlow<RestoreState> = _restoreState.asStateFlow()
+
+    /**
+     * Baglanti kurulmadan once dokunulmus "satin almalari geri yukle" istegi.
+     * Baglanti kurulunca kosar, baglanti basarisiz olursa `FAILED` olur.
+     */
+    private var pendingManualRestore = false
 
     private val purchasesUpdatedListener = PurchasesUpdatedListener { result, purchases ->
         _purchaseInFlight.value = false
@@ -128,12 +145,25 @@ class BillingManager(
                 if (result.responseCode == BillingClient.BillingResponseCode.OK) {
                     _ready.value = true
                     queryProducts()
+                    // Baglanti kurulmadan once dokunulmus "geri yukle" varsa
+                    // ISTEK SIMDI KOSAR ve sonucu oyuncuya bildirilir.
+                    if (pendingManualRestore) {
+                        pendingManualRestore = false
+                        restorePurchases(manuel = true)
+                        return
+                    }
                     // HER BAGLANTIDA: yarim kalan satin almalari tamamlar ve
                     // "Reklamlari Kaldir" hakkini geri yukler. Bu cagri olmadan
                     // "param gitti, urun gelmedi" destek talebi kacinilmaz.
                     restorePurchases()
                 } else {
                     _ready.value = false
+                    // Baglantinin KENDISI basarisiz: bekleyen elle istek artik
+                    // gercekten basarisizdir ve oyuncuya oyle bildirilir.
+                    if (pendingManualRestore) {
+                        pendingManualRestore = false
+                        _restoreState.value = RestoreState.FAILED
+                    }
                     Log.w(TAG, "Billing baglanamadi: ${result.debugMessage}")
                 }
             }
@@ -181,7 +211,24 @@ class BillingManager(
      */
     fun restorePurchases(manuel: Boolean = false) {
         if (!client.isReady) {
-            if (manuel) _restoreState.value = RestoreState.FAILED
+            // ⚠ ESKIDEN BURADA DOGRUDAN `FAILED` YAZILIYORDU ve durum KILITLENIYORDU.
+            //
+            // Oyuncu magazayi acar acmaz "geri yukle"ye dokunursa baglanti henuz
+            // kurulmamis olabilir. Eski kod bunu BASARISIZLIK olarak raporluyordu,
+            // oysa hicbir sey denenmemisti. Daha kotusu, durum temizlenmiyordu:
+            // `BillingManager` `remember(campaignProgress)` ile tutuldugu ve magaza
+            // yalnizca bir `storeOpen` bayragiyla acilip kapandigi icin ekrani
+            // kapatip acmak AYNI StateFlow'u geri okur. `refresh()` de temizleyemez
+            // (o `manuel = false` ile cagirir). Yani hata mesaji, ikinci bir elle
+            // deneme ya da surec olumune kadar ekranda kalirdi — ustelik satin alma
+            // gercekten VARSA ayni ekranda "SATIN ALINDI" rozetiyle CELISEREK.
+            //
+            // Artik dokunus BEKLEMEYE alinir: baglanti kurulunca istek gercekten
+            // kosar ve oyuncu OLAN sonucu gorur.
+            if (manuel) {
+                _restoreState.value = RestoreState.RUNNING
+                pendingManualRestore = true
+            }
             connect()
             return
         }
@@ -258,10 +305,24 @@ class BillingManager(
 
         val pack = purchase.products.firstNotNullOfOrNull { StoreCatalog.packOf(it) }
         if (pack != null) {
+            // ⚠ ADET (quantity) HESABA KATILIR.
+            //
+            // Play Console'da "cok adetli satin almaya izin ver" tek seferlik
+            // urunlerde VARSAYILAN OLARAK KAPALI, yani bugun her `Purchase`
+            // quantity = 1 ile gelir ve odeme dogrudur. Ama bu, ISTEMCININ
+            // ZORLAYAMADIGI bir Console ayarina bagli sessiz bir tuzak: o
+            // anahtar bir gun acilirsa Play TEK bir `Purchase` icinde N adet
+            // ve TEK jeton dondurur. Sabit `pack.coins` odemek, oyuncunun N
+            // paket parasi odeyip 1 paket almasi olurdu — ve jeton
+            // `iap_granted_tokens`e yazildigi icin fark KALICI olarak kaybolur,
+            // idempotenlik korumasi da telafiyi imkansiz kilardi.
+            //
+            // Jeton hala TEK idempotenlik anahtaridir; degisen yalnizca miktar.
+            val adet = purchase.quantity.coerceAtLeast(1)
             // TUKETILEN: once yaz, sonra tuket (kural 1). `yazildi == false` ise
             // jeton zaten odenmis ama tuketim yarim kalmis olabilir — urunun
             // yeniden satin alinabilir olmasi icin yine tuketilir.
-            val yazildi = onCoinsPurchased(purchase.purchaseToken, pack.coins)
+            val yazildi = onCoinsPurchased(purchase.purchaseToken, pack.coins * adet)
             if (!yazildi) Log.i(TAG, "Jeton zaten odenmis, yalnizca tuketiliyor: ${pack.id}")
             consume(purchase)
             return
