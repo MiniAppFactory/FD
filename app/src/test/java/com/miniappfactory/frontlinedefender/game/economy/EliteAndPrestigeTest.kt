@@ -91,25 +91,65 @@ class EliteAndPrestigeTest {
     // PRESTIJ — toplam, siralama, karar yollari
     // =========================================================================
 
+    /**
+     * ⚠ 2026-09-02 — MERDIVEN 5 -> 7 KADEME (19.900 -> 38.800) ve ERISILEBILIRLIK
+     * KURALI DEGISTI. Ikisi de bilincli; gerekce `EconomyConfig.PRESTIGE_COSTS`
+     * uzerinde yazili.
+     *
+     * ESKI KURAL: "son nisan en kotu bandin fazlasindan (9.545) ucuz olsun".
+     * Niyeti dogruydu (kozmetik bir merdiven herkes tarafindan bitirilebilmeli)
+     * ama emicinin KAPASITESINI en fakir oyuncuya kilitliyordu — yani tam da
+     * absorbe etmesi gereken 3-yildiz fazlasini (45.295) absorbe edemiyordu.
+     *
+     * YENI KURAL IKI PARCALI ve daha guclu:
+     *  (a) TAMAMLANABILIR CEKIRDEK — ilk bes nisan (19.900) en kotu bant icin
+     *      erisilebilir kalir; son cekirdek kademe hala 9.545'in altinda.
+     *  (b) SATIN ALMA ZORUNLU DEGIL — merdivenin TAMAMI, en iyi bant tarafindan
+     *      YALNIZCA OYNAYARAK bitirilebilir (38.800 < 45.295). Satin alma
+     *      hicbir kademeyi acmaz, yalnizca HIZLANDIRIR.
+     *
+     * (b) olmasaydi kozmetik bir kalem para duvarina donerdi; (a) olmasaydi
+     * emici yine en fakir bandin fazlasiyla sinirli kalirdi.
+     */
     @Test
     fun prestigeCostsSumToTheDocumentedDeepSinkAndIncreaseMonotonically() {
-        assertEquals(5, EconomyConfig.PRESTIGE_MAX)
-        assertEquals(19_900, EconomyConfig.PRESTIGE_TOTAL_COST)
+        assertEquals(7, EconomyConfig.PRESTIGE_MAX)
+        assertEquals(38_800, EconomyConfig.PRESTIGE_TOTAL_COST)
         for (i in 1 until EconomyConfig.PRESTIGE_MAX) {
             assertTrue(
                 "nisan ${i + 1} oncekinden ucuz olamaz",
                 EconomyConfig.PRESTIGE_COSTS[i] > EconomyConfig.PRESTIGE_COSTS[i - 1],
             )
         }
+        // ADIM ARITMETIGI: farklar da artmali (merdiven hizlanarak pahalilasir).
+        val steps = (1 until EconomyConfig.PRESTIGE_MAX)
+            .map { EconomyConfig.PRESTIGE_COSTS[it] - EconomyConfig.PRESTIGE_COSTS[it - 1] }
+        for (i in 1 until steps.size) {
+            assertTrue(
+                "adim ${i + 1} oncekinden kucuk (${steps[i]} <= ${steps[i - 1]}) — merdiven duzlesiyor",
+                steps[i] >= steps[i - 1],
+            )
+        }
+
         // Ilk nisan kampanya ORTASINDA alinabilir olmali: 1 yildiz bandinin
         // L28 bakiyesi ~10-11k, fiyat 1.500 — erken oyunda rezervle bogusmaz,
-        // gec oyunda onemsizlesmez. Kaba sinir: ilk fiyat < L10 bakiyesi olmasin
-        // (cok erken), son fiyat 1 yildiz kampanya fazlasinin (9.545) altinda
-        // olsun (en kotu bant bile SON nisani alabilmeli).
+        // gec oyunda onemsizlesmez.
         assertTrue(EconomyConfig.PRESTIGE_COSTS.first() > 1_000)
+
+        // (a) TAMAMLANABILIR CEKIRDEK — ilk bes kademe, en kotu bandin fazlasi icinde.
+        val worstBandSurplus = 9_545
         assertTrue(
-            "son nisan en kotu bandin fazlasini asiyor",
-            EconomyConfig.PRESTIGE_COSTS.last() < 9_545,
+            "cekirdegin son kademesi en kotu bandin fazlasini asiyor",
+            EconomyConfig.PRESTIGE_COSTS[4] < worstBandSurplus,
+        )
+
+        // (b) HICBIR KADEME SATIN ALMAYA ZORUNLU DEGIL — en iyi bant merdiveni
+        //     yalnizca oynayarak bitirebilmeli.
+        val bestBandSurplus = 45_295 // CoinLedgerTest kilidi
+        assertTrue(
+            "merdiven ${EconomyConfig.PRESTIGE_TOTAL_COST}, en iyi bandin fazlasi " +
+                "$bestBandSurplus — kozmetik bir kalem para duvarina donmus",
+            EconomyConfig.PRESTIGE_TOTAL_COST < bestBandSurplus,
         )
     }
 
@@ -145,7 +185,10 @@ class EliteAndPrestigeTest {
     fun theTwoSinksTogetherCanAbsorbTheThreeStarSurplus() {
         val surplus = 45_295 // CoinLedgerTest kilidi
         val afterPrestige = surplus - EconomyConfig.PRESTIGE_TOTAL_COST
-        assertEquals(25_395, afterPrestige)
+        // 2026-09-02: prestij 19.900 -> 38.800 cikinca kalan 25.395 -> 6.495.
+        // Emicinin ISI DEGISMEDI, DERINLESTI: kampanya sonrasi dongu artik
+        // ~53 degil ~13 elit kosu, cunku fazlanin buyuk kismini prestij aliyor.
+        assertEquals(6_495, afterPrestige)
 
         val avgTicket = (1..EconomyConfig.CAMPAIGN_LEVELS)
             .sumOf { eliteTicketPrice(it) } / EconomyConfig.CAMPAIGN_LEVELS
@@ -153,8 +196,8 @@ class EliteAndPrestigeTest {
 
         val runsNeeded = afterPrestige / avgTicket
         assertTrue(
-            "kalan fazla ortalama ${runsNeeded} elit kosuyla emilmeli (20-100 bandi)",
-            runsNeeded in 20..100,
+            "kalan fazla ortalama ${runsNeeded} elit kosuyla emilmeli (5-100 bandi)",
+            runsNeeded in 5..100,
         )
     }
 

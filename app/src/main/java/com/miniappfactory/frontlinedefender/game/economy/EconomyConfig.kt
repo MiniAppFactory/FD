@@ -147,7 +147,35 @@ object EconomyConfig {
     // Fiyatlar SATIN ALINABILIRLIK sirasiyla artar (1.500 kampanya ortasinda,
     // 6.800 ancak gec oyunda) — erken oyunda rezerv kuralinin ustune binip
     // kilit ilerlemesini bogmasin diye.
-    val PRESTIGE_COSTS: IntArray = intArrayOf(1_500, 2_600, 3_800, 5_200, 6_800)
+    // ⚠ 2026-09-02 — IKI KADEME EKLENDI (5 -> 7), toplam 19.900 -> 38.800.
+    //
+    // GEREKCE: coin paketleri satisa cikti ve satin alinan coinin gidecek bir
+    // yeri olmali. Kullanicinin ilk onerisi kampanyayi 55 bolumun otesine
+    // uzatmakti; OLCULDU ve TERSINE calistigi cikti — bu depoda her bolumun
+    // odulu, bir sonrakinin kilidinin ~2 kati olmak ZORUNDA (soft-lock
+    // koruması, `CampaignTableTest` ve `EconomySimulationTest` dayatiyor), yani
+    // her bolum yapisal olarak bir coin MUSLUGUDUR. 11 bolum eklemek 3-yildiz
+    // bandindaki olu coini 45.295 -> ~70.030'a CIKARIRDI.
+    //
+    // Prestij ise tam tersi: saf emici, sifir oynanis etkisi, kendi kendine
+    // olceklenen altyapi (PRESTIGE_MAX ve PRESTIGE_TOTAL_COST `.size`/`.sum()`
+    // ile turer; `StoreCatalog.oneTimeSinkTotal` onu zaten okur).
+    //
+    // ADIM ARITMETIGI KORUNDU: farklar 1.100 · 1.200 · 1.400 · 1.600 idi;
+    // devami 1.700 · 1.900 -> 8.500 · 10.400. Sayilar elle secilmedi.
+    //
+    // ERISILEBILIRLIK KURALI GUCLENDI (bkz. `EliteAndPrestigeTest`):
+    //  · ESKI kural "SON nisan en kotu bandin fazlasindan (9.545) ucuz olsun"
+    //    idi. Bu, emicinin kapasitesini EN FAKIR oyuncuya kilitliyordu — yani
+    //    tam da absorbe etmesi gereken 3-yildiz fazlasini (45.295) absorbe
+    //    edemiyordu.
+    //  · YENI kural iki parcali: (a) TAMAMLANABILIR CEKIRDEK (ilk bes nisan,
+    //    19.900) en kotu bant icin erisilebilir kalir — degismedi; (b) TUM
+    //    merdiven, EN IYI bant tarafindan YALNIZCA OYNAYARAK bitirilebilir
+    //    olmali (38.800 < 45.295). Yani hicbir kademe SATIN ALMAYA ZORUNLU
+    //    degildir; satin alma yalnizca HIZLANDIRIR.
+    val PRESTIGE_COSTS: IntArray =
+        intArrayOf(1_500, 2_600, 3_800, 5_200, 6_800, 8_500, 10_400)
     val PRESTIGE_MAX: Int get() = PRESTIGE_COSTS.size
     val PRESTIGE_TOTAL_COST: Int get() = PRESTIGE_COSTS.sum()
 

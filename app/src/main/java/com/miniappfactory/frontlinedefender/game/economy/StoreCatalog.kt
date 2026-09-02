@@ -19,10 +19,10 @@ package com.miniappfactory.frontlinedefender.game.economy
  *
  * Cipa: kampanyanin TEK SEFERLIK coin giderlerinin toplami —
  * [EconomyConfig.TOTAL_LOCK_COST] + [EconomyConfig.TREE_TOTAL_COST] +
- * [EconomyConfig.PRESTIGE_TOTAL_COST] (bugun 23.105 + 19.600 + 19.900 =
- * 62.605). Sayi burada YAZILMAZ, [oneTimeSinkTotal] ile hesaplanir; kampanya
- * buyurse cipa kendiliginden kayar ve [StoreCatalogTest] yeni degerle
- * denetler.
+ * [EconomyConfig.PRESTIGE_TOTAL_COST] (bugun 23.105 + 19.600 + 38.800 =
+ * 81.505). Sayi burada YAZILMAZ, [oneTimeSinkTotal] ile hesaplanir; emiciler
+ * buyurse cipa kendiliginden kayar ve `StoreCatalogTest` yeni degerle denetler.
+ * (Prestij 2026-09-02'de 19.900 -> 38.800 cikti; gerekce EconomyConfig'te.)
  *
  * Iki kural var, ikisini de test kilitler:
  *

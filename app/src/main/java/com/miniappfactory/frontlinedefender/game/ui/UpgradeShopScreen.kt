@@ -705,11 +705,13 @@ private fun PrestigeCard(
 }
 
 /** Nisan adi — kademe 1..5. */
-fun prestigeNameRes(rank: Int): Int = when (rank.coerceIn(1, 5)) {
+fun prestigeNameRes(rank: Int): Int = when (rank.coerceIn(1, EconomyConfig.PRESTIGE_MAX)) {
     1 -> R.string.prestige_name_1
     2 -> R.string.prestige_name_2
     3 -> R.string.prestige_name_3
     4 -> R.string.prestige_name_4
-    else -> R.string.prestige_name_5
+    5 -> R.string.prestige_name_5
+    6 -> R.string.prestige_name_6
+    else -> R.string.prestige_name_7
 }
 

@@ -58,8 +58,9 @@ class StoreCatalogTest {
                 EconomyConfig.PRESTIGE_TOTAL_COST,
             StoreCatalog.oneTimeSinkTotal,
         )
-        // Belgelenen deger (2026-09-02). Kampanya buyurse burasi BILINCLI guncellenir.
-        assertEquals(62_605, StoreCatalog.oneTimeSinkTotal)
+        // Belgelenen deger. Emiciler degisirse burasi BILINCLI guncellenir —
+        // 2026-09-02'de prestij 19.900 -> 38.800 cikinca 62.605 -> 81.505 oldu.
+        assertEquals(81_505, StoreCatalog.oneTimeSinkTotal)
     }
 
     /**

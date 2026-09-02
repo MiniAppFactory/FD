@@ -429,6 +429,12 @@ Normal replay earns no coin; Elite Deploy is a challenge run.</string>
     <string name="prestige_name_3">Gold Insignia</string>
     <string name="prestige_name_4">Platinum Insignia</string>
     <string name="prestige_name_5">Diamond Insignia</string>
+    <!-- 6-7: 2026-09-02'de eklendi. Ilk bes tas/maden merdiveni; ustu ASKERI
+         onur diline geciyor — "Komuta" ozellikle secildi: mockup'taki
+         "COMMANDER" rozeti veri olmadigi icin kesilmisti, artik gercek
+         verisi var. -->
+    <string name="prestige_name_6">Star Insignia</string>
+    <string name="prestige_name_7">Command Insignia</string>
 
     <!-- ==================== store (StoreScreen) — IAP, 2026-09-02 ====================
          FIYAT METNI BURADA YOK: her fiyat Play'den (ProductDetails.formattedPrice)

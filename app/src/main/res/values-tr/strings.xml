@@ -310,6 +310,8 @@ Normal tekrar coin kazandırmaz; Elit Sevk bir meydan okumadır.</string>
     <string name="prestige_name_3">Altın Nişan</string>
     <string name="prestige_name_4">Platin Nişan</string>
     <string name="prestige_name_5">Elmas Nişan</string>
+    <string name="prestige_name_6">Yıldız Nişanı</string>
+    <string name="prestige_name_7">Komuta Nişanı</string>
 
     <!-- ==================== store (StoreScreen) — IAP, 2026-09-02 ==================== -->
     <string name="store_title">İKMAL DEPOSU</string>
