@@ -1,6 +1,7 @@
 package com.miniappfactory.frontlinedefender.modifiers
 
 import com.miniappfactory.frontlinedefender.balance.CampaignSimulator
+import com.miniappfactory.frontlinedefender.game.economy.EconomyConfig
 import com.miniappfactory.frontlinedefender.game.model.GameConfig
 import com.miniappfactory.frontlinedefender.game.model.GameConfig.LevelModifiers
 import com.miniappfactory.frontlinedefender.game.model.GameConfig.TowerType
@@ -65,14 +66,40 @@ class LevelModifierDataTest {
      * dorduncusu; ust sinir ayni gerekceyle yerinde duruyor — degistirici
      * kampanyaya yayilirsa "az sayida bolum" kurali sessizce olur.
      *
-     * Kalan uc mekanik (Devralinan Mevzi, Hazirliksiz Dalga, Kol Degisimi)
-     * eklendiginde bu bant bilincli olarak yeniden konusulmali; kendiliginden
-     * buyumemeli.
+     * ⚠ BANT 4-7 -> 4-9 (2026-09-02) — VE BU, TESTIN ISTEDIGI "BILINCLI YENIDEN
+     * KONUSMA"DIR, kendiliginden bir buyume degil.
+     *
+     * Bu turda HAZIRLIKSIZ DALGA (M5) eklendi. Mekanik motorda
+     * (`GameEngine.prepSecondsFor`) ve simulatorde 2026-08'den beri
+     * CALISIYORDU ama hicbir bolume baglanmamisti — bu deponun 4 numarali
+     * tekrar eden hata sinifi ("kod var, cagiran yok"). Ayni turda HUD
+     * gostergesi de eklendi; gosterge olmadan baglamak, HUD'un kendi
+     * gerekcesini ("gorunmeyen bir kisit, ancak REDDEDILDIGINDE ogrenilen bir
+     * kisitir") ihlal etmek olurdu.
+     *
+     * TAVAN EKLENEN KADAR ACILDI, "biraz pay" birakilmadi: iki bolum eklendi,
+     * ust sinir iki arti. Pay birakmak, kuralin sessizce asinmasina izin
+     * vermenin tam olarak yoludur.
+     *
+     * NEDEN L47 ve L52: kampanyanin doruk perdesi (L47-L55) bugune kadar SIFIR
+     * kural tasiyordu — HANDOVER'in "L47->L55 dokuz bolum yeni icerik yok"
+     * maddesi. Ikisi de perde acilisi degil, boss degil, nefes bolumu degil.
+     * Ayrintili gerekce `GameConfig.LEVEL_MODIFIERS` uzerinde.
+     *
+     * Kalan IKI mekanik (Devralinan Mevzi, Kol Degisimi) eklendiginde bu bant
+     * YINE bilincli olarak yeniden konusulmali.
      */
     @Test
     fun `bu turda degistirici AZ SAYIDA bolume kondu`() {
         val n = GameConfig.LEVEL_MODIFIERS.size
-        assertTrue("degistirici sayisi 4-7 bandinin disinda: $n", n in 4..7)
+        assertTrue("degistirici sayisi 4-9 bandinin disinda: $n", n in 4..9)
+        // Kampanyanin en fazla altida biri kural tasiyabilir: "az sayida bolum"
+        // kurali bir SAYIYA degil bir ORANA baglandi ki kampanya buyurse de
+        // anlamini korusun.
+        assertTrue(
+            "degistirici tasiyan bolum orani %${100 * n / EconomyConfig.CAMPAIGN_LEVELS} — yayilim",
+            n * 6 <= EconomyConfig.CAMPAIGN_LEVELS,
+        )
     }
 
     /**

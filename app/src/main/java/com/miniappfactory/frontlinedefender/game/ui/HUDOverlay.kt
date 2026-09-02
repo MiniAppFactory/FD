@@ -194,6 +194,20 @@ fun HUDOverlay(
                 if (levelSpec.buildLockedDuringWave) {
                     BuildWindowBadge(waveRunning = gameState == GameState.WAVE_RUNNING)
                 }
+                // HAZIRLIKSIZ DALGA (M5) — SIRADAKI dalga icin uyarir.
+                //
+                // Kural motorda 2026-08 tarihinden beri calisiyordu
+                // (`GameEngine.prepSecondsFor`) ama HICBIR bolumde
+                // kullanilmiyordu ve HUD'da gostergesi yoktu. Ikisi birlikte
+                // duzeltildi: gosterge olmadan kural, bu HUD'un kendi
+                // gerekcesinin ("gorunmeyen bir kisit, ancak REDDEDILDIGINDE
+                // ogrenilen bir kisitir") ihlali olurdu.
+                //
+                // Rozet SIRADAKI dalgaya bakar, mevcut dalgaya degil: oyuncunun
+                // plan yapabilecegi tek an hazirlik fazidir.
+                if (GameConfig.showsNoPrepWarning(levelSpec.modifiers, waveIndex)) {
+                    NoPrepBadge()
+                }
             }
 
             // ----------------------------------------------------------------
@@ -428,6 +442,36 @@ private fun EmplacementCapBadge(gameEngine: GameEngine, cap: Int) {
                 .padding(horizontal = 10.dp, vertical = 6.dp)
                 .semantics { contentDescription = desc }
                 .testTag("emplacement_cap_text")
+        )
+    }
+}
+
+/**
+ * HAZIRLIKSIZ DALGA rozeti — SIRADAKI dalga ara vermeden mi geliyor?
+ *
+ * Uyari, kural uygulanmadan ONCE gorulur: oyuncu hazirlik fazindayken
+ * "bu dalgadan sonra durak yok" bilgisini alir ve savunmasini ona gore kurar.
+ * Rozet gectikten sonra (yani hazirliksiz dalga baslayinca) kaybolur —
+ * o noktada bilgi artik bir PLAN girdisi degil, gurultu olurdu.
+ */
+@Composable
+private fun NoPrepBadge() {
+    val desc = stringResource(R.string.hud_no_prep_desc)
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = SleekGoldBg,
+        border = androidx.compose.foundation.BorderStroke(1.dp, SleekGoldBorder)
+    ) {
+        Text(
+            text = stringResource(R.string.hud_no_prep),
+            color = SleekGold,
+            fontWeight = FontWeight.Bold,
+            fontSize = 12.sp,
+            maxLines = 1,
+            modifier = Modifier
+                .padding(horizontal = 10.dp, vertical = 6.dp)
+                .semantics { contentDescription = desc }
+                .testTag("no_prep_text")
         )
     }
 }

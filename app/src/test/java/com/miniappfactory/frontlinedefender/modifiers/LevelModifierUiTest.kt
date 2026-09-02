@@ -18,6 +18,10 @@ import com.miniappfactory.frontlinedefender.game.ui.HUDOverlay
 import com.miniappfactory.frontlinedefender.game.ui.TowerBuildBar
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
+import com.miniappfactory.frontlinedefender.game.economy.EconomyConfig
+import com.miniappfactory.frontlinedefender.game.model.GameConfig.LevelModifiers
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -160,5 +164,69 @@ class LevelModifierUiTest {
         }
         composeRule.onNodeWithTag("emplacement_cap_text").assertDoesNotExist()
         composeRule.onNodeWithTag("build_window_text").assertDoesNotExist()
+        composeRule.onNodeWithTag("no_prep_text").assertDoesNotExist()
+    }
+
+    // =========================================================================
+    // HAZIRLIKSIZ DALGA (M5) — 2026-09-02
+    // =========================================================================
+
+    /**
+     * Rozet SIRADAKI dalga icin uyarir, mevcut dalga icin DEGIL.
+     *
+     * Karar `GameConfig.showsNoPrepWarning` icinde SAF tutuldu, bu yuzden
+     * burada Compose'a hic girmeden dogrulanabiliyor — ince olan kisim
+     * zamanlama, cizim degil.
+     *
+     * L47'de isaretli dalga 5, yani uyari yalnizca 4. dalganin hazirlik
+     * fazinda (0 tabanli indeks 3) gorunmeli.
+     */
+    @Test
+    fun `hazirliksiz dalga uyarisi yalnizca SIRADAKI dalga icin cikar`() {
+        val spec = GameConfig.levelSpec(47)
+        assertEquals("L47 isaretli dalga kumesi degismis", setOf(5), spec.modifiers.noPrepWaveIndices)
+
+        val waves = spec.waveCount
+        val warned = (0 until waves).filter { GameConfig.showsNoPrepWarning(spec.modifiers, it) }
+        assertEquals("uyari yanlis dalgada", listOf(3), warned)
+    }
+
+    /** Kural TASIMAYAN bir bolumde uyari hicbir dalgada cikmaz. */
+    @Test
+    fun `hazirliksiz dalga uyarisi kural tasimayan bolumde hic cikmaz`() {
+        val spec = GameConfig.levelSpec(50)
+        assertTrue(spec.modifiers.noPrepWaveIndices.isEmpty())
+        (0 until spec.waveCount).forEach {
+            assertFalse(GameConfig.showsNoPrepWarning(spec.modifiers, it))
+        }
+    }
+
+    /**
+     * ILK DALGA HIC UYARILMAZ ve HIC HAZIRLIKSIZ OLMAZ — kural veriye degil
+     * KODA yazili (`GameEngine.prepSecondsFor`). Tablo yanlislikla 1'i icerse
+     * bile motor onu yok sayar; burada da uyari cikmamali.
+     */
+    @Test
+    fun `ilk dalga isaretlense bile uyari cikmaz`() {
+        val bozuk = LevelModifiers(noPrepWaveIndices = setOf(1))
+        assertFalse(
+            "0 tabanli -1 diye bir dalga yok; uyari mantigi taban disina tasmamali",
+            GameConfig.showsNoPrepWarning(bozuk, -1),
+        )
+        assertFalse(GameConfig.showsNoPrepWarning(bozuk, 0))
+    }
+
+    /** Kural tasiyan iki bolumun de kural TASIDIGI tabloyla dogrulanir. */
+    @Test
+    fun `hazirliksiz dalga tam olarak iki bolumde kullaniliyor`() {
+        val carrying = (1..EconomyConfig.CAMPAIGN_LEVELS)
+            .filter { GameConfig.levelSpec(it).modifiers.noPrepWaveIndices.isNotEmpty() }
+        assertEquals(listOf(47, 52), carrying)
+        // Yerlesim kurallari: perde acilisi / boss / nefes bolumu DEGIL.
+        carrying.forEach {
+            assertFalse("$it perde acilisi", it in setOf(12, 23, 34, 45))
+            assertFalse("$it boss bolumu", it in setOf(11, 22, 33, 44, 55, 48))
+            assertFalse("$it nefes bolumu", it in setOf(49, 53))
+        }
     }
 }

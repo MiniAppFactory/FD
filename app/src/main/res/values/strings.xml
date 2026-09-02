@@ -69,6 +69,11 @@
     <string name="hud_build_locked">LOCKED</string>
     <string name="hud_build_plan_desc">Build window open</string>
     <string name="hud_build_locked_desc">Building locked while the wave runs</string>
+    <!-- HAZIRLIKSIZ DALGA (M5) — bir sonraki dalga ARA VERMEDEN gelir.
+         Rozet SIRADAKI dalga icin uyarir, yani oyuncu hazirlik fazindayken
+         gorur ve plan yapabilir. Gorulmeden uygulanan bir kural tuzak olurdu. -->
+    <string name="hud_no_prep">NO PAUSE</string>
+    <string name="hud_no_prep_desc">The next wave starts immediately, with no preparation phase</string>
     <string name="hud_start_wave">START</string>
     <string name="hud_start_wave_icon_desc">Start wave</string>
     <string name="hud_speed_icon_desc">Game speed</string>

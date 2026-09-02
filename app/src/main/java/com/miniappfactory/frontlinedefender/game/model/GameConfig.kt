@@ -1621,7 +1621,37 @@ object GameConfig {
             startingSupplyBonus = 2594
         ),
         36 to LevelModifiers(maxTowers = 6),
-        46 to LevelModifiers(buildLockedDuringWave = true)
+        46 to LevelModifiers(buildLockedDuringWave = true),
+        // ⚠ 2026-09-02 — HAZIRLIKSIZ DALGA (M5) ILK KEZ KULLANILIYOR.
+        //
+        // Kural motorda (`GameEngine.prepSecondsFor`) ve simulatorde
+        // (`CampaignSimulator`) 2026-08'den beri CALISIYORDU ama HICBIR
+        // bolume baglanmamisti — deponun 4 numarali tekrar eden hata sinifi
+        // ("kod var, cagiran yok"). Ayni turda HUD gostergesi de eklendi;
+        // gosterge olmadan baglamak, gorunmeyen bir kurali dayatmak olurdu.
+        //
+        // NEDEN BU IKI BOLUM — sayilar bugunun olcumunden secildi
+        // (`CampaignShapeReportTool`, 55-bolum tablosu):
+        //
+        //  L47 · harita 07 · 7 dalga · arketip S (hiz) · simulasyon 20/20 can
+        //      Bandin EN RAHAT bolumu — yeni bir kural icin en cok pay burada.
+        //      Kampanyanin doruk perdesi (L47-L55) bugun SIFIR kural tasiyor;
+        //      ilk tanitim buraya konuyor. TEK dalga isaretli (5): kural
+        //      ogretilirken zincirlenmez.
+        //
+        //  L52 · harita 01 · 7 dalga · arketip Z (zirh) · simulasyon 11/20 can
+        //      Tekrar, FARKLI tonda: zirh cevabi ararken zaman baskisi.
+        //      Yine TEK dalga (6) ve sona yakin — oyuncu kadrosunu kurmus
+        //      olur, kural bir baslangic cezasi degil bir final sinavi olur.
+        //
+        // YERLESIM KURALLARI KORUNDU: ikisi de perde acilisi (12/23/34/45)
+        // DEGIL, boss bolumu (11/22/33/44/55 ve 48) DEGIL, `breath = true`
+        // nefes bolumu (49/53) DEGIL.
+        //
+        // ILK DALGA HIC ISARETLENMEZ — bu kural veriye degil KODA yazili
+        // (`prepSecondsFor`), yani buradaki tablo yanlissa bile korunur.
+        47 to LevelModifiers(noPrepWaveIndices = setOf(5)),
+        52 to LevelModifiers(noPrepWaveIndices = setOf(6))
     )
 
     /**
@@ -1807,6 +1837,29 @@ object GameConfig {
      * bolum 9+ zaten catalliydi.
      */
     const val ALT_ROUTE_FIRST_LEVEL = 3
+
+    /**
+     * HAZIRLIKSIZ DALGA UYARISI cizilmeli mi?
+     *
+     * Karar SAF tutuldu (Compose'dan ayri) cunku ince olan kisim tam olarak
+     * budur: rozet **SIRADAKI** dalga icin uyarir, mevcut dalga icin degil.
+     * Oyuncunun plan yapabilecegi tek an hazirlik fazidir; rozet hazirliksiz
+     * dalga BASLADIKTAN sonra gorunse bilgi degil gurultu olurdu — kural
+     * zaten uygulanmis olur.
+     *
+     * @param currentWaveIndex 0 tabanli (motorun `currentWaveIndex` akisi).
+     *   Siradaki dalganin 1 tabanli numarasi bu yuzden `+2`dir.
+     */
+    fun showsNoPrepWarning(modifiers: LevelModifiers, currentWaveIndex: Int): Boolean {
+        val nextOneBased = currentWaveIndex + 2
+        // ILK DALGA HIC ISARETLENMEZ — motorun `GameEngine.prepSecondsFor`
+        // icindeki kuralinin AYNISI. Iki yerde birden yazili olmasi kasitli:
+        // motor tabloya, UI motora guvenmez. Aksi halde tablo yanlislikla 1'i
+        // icerdiginde motor kurali yok sayar ama rozet YINE DE uyarir ve ekran
+        // motorla CELISIRDI — oyuncunun goremedigi ama hissettigi tur bir hata.
+        if (nextOneBased <= 1) return false
+        return nextOneBased in modifiers.noPrepWaveIndices
+    }
 
     /** Bu bolumde catallanma (ikinci kol) devrede mi? */
     fun usesAlternateRoutes(levelId: Int): Boolean = levelId >= ALT_ROUTE_FIRST_LEVEL

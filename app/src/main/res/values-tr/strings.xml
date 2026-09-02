@@ -29,6 +29,8 @@
     <string name="hud_build_locked">KİLİTLİ</string>
     <string name="hud_build_plan_desc">İnşa penceresi açık</string>
     <string name="hud_build_locked_desc">Dalga sürerken inşa kilitli</string>
+    <string name="hud_no_prep">ARALIKSIZ</string>
+    <string name="hud_no_prep_desc">Sıradaki dalga hazırlık fazı olmadan hemen başlar</string>
     <string name="hud_start_wave">BAŞLAT</string>
     <string name="hud_start_wave_icon_desc">Dalgayı başlat</string>
     <string name="hud_speed_icon_desc">Oyun hızı</string>
