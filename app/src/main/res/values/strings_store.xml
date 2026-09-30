@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    SUPPLY DEPOT — coin pack tiers, purchase feedback and error copy (2026-09-30, M3 billing).
+
+    RULES (locked by StoreStringsTest):
+      * NO price text and NO price-derived percentage anywhere in this file. Prices come ONLY from
+        Google Play (ProductDetails.formattedPrice); the coin AMOUNT is the differentiator between
+        packs. "20% more coins" would contradict the localised Play price.
+      * Coin packs are NOT restorable from Google Play once delivered. Nothing here promises restore.
+      * Both locales carry the same names (values-tr/strings_store.xml).
+-->
+<resources>
+    <!-- Pack tiers (military ranks). The coin amount is shown next to the tier on every row. -->
+    <string name="store_tier_recruit">Recruit</string>
+    <string name="store_tier_sergeant">Sergeant</string>
+    <string name="store_tier_captain">Captain</string>
+    <string name="store_tier_colonel">Colonel</string>
+    <string name="store_tier_general">General</string>
+    <!-- %1$s = tier name, %2$s = formatted coin amount -->
+    <string name="store_pack_tier_amount">%1$s · %2$s COIN</string>
+
+    <!-- One-shot purchase feedback (StoreEvent) -->
+    <string name="store_event_granted">+%1$s coins added to your wallet.</string>
+    <string name="store_event_already_credited">This purchase was already credited to your wallet.</string>
+    <string name="store_event_pending">Payment pending. Your coins arrive automatically once Google Play confirms the payment.</string>
+    <string name="store_event_cancelled">Purchase cancelled.</string>
+
+    <!-- Failure copy (StoreEvent.Failed reason) -->
+    <string name="store_error_not_ready">Google Play is not connected yet. Try again in a moment.</string>
+    <string name="store_error_network">Could not reach Google Play. Check your connection and try again.</string>
+    <string name="store_error_billing_unavailable">Purchases are not available on this device or account.</string>
+    <string name="store_error_product_unavailable">This pack is not available right now.</string>
+    <string name="store_error_developer">Store configuration error. Please try again later.</string>
+    <string name="store_error_save_failed">Your payment was received but the coins could not be saved yet. Nothing is lost: the game retries automatically when you reopen the store or restart the game.</string>
+    <string name="store_error_rejected">This purchase could not be processed safely. Contact support if you were charged.</string>
+    <string name="store_error_unknown_item">This item is not recognised by this version of the game. Update the game and try again.</string>
+    <string name="store_error_generic">Something went wrong with Google Play. Please try again.</string>
+
+    <!-- Product loading states -->
+    <string name="store_products_loading">Loading packs from Google Play…</string>
+    <string name="store_products_failed">Could not load packs from Google Play.</string>
+    <string name="store_products_retry">TRY AGAIN</string>
+    <string name="store_pending_note">A payment is pending (for example cash or bank transfer). Your coins arrive automatically once Google Play confirms it.</string>
+
+    <!-- Unfinished-purchase check (replaces the old "restore purchases" promise) -->
+    <string name="store_recover_button">CHECK FOR UNFINISHED PURCHASES</string>
+    <string name="store_recover_running">CHECKING…</string>
+    <string name="store_recover_hint">Paid but no coins? This asks Google Play for purchases that were not delivered yet. Coin packs that were already delivered are not stored on Google Play and cannot be restored.</string>
+    <string name="store_recover_done">Google Play was checked for unfinished purchases.</string>
+    <string name="store_recover_failed">Could not reach Google Play. Check your connection and try again.</string>
+
+    <!-- DEBUG panel scenarios (never shown in release) -->
+    <string name="store_debug_sc_buy" translatable="false">FAKE BUY (smallest pack)</string>
+    <string name="store_debug_sc_pending" translatable="false">PENDING payment</string>
+    <string name="store_debug_sc_complete_pending" translatable="false">COMPLETE the pending payment</string>
+    <string name="store_debug_sc_cancel" translatable="false">USER CANCELLED</string>
+    <string name="store_debug_sc_persist_failed" translatable="false">ARM: next save FAILS</string>
+    <string name="store_debug_sc_legacy" translatable="false">LEGACY coins_1200 (old amount)</string>
+    <string name="store_debug_sc_replay" translatable="false">REPLAY last purchase (balance must not change)</string>
+    <string name="store_debug_sc_quantity2" translatable="false">QUANTITY 2</string>
+</resources>

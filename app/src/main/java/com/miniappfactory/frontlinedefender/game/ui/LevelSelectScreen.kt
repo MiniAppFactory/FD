@@ -207,29 +207,12 @@ fun LevelSelectScreen(
      */
     actIntroStore: ActIntroStore? = null,
     /**
-     * COIN CIPINDEN ODULLU REKLAM (R1b, `RewardedPlacement.COIN_TOP_UP`).
-     *
-     * ## Neden bu ekranda ve neden coin cipinde
-     * Tekrar oynama geliri kaldirildi (`replayReward` -> 0), yani oyuncunun
-     * "coinim bitti, ne yapacagim" sorusuna verilecek acik bir cevap gerekiyor.
-     * O sorunun soruldugu yer **bakiyeye bakilan yerdir**: coin cipi. Ayni
-     * teklif zaten `SupplyDropBar` ile ekranin altinda duruyordu ama oyuncunun
-     * gozu oraya bakmiyordu.
-     *
-     * ## Yeni bir coin muslugu DEGIL
-     * Bu giris noktasi ekonominin ayni gunluk tavanina baglidir
-     * (`R1_COIN_BUDGET_PER_DAY` = 450 coin/gun, `R1_VIEWS_PER_DAY` = 3).
-     * Amac gunluk coin miktarini artirmak degil, **zaten var olan butcenin
-     * gorunur olmasi** — yani gosterim sayisini artirmak, coin sayisini degil.
-     *
-     * @param coinAdOffered teklif bugun hala acik mi. `false` (varsayilan) iken
-     *   cip bugunkuyle **birebir ayni** cizilir: yalnizca "+" isareti yoktur ve
-     *   dokunulamaz. Bakiye her durumda gorunur kalir — hicbir bilgi kapanmaz.
-     * @param onCoinAdRequested oyuncu cipe dokundu. Teklif yuzeyini acmak
-     *   cagiran tarafin isidir; bu ekran reklam SDK'sini TANIMAZ.
+     * COIN CIPI = IKMAL DEPOSU KAPISI. Oyunda reklam yoktur: cip bir "coin kazan" teklifi
+     * DEGIL, satin alma kapisidir. `null` (varsayilan) iken cip dokunulamaz ve "+" rozeti
+     * cizilmez — bakiye her durumda gorunur kalir, hicbir bilgi kapanmaz. Depoyu acmak
+     * cagiran tarafin isidir; bu ekran faturalamayi TANIMAZ.
      */
-    coinAdOffered: Boolean = false,
-    onCoinAdRequested: () -> Unit = {}
+    onOpenStore: (() -> Unit)? = null
 ) {
     // Bir sonraki oynanabilir bolum — ekran bunu vurgular.
     //
@@ -345,6 +328,9 @@ fun LevelSelectScreen(
                     modifier = Modifier
                         .clip(RoundedCornerShape(6.dp))
                         .clickable { onBack() }
+                        // 44 dp dokunma tabani (erisilebilirlik); metin dikeyde ortalanir.
+                        .defaultMinSize(minHeight = 44.dp)
+                        .wrapContentHeight(Alignment.CenterVertically)
                         .padding(horizontal = 10.dp, vertical = 6.dp)
                 )
 
@@ -418,6 +404,7 @@ fun LevelSelectScreen(
                                     RoundedCornerShape(8.dp)
                                 )
                                 .clickable { missionsOpen = true }
+                                .defaultMinSize(minHeight = 44.dp)
                                 .padding(horizontal = 12.dp, vertical = 6.dp)
                                 .testTag("open_missions")
                         ) {
@@ -465,6 +452,8 @@ fun LevelSelectScreen(
                         .background(Color(0x334C7A2E))
                         .border(1.dp, Color(0xFF5A6A3A), RoundedCornerShape(8.dp))
                         .clickable { onOpenArmory() }
+                        .defaultMinSize(minHeight = 44.dp)
+                        .wrapContentHeight(Alignment.CenterVertically)
                         .padding(horizontal = 12.dp, vertical = 6.dp)
                         .testTag("open_armory")
                 )
@@ -473,21 +462,21 @@ fun LevelSelectScreen(
 
                 // Coin — SADECE bu ekranda. Savas HUD'inda asla.
                 //
-                // ODULLU REKLAM GIRISI (R1b): teklif acikken cipin kendisi
-                // dokunulabilir olur ve sonuna bir "+" rozeti gelir. Teklif
-                // tukendiginde cip **kaybolmaz veya kucultulmez** — yalnizca
-                // "+" ve tiklanabilirlik gider. Bakiye her zaman okunur kalir.
+                // IKMAL DEPOSU KAPISI: `onOpenStore` verilmisse cipin kendisi dokunulabilir
+                // olur ve sonuna bir "+" rozeti gelir. Verilmediyse cip **kaybolmaz veya
+                // kucultulmez** — yalnizca "+" ve tiklanabilirlik gider; bakiye okunur kalir.
                 //
-                // Dokunulabilirlik `clickable`in KOSULLU parametresiyle
-                // yapiliyor, iki ayri Row ile degil: aksi halde iki dal
-                // arasinda gecerken cip yeniden olculur ve saga yasli grup
-                // parmagin altinda kayabilirdi.
+                // Dokunulabilirlik `clickable`in KOSULLU parametresiyle yapiliyor, iki ayri
+                // Row ile degil: aksi halde iki dal arasinda gecerken cip yeniden olculur ve
+                // saga yasli grup parmagin altinda kayabilirdi. Dokunma hedefi 44 dp'nin
+                // altina inmez (reklam seridi kalkinca bu ekran dikeyde 44 dp kazandi).
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
                         .background(Color(0x33FFD54F))
-                        .clickable(enabled = coinAdOffered, onClick = onCoinAdRequested)
+                        .clickable(enabled = onOpenStore != null, onClick = { onOpenStore?.invoke() })
+                        .defaultMinSize(minHeight = 44.dp)
                         .padding(horizontal = 12.dp, vertical = 6.dp)
                         .testTag("coin_chip")
                 ) {
@@ -510,11 +499,11 @@ fun LevelSelectScreen(
                         maxLines = 1,
                         modifier = Modifier.testTag("coin_amount")
                     )
-                    if (coinAdOffered) {
+                    if (onOpenStore != null) {
                         Spacer(Modifier.width(8.dp))
                         // "+" tek karakter ve `translatable=false`: bu rozet
                         // bu satirdaki TEK esnek olmayan ogedir. Metin
-                        // koysaydik ("REKLAM IZLE") Turkce/Italyanca cevirisi
+                        // koysaydik ("DEPO") Turkce/Italyanca cevirisi
                         // 740x360 dp yatayda baslik satirini tasirirdi — bu
                         // depoda dort kez yasanmis hata. Sabit 20 dp daire
                         // her dilde ayni yeri kaplar.
@@ -524,7 +513,7 @@ fun LevelSelectScreen(
                                 .size(20.dp)
                                 .clip(RoundedCornerShape(10.dp))
                                 .background(Color(0xFFFFD54F))
-                                .testTag("coin_ad_badge")
+                                .testTag("coin_store_badge")
                         ) {
                             Text(
                                 text = stringResource(R.string.level_coin_topup_badge),

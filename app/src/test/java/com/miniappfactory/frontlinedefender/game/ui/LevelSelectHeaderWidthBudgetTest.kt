@@ -1,6 +1,5 @@
 package com.miniappfactory.frontlinedefender.game.ui
 
-import com.miniappfactory.frontlinedefender.game.economy.EconomyConfig
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -10,10 +9,11 @@ import java.io.File
  * BOLUM SECIM EKRANI BASLIK SATIRI — GENISLIK BUTCESI.
  *
  * ## Neden bu test var
- * Coin cipine odullu reklam rozeti eklendi (R1b / `RewardedPlacement.COIN_TOP_UP`)
- * ve rozet baslik satirindan **28 dp** yer aldi
- * (`CoinChipAdEntryTest.theBadgeCostsExactlyTheReservedTwentyEightDp`). Satirda
- * o 28 dp'nin gercekten bos oldugunu kanitlamak gerekiyor.
+ * Coin cipine Ikmal Deposu "+" rozeti eklendi (`coin_store_badge`, yalnizca
+ * `onOpenStore != null` iken cizilir; eskiden odullu reklam rozetiydi) ve
+ * rozet baslik satirindan **28 dp** yer aldi
+ * (`CoinChipStoreEntryTest.theStoreBadgeCostsExactlyTheReservedTwentyEightDp`).
+ * Satirda o 28 dp'nin gercekten bos oldugunu kanitlamak gerekiyor.
  *
  * ## Neden Compose testi bunu yapamiyor
  * Robolectric gercek font metrigi calistirmaz: `Paint.measureText` sahte deger
@@ -70,8 +70,8 @@ class LevelSelectHeaderWidthBudgetTest {
         /** Kalin metinde 1 karakterin 1 sp punto basina dp genisligi. */
         const val DP_PER_SP_PER_CHAR = 0.61f
 
-        /** Coin rozetinin olculen bedeli — `CoinChipAdEntryTest` kilitliyor. */
-        const val COIN_BADGE_DP = 28f
+        /** Depo ("+") rozetinin olculen bedeli — `CoinChipStoreEntryTest` kilitliyor. */
+        const val STORE_BADGE_DP = 28f
 
         /**
          * Bakiyenin gosterebilecegi en buyuk basamak sayisi UYDURULMUYOR:
@@ -106,7 +106,7 @@ class LevelSelectHeaderWidthBudgetTest {
         longest(key).length * sp * DP_PER_SP_PER_CHAR
 
     @Test
-    fun theHeaderRowFitsOnTheNarrowLandscapeDeviceWithTheAdBadgeDrawn() {
+    fun theHeaderRowFitsOnTheNarrowLandscapeDeviceWithTheStoreBadgeDrawn() {
         val available = SCREEN_WIDTH_DP - ROW_HORIZONTAL_PADDING_DP
 
         val back = textDp("level_back", 13f) + 20f
@@ -118,7 +118,7 @@ class LevelSelectHeaderWidthBudgetTest {
         val gap2 = 8f
         val coinLabel = textDp("level_coin_label", 11f)
         val coinAmount = MAX_COIN_DIGITS * 15f * DP_PER_SP_PER_CHAR
-        val coinChip = coinLabel + 8f + coinAmount + 24f + COIN_BADGE_DP
+        val coinChip = coinLabel + 8f + coinAmount + 24f + STORE_BADGE_DP
 
         val used = back + gapAfterBack + title + missions + gap1 + armory + gap2 + coinChip
 
@@ -136,12 +136,12 @@ class LevelSelectHeaderWidthBudgetTest {
         assertTrue(
             "baslik satirinda yalnizca ${"%.1f".format(slack)} dp pay kaldi — " +
                 "bir sonraki ceviri tasirir",
-            slack >= 2 * COIN_BADGE_DP,
+            slack >= 2 * STORE_BADGE_DP,
         )
     }
 
     @Test
-    fun theAdBadgeStringIsASingleUntranslatedCharacter() {
+    fun theStoreBadgeStringIsASingleUntranslatedCharacter() {
         // Rozet cevrilebilir olursa uzun bir ceviri butceyi patlatir ve bu
         // hesabin girdisi sessizce yanlislasir.
         val en = strings["src/main/res/values/strings.xml"]?.get("level_coin_topup_badge")
@@ -152,23 +152,6 @@ class LevelSelectHeaderWidthBudgetTest {
         assertTrue(
             "rozet translatable=false olmali; values-tr icinde bir karsiligi var: '$tr'",
             tr == null,
-        )
-    }
-
-    @Test
-    fun theOfferSheetTextsAreSharedWithTheSupplyBarSoTheyStayInSync() {
-        // Coin cipi ve serit AYNI teklif metinlerini kullanir. Ayri metinler
-        // olsaydi biri "150 coin" digeri "200 coin" diyebilir ve ekonominin tek
-        // sayisi ile ekranda yazan sayi ayrisirdi — bu depoda `applySupplyDrop`
-        // KDoc'unda belgelenmis bir hata.
-        val body = longest("ad_sheet_supply_body")
-        assertTrue(
-            "teklif metni odul miktarini bicimlendirici ile almali, gomulu sayiyla degil",
-            body.contains("%1\$d") && body.contains("%2\$d"),
-        )
-        assertTrue(
-            "teklif metnindeki dolu odul argumani ekonomiden gelmeli",
-            EconomyConfig.R1_REWARD_FILLED > 0 && EconomyConfig.R1_REWARD_FALLBACK > 0,
         )
     }
 }

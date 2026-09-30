@@ -503,26 +503,19 @@ class EconomySimulationTest {
     fun replayingIsAlwaysWorthLessThanClearingNewContent() {
         // Farming'in ilerlemeden daha karli OLMAMASININ analitik garantisi.
         for (level in 1..EconomyConfig.CAMPAIGN_LEVELS) {
-            val bestReplay = replayReward(level, 3, 0)
+            val bestReplay = replayReward(level, 3)
             assertTrue(
                 "L$level tekrar odulu $bestReplay, ilk temizlik 1 yildiz ${levelReward(level, 1)}",
                 bestReplay < levelReward(level, 1),
             )
         }
         // En karli tekrar (L22, 3 yildiz) bile en ucuz ucretli bolumun ilk temizliginin altinda.
-        assertTrue(replayReward(22, 3, 0) < levelReward(7, 1))
+        assertTrue(replayReward(22, 3) < levelReward(7, 1))
     }
 
     @Test
     fun unclearedLevelCannotBeReplayFarmed() {
-        assertEquals(0, replayReward(9, 0, 0))
-    }
-
-    @Test
-    fun replayFloorIsNotDoublableByRewardedAd() {
-        // Aksi halde "L1'i 2x hizda tekrar oyna + reklam izle" ilerlemeyi geçer.
-        assertFalse(replayRewardIsDoublable(EconomyConfig.BOOSTED_REPLAYS_PER_DAY))
-        assertTrue(replayRewardIsDoublable(0))
+        assertEquals(0, replayReward(9, 0))
     }
 
     /**
@@ -535,7 +528,8 @@ class EconomySimulationTest {
      *
      * Kalkma sebebi olculmustu: taban 25'in GUNLUK TAVANI YOKTU, yani coin
      * degerli hale geldigi an sinirsiz ogutme demekti (ECONOMY_AUDIT_2 bunu
-     * aciga cikarmisti). Yerine acik ve tavanli bir reklam yolu geliyor.
+     * aciga cikarmisti). (2026-09-30: onceki "reklam yolu" da kaldirildi; tekrar
+     * geliri hala sifir ve artik serbest, oynanistan bagimsiz gelir de sifir.)
      *
      * Yeni kural TEK CUMLE ve burada tam olarak o sorulyor: tekrar geliri
      * HICBIR girdide sifirdan farkli olamaz.
@@ -544,12 +538,10 @@ class EconomySimulationTest {
     fun replayingAClearedLevelEarnsNothing() {
         for (level in 1..EconomyConfig.CAMPAIGN_LEVELS) {
             for (stars in 0..3) {
-                for (used in intArrayOf(0, 1, 2, 3, 50)) {
-                    assertEquals(
-                        "L$level $stars yildiz used=$used — tekrar oynama coin uretmemeli",
-                        0, replayReward(level, stars, used),
-                    )
-                }
+                assertEquals(
+                    "L$level $stars yildiz — tekrar oynama coin uretmemeli",
+                    0, replayReward(level, stars),
+                )
             }
         }
     }
@@ -570,8 +562,10 @@ class EconomySimulationTest {
         // fonksiyon artik her zaman 0 donuyor — karsilastirmayi birakip DOGRUDAN
         // sifir sormak, testin ne iddia ettigini okunur kiliyor.
         assertEquals("tekrar gecisi coin uretmemeli", 0, replay.replayReward)
-        assertEquals("tekrar gecisinin katlanabilir kalemi de olmamali", 0, replay.doublableAmount)
-        assertEquals(0, doublePayoutBonus(replay.doublableAmount, AdOutcome.REWARD_EARNED))
+        // 2026-09-30: reklam kalkti; "katlanabilir kalem" kavrami da yok. Yerine kalem
+        // kalem degil TOPLAM sorulur: tekrar gecisinin hicbir kalemi (ilk temizlik,
+        // yildiz farki, madalya, tekrar) para uretmemeli.
+        assertEquals("tekrar gecisinin toplam odulu sifir olmali", 0, replay.total)
 
         // Cuzdan gercekten degismemeli — kalem kalem sifir olmasi yetmez.
         val after = applyLevelClear(wallet, replay)
@@ -607,116 +601,6 @@ class EconomySimulationTest {
         assertEquals(0, worse.starImprovement)
         wallet = applyLevelClear(wallet, worse)
         assertEquals("GDD H.2: kayitli yildiz 3 kalir", 3, wallet.starsOf(5))
-    }
-
-    // =================================================================================
-    // 7. Rewarded reklam ekonomisi (GDD G.3 / G.4)
-    // =================================================================================
-
-    @Test
-    fun filledRequisitionPaysOneFiftyAndConsumesADailyRight() {
-        var state = RequisitionState()
-        var total = 0
-        repeat(EconomyConfig.R1_VIEWS_PER_DAY) {
-            val g = grantRequisition(state, AdOutcome.REWARD_EARNED)
-            assertEquals(150, g.coins)
-            assertTrue(g.consumedFilledView)
-            assertFalse(g.fallback)
-            state = g.newState
-            total += g.coins
-        }
-        assertEquals(450, total)
-        assertEquals(3, state.filledViewsToday)
-    }
-
-    @Test
-    fun noFillPaysFiftyAndDoesNotConsumeTheDailyRight() {
-        // GDD H.7: ucak modunda +50, gunluk hak TUKETILMEZ, uygulama donmaz.
-        var state = RequisitionState()
-        for (outcome in listOf(AdOutcome.NO_FILL, AdOutcome.TIMEOUT, AdOutcome.DISMISSED)) {
-            val g = grantRequisition(state, outcome)
-            assertEquals(50, g.coins)
-            assertFalse("no-fill dolu gosterim hakkini tuketmemeli", g.consumedFilledView)
-            assertTrue(g.fallback)
-            state = g.newState
-        }
-        assertEquals("dolu gosterim hakki hala tam", 0, state.filledViewsToday)
-        // Sonrasinda gercek reklam gelirse tam odul hala mumkun.
-        assertEquals(150, grantRequisition(state, AdOutcome.REWARD_EARNED).coins)
-    }
-
-    @Test
-    fun infiniteNoFillLoopIsBoundedByDailyCoinBudget() {
-        // EXPLOIT: ucak modunda butona 500 kez basmak. Butce olmadan sonsuz coin.
-        var state = RequisitionState()
-        var total = 0
-        repeat(500) {
-            val g = grantRequisition(state, AdOutcome.NO_FILL)
-            total += g.coins
-            state = g.newState
-        }
-        assertEquals(
-            "R1 gunluk coin tavani ${EconomyConfig.R1_COIN_BUDGET_PER_DAY} olmali",
-            EconomyConfig.R1_COIN_BUDGET_PER_DAY, total,
-        )
-        // Buton hala calisiyor ve HICBIR ilerleme yolunu kapatmiyor, sadece 0 veriyor.
-        val exhausted = grantRequisition(state, AdOutcome.NO_FILL)
-        assertEquals(0, exhausted.coins)
-        assertTrue(exhausted.budgetExhausted)
-    }
-
-    @Test
-    fun luckyAndUnluckyPlayersGetTheSameDailyRequisitionTotal() {
-        // Butcenin yan etkisi OLUMLU: fill orani gunluk toplami degistirmez.
-        var lucky = RequisitionState()
-        var luckyTotal = 0
-        repeat(10) { val g = grantRequisition(lucky, AdOutcome.REWARD_EARNED); luckyTotal += g.coins; lucky = g.newState }
-
-        var unlucky = RequisitionState()
-        var unluckyTotal = 0
-        repeat(3) { val g = grantRequisition(unlucky, AdOutcome.NO_FILL); unluckyTotal += g.coins; unlucky = g.newState }
-        repeat(10) { val g = grantRequisition(unlucky, AdOutcome.REWARD_EARNED); unluckyTotal += g.coins; unlucky = g.newState }
-
-        assertEquals(EconomyConfig.R1_COIN_BUDGET_PER_DAY, luckyTotal)
-        assertEquals(EconomyConfig.R1_COIN_BUDGET_PER_DAY, unluckyTotal)
-    }
-
-    @Test
-    fun requisitionDailyCeilingCannotDevalueGameplayIncome() {
-        // SERT KURAL: rewarded, normal oynanis gelirini degersizlestiremez.
-        // ECONOMY_SPEC 1.3: medyan oyuncunun gunluk BOLUM geliri ~930 coin.
-        val r1Ceiling = EconomyConfig.R1_COIN_BUDGET_PER_DAY // 450
-        val expectedGameplayPerDay = 930
-        assertTrue(
-            "R1 tavani $r1Ceiling, oynanis geliri $expectedGameplayPerDay'in %50'sini asiyor",
-            r1Ceiling <= expectedGameplayPerDay / 2,
-        )
-    }
-
-    @Test
-    fun doublePayoutOnlyAddsALayerAndNeverGatesTheBaseReward() {
-        val wallet = PlayerWallet()
-        val result = resolveLevelClear(wallet, 15, 12, 20) // %60 -> 2 yildiz
-        assertEquals(2, result.stars)
-        assertEquals(levelReward(15, 2), result.doublableAmount)
-        assertEquals(levelReward(15, 2), doublePayoutBonus(result.doublableAmount, AdOutcome.REWARD_EARNED))
-        // No-fill: ek katman yok, TABAN odul zaten yazilmisti -> bonus 0.
-        assertEquals(0, doublePayoutBonus(result.doublableAmount, AdOutcome.NO_FILL))
-        assertEquals(0, doublePayoutBonus(result.doublableAmount, AdOutcome.TIMEOUT))
-        assertEquals(0, doublePayoutBonus(result.doublableAmount, AdOutcome.DISMISSED))
-    }
-
-    @Test
-    fun rewardedValuePerDayStaysBelowCampaignProgressValue() {
-        // Rewarded'in tum gunluk tavani (R1 450 + R3 en buyuk bolum odulu) tek
-        // basina bir gunun ilerleme gelirini gecmemeli.
-        val r3Max = levelReward(EconomyConfig.CAMPAIGN_LEVELS, 3) // 1.230
-        val adCeiling = EconomyConfig.R1_COIN_BUDGET_PER_DAY + r3Max
-        val campaignTotal = (1..EconomyConfig.CAMPAIGN_LEVELS).sumOf { levelReward(it, 2) }
-        assertTrue(
-            "reklam tavani $adCeiling, kampanya 2 yildiz geliri $campaignTotal'in %15'ini asiyor",
-            adCeiling <= campaignTotal * 15 / 100,
-        )
     }
 
     // =================================================================================
@@ -879,28 +763,24 @@ class EconomySimulationTest {
             EconomyConfig.WEEKLY_BUDGET / 7 <= expectedLevelIncomePerDay / 2,
         )
         // Gorev odulleri oynanis GEREKTIRIR, yani ekonominin bypass'i degildir.
-        // Gercek "oynanis olmadan" gelir yalnizca R1'dir; toplam gunluk tavanin
-        // en fazla ucte biri olmali.
-        val gameplayFreeIncome = EconomyConfig.R1_COIN_BUDGET_PER_DAY
-        val totalDailyCeiling = expectedLevelIncomePerDay +
-            EconomyConfig.DAILY_MAX_TOTAL +
-            EconomyConfig.WEEKLY_BUDGET / 7 +
-            gameplayFreeIncome
-        assertTrue(
-            "reklam geliri $gameplayFreeIncome, gunluk tavanin ($totalDailyCeiling) ucte birini asiyor",
-            gameplayFreeIncome * 3 <= totalDailyCeiling,
-        )
+        // 2026-09-30: reklam (R1 tedarik talebi / R3 katlama) KALDIRILDI; oynanistan
+        // bagimsiz "bedava" gelir kaynagi artik YOK, dolayisiyla eski "serbest gelir
+        // toplam tavanin ucte birini asmasin" kurali KONU DISI kaldi (kaynagi yok, testi
+        // de yok; tautoloji yazmak yerine silindi). Tekrar gelirinin sifirligi
+        // `replayingAClearedLevelEarnsNothing` ile kilitli; gorev tavanlari yukarida.
     }
 
     @Test
     fun completingEveryDailyForAWholeCampaignCannotBuyTheWholeTree() {
         // 14 gunluk kampanya (GDD C.5) boyunca HER gun 360 + haftalik 1.100 x 2
         // toplami, agacin yarisini gecmemeli; yoksa gorevler ekonominin ana kaynagi olur.
+        // 2026-09-30: reklam geliri kalkti; gorev artik oynanis disindaki TEK gelir
+        // ve tek basina agacin yarisini (9.800) bile karsilayamaz.
         val missionIncome = 14 * EconomyConfig.DAILY_MAX_TOTAL + 2 * EconomyConfig.WEEKLY_BUDGET
         assertEquals(7_240, missionIncome)
         assertTrue(
-            "gorev geliri $missionIncome, agacin (13.900) yarisini asiyor",
-            missionIncome <= EconomyConfig.TREE_TOTAL_COST * 55 / 100,
+            "gorev geliri $missionIncome, agacin (${EconomyConfig.TREE_TOTAL_COST}) yarisini asiyor",
+            missionIncome < EconomyConfig.TREE_TOTAL_COST / 2,
         )
     }
 

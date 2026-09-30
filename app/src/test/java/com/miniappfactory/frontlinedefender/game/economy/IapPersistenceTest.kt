@@ -166,13 +166,10 @@ class IapPersistenceTest {
     // =========================================================================
 
     /**
-     * Bayrak `false` YAZILABILIR olmali: Play'de iade edilen bir satin almada
-     * `queryPurchasesAsync` artik o urunu dondurmez ve `restorePurchases`
-     * `onRemoveAdsChanged(false)` cagirir. Yalnizca `true` yazabilen bir alan,
-     * iade edilmis bir hakki sonsuza kadar acik birakirdi.
-     *
-     * (Cihazda gozlemlendi: debug sahte bayragi, uygulama yeniden acilip Play'e
-     * baglaninca `false`a dondu — Play sahte satin almayi bilmiyor.)
+     * Alan iki yone de yazilabilir kalir (debug paneli sifirlar). ⚠ 2026-09-30: uretim
+     * kodu (`BillingManager.restorePurchases`) bunu ARTIK `false` yapmaz — Play "bu urunu
+     * gormuyorum" dediginde iade, cevrimdisilik ve baska hesap ayirt edilemez ve eski alicinin
+     * yapiskan isareti silinmez. Bu test yalnizca AYARICININ iki yonu destekledigini kilitler.
      */
     @Test
     fun adsRemovedCanBeWrittenInBothDirections() {
@@ -257,45 +254,20 @@ class IapPersistenceTest {
     }
 
     // =========================================================================
-    // 7. GUNLUK GUCLENDIRICI-REKLAM SAYACI — artik KALICI
+    // 7. ESKI ALICI ISARETI — sifirlamada silinmez
     // =========================================================================
 
     /**
-     * 2026-09-02'ye kadar bu sayac yalnizca bellekteydi ve her acilista
-     * sifirlaniyordu. Iki sonucu vardi:
-     *  1. `BOOSTER_AD_VIEWS_PER_DAY` "reklam yorgunlugu tavani" olarak
-     *     belgeliydi ama uygulamayi kapatip acmak onu sifirliyordu.
-     *  2. Hava Destegi'nin YENI coin yolunu acan TEK kapi bu sayacti; hic
-     *     dolmadigi icin IAP ile satilan coinin o kalemdeki harcama yolu OLU idi.
+     * Reklamlar oyundan tamamen kaldirildi (2026-09-30); gunluk guclendirici-reklam sayaci da gitti.
+     * Geriye yalnizca ESKI "Reklamlari Kaldir" alicisinin yapiskan isareti kaldi: odenmis bir
+     * tarihce, ilerleme degil — `resetProgress` onu goturmemeli.
      */
     @Test
-    fun theDailyBoosterAdCounterSurvivesAProcessRestart() {
-        val store = InMemoryKeyValueStore()
-        SaveManager(store).boosterAdViewsToday = 7
-        // "Yeniden baslatma": AYNI depo uzerinde YENI bir SaveManager.
-        assertEquals(7, SaveManager(store).boosterAdViewsToday)
-    }
-
-    @Test
-    fun theDailyBoosterAdCounterIsClearedOnDayRollover() {
+    fun resetProgressKeepsTheLegacyAdFreeMarker() {
         val s = save()
-        s.boosterAdViewsToday = 9
-        s.resetDailyCounters()
-        assertEquals(0, s.boosterAdViewsToday)
-    }
-
-    /**
-     * Gunluk sayac ILERLEMEDIR, odenmis hak degil: `resetProgress` onu
-     * goturmeli (IAP anahtarlarinin aksine).
-     */
-    @Test
-    fun resetProgressClearsTheDailyBoosterAdCounterButNotThePaidEntitlement() {
-        val s = save()
-        s.boosterAdViewsToday = 5
         s.adsRemoved = true
         s.resetProgress()
-        assertEquals(0, s.boosterAdViewsToday)
-        assertTrue("odenmis hak silinmis", s.adsRemoved)
+        assertTrue("odenmis eski alici isareti silinmis", s.adsRemoved)
     }
 
     /** Tuketilmeyen urun bir coin paketi DEGIL — yanlislikla coin yazmamali. */

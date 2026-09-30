@@ -6,6 +6,74 @@ yalan soyleyebiliyorlardi; surum notu artik kodla ayni gecmisi paylasiyor.
 
 ---
 
+## 2026-09-30 — REKLAMSIZ + COIN HAKLARI + BES PAKET (v56)
+
+Kaynak: Codex TASK 001 (docs/CODEX_TO_CLAUDE_20260930.txt), kullanicinin acik yetkisiyle.
+Ayrintili milestone dokumu: docs/CLAUDE_TO_CODEX_20260930.txt.
+
+### 1. Oyundan TUM reklamlar kaldirildi
+- `game/ads/` silindi; `play-services-ads` ve UMP bagimliliklari, AdMob manifest girdileri, riza
+  akislari, ayarlardaki gizlilik satiri, banner/gecis reklami/odullu reklam yuzeyleri ve 72 reklam
+  metni (EN+TR) kalkti. Yayin manifesti AD_ID / AdMob APPLICATION_ID icermiyor (aapt2 ile dogrulandi);
+  dex'te `com/google/android/gms/ads` ve `com/google/android/ump` YOK.
+- INTERNET ve ACCESS_NETWORK_STATE hala birlesik manifestte: artik yalniz billing-ktx 8.0.0
+  (datatransport) getiriyor, uygulamanin kendi manifesti bildirmiyor.
+- `remove_ads` satistan kalkti. Eski alicilar: ürün yalnizca ONAYLANIR (tüketilmez, coin yok);
+  `iap_remove_ads` yapiskan isaret olarak korunur (yalniz `true` yazilir, `resetProgress` silmez).
+
+### 2. Eski odullu haklar COIN'e cevrildi (fiyat eylemden ONCE gorunur)
+- DEVAM (yenilgiden sonra): `ContinueSystem` + `CampaignProgressImpl.continueAfterDefeat`. Motor etkisi
+  once, coin yalniz motor gercekten devam ettiyse ve ayni senkron blokta kesilir; savas basina 1 hak
+  (tavan ekonomiye tasindi — eskiden yalniz silinen reklam kotasindaydi). Yetersiz coin: dugme
+  gorunur ama pasif, eksik miktar yaziyor; ucretsiz YENIDEN DENE degismedi.
+- Acil Tedarik / Hava Destegi / Tamir: hepsi coin. Tamir 2. kullanim (+7 can, eski reklam hakki)
+  acikca fiyatli. Acil Tedarik'in coin->Tedarik yasagi (GDD D.4) kullanici karariyla GERI ALINDI.
+- `undoBooster`: motor aktivasyonu reddederse borc, kullanim, bekleme ve tamir kaydi TAM geri alinir;
+  `lifetimeEarned` degismez (iade `credited()` uzerinden gitmez).
+- R1/R3, odullu tekrar, yeniden ikmal (requisition) ve ilgili kayit anahtarlari kaldirildi; eski
+  `eco_r1_*` anahtarlari kayitlarda atil kalir (okunmaz).
+
+### 3. Bes paket, yalniz Play fiyati
+- `fd_coins_1000/2200/3600/5200/7000` ($0.99/1.99/2.99/3.99/4.99, KronDx ile ayni miktar), bes askeri
+  rutbe (Acemi Er / Çavus / Yüzbasi / Albay / General), yatay kart satiri (`ShopCardFrame`). Fiyat metni HER ZAMAN
+  `ProductDetails.formattedPrice`; kaynaklarda fiyat/yuzde YOK. Eski `coins_*` kimlikleri yalniz
+  teslimat icin (ESKI miktarla) — daha kucuk miktarla yeniden verilmez.
+- Magaza: baglanti/urun yukleme durumlari + "tekrar dene", bekleyen odeme notu, "bitmemis satin almalari
+  kontrol et" (gercek: teslim edilmis coin paketleri Play'den geri yuklenemez), tek seferlik olay
+  mesaji (odeme geldi / iptal / hata sebebi). Debug paneli gercek isleme hattindan sahte jetonla
+  calisir; release'te YOK.
+
+### 4. Satin alma dogrulugu
+- Tuketme YALNIZ dayanikli cuzdan+defter yazimindan sonra; acik sonuc `Granted / AlreadyGranted /
+  Failed`; toplu (atomik) commit + geri alma, kontrollu aritmetik (`Math.*Exact`), kalici olmayan
+  yazim/yeniden deneme/yeniden baslatma testleri. Bkz. FOLLOW-UP 004 bulgusu (`grantPurchasedCoins`
+  uc ayri `apply()`).
+- Bilinen kalan: `SaveManager.grantPurchasedCoins/walletSyncPending` uyumluluk katmani yalniz testler
+  ve debug icin duruyor.
+
+### 5. Gorsel uyum
+- PauseMenuModal sanat butonlari + panel; Cephanelik 7. kart (Ikmal Deposu, `ui_card_shop`); kalkan
+  satiri hizasi; coin cipi 44 dp dokunma tabani (Cephanelik ve magaza basligi).
+- BILINEN (cihazda dogrulanmadi): temanin `bodyLarge` satir yuksekligi (24 sp) 24 dp'den kisa
+  bantlarda `AutoShrinkText`i taban puntoya cokertiyor; Robolectric LEGACY gercek metin genisligini
+  olcemez. Cihazli ekran goruntusu GEREKIR.
+
+### 6. Ekonomi (ayrintili: docs/ECONOMY_ADS_OFF_AUDIT_20260930.md)
+- Reklamsiz, sifir satin almayla 55/55 bolum temizlenebilir; "hak maksimize eden" senaryoda da
+  (kilit oncesi coin altina dusmez). Devam, ucretsiz yeniden denemeden hicbir zaman daha iyi degildir.
+- Tekrarlayan harcama tek seferlik 81.505 coin gideri paydasina EKLENMEDI (ayri raporlanir).
+- Sahip kararlari beklemede: Acil Tedarik acilis seviyesi (L2 -> L4 onerisi), L1'de Devam gizleme,
+  Tamir 2. kullanim tavani.
+
+### Surum / dogrulama
+- versionCode 55 -> 56, versionName 0.56. Imzali APK/AAB: `builds/FD-v56-reklamsiz-coin-release-signed.*`.
+  APK 17.811.540 -> 14.364.613 bayt (−3.446.927, −%19,4; v55'ten bu yana reklam SDK'lari cikti, paket
+  gorselleri eklendi).
+- Testler/lint: 1307 test, 0 basarisiz, 0 hata, 2 atlanan (rapor araci); 118 sonuc XML'i, `cleanTestDebugUnitTest` sonrasi taze kosu. `lintDebug` exit 0, 0 hata (71 uyari; bu isten gelen hata yok).
+
+---
+
+
 ## 2026-09-02 (ikinci tur) — CIHAZDA BULUNAN UC HATA (v55)
 
 Hepsi IAP turunun cihaz dogrulamasi sirasinda cikti; ucu de yalnizca gercek

@@ -1,205 +1,108 @@
 package com.miniappfactory.frontlinedefender.game.economy
 
 /**
- * Faz 10 — GUCLENDIRICILER (savas ici tek kullanimlik).
+ * Faz 10 — GUCLENDIRICILER (savas ici, coin fiyatli).
  *
  * **Android importu YOK.** Saf veri + saf fonksiyonlar; JVM'de Robolectric olmadan
  * kosar. Tum sayilar [EconomyConfig]'ten gelir.
  *
  * ---------------------------------------------------------------------------------
- * 1. TASARIM AKSIYOMU — "REKLAM YERINE GECMEZ, OTESINI ACAR"
+ * 1. TEK ODEME YOLU: COIN (2026-09-30)
  * ---------------------------------------------------------------------------------
- * Ayni sonucu veren reklamsiz bir yol varsa oyuncu daima onu secer ve reklam olur.
- * Bu paket arbitraji **tanim geregi** imkansiz kilar:
+ * Oyunda reklam YOKTUR. Eskiden reklamla alinan haklar (Acil Tedarik, Hava Destegi'nin
+ * birincil yolu, Us Tamiri'nin 2. kullanimi) artik coinle alinir; hepsi ayni kuralla:
  *
- *   Ucretli yol savas basina kullanim #1'i alir.
- *   Reklam yolu YALNIZCA kullanim #2'yi alir ve #2 hicbir fiyata satilmaz.
+ *  - bedel eylemden ONCE gosterilir (BoosterRail'in "N COIN" cipi),
+ *  - reddedilen kullanim HICBIR seyi degistirmez (cuzdan, sayac, bekleme),
+ *  - bedel Konuslanma Rezervi'ne tabidir (rezerv coini guclendiriciye harcanamaz),
+ *  - savas basina kullanim tavani ve bekleme suresi korunur.
  *
- * Yani iki yol **ikame degil, siralidir**. [boosterAllowed] bunu sert kural olarak
- * uygular: ucretli yolu olan bir guclendiricide `viaAd = true` cagrisi, ucretli
- * kullanim tukenmeden [BoosterDecision.PaidPathNotExhausted] doner.
- *
- * Istisna IKI TURLUDUR:
- *
- *  a. **Ucretli yolu HIC OLMAYAN tipler** ([BoosterCurrency.AD_ONLY]):
- *     [BoosterType.EMERGENCY_SUPPLY]. Ikame edecek bir yol olmadigi icin
- *     arbitraj yapisal olarak imkansizdir.
- *
- *  b. **Reklam yolu BIRINCIL olan tipler** ([BoosterType.adPathIsPrimary]):
- *     [BoosterType.AIR_SUPPORT] (2026-09-02'den beri). Burada kalkan BILEREK
- *     uygulanmaz — uygulansaydi oyuncu reklam izleyebilmek icin ONCE coin
- *     harcamak zorunda kalirdi ve bu, 2026-08-21'deki "reklam izlemeye tesvik"
- *     kararinin tam tersi olurdu. Reklam acik kalir, coin UZANTIDIR.
- *
- * Kalkanin uzerinde calistigi TEK guclendirici [BoosterType.BASE_REPAIR]'dir.
+ * Bu, GDD/DECISIONS D.4'un ("coin -> Tedarik donusumu YASAK") Acil Tedarik icin BILINCLI
+ * GERI ALINMASIDIR (kullanici karari, 2026-09-30: "tum eski reklam haklari coinle
+ * fiyatlanacak, acil tedarik dahil"). Donusum sabit ve seffaftir:
+ * [EconomyConfig.EMERGENCY_SUPPLY_COIN_PER_SUPPLY] coin = 1 Tedarik, savas basina 1 kez,
+ * miktar en fazla bolum butcesinin ~%5,7-11'i.
  *
  * ---------------------------------------------------------------------------------
- * 2. PARA BIRIMI KARARLARI (gerekceli)
+ * 2. PARA BIRIMI VE FIYATLAR
  * ---------------------------------------------------------------------------------
- * - [BoosterType.AIR_SUPPORT] -> **REKLAM BIRINCIL + COIN UZANTI**
- *   (2026-09-02'den beri; oncesinde 2026-08-21'den beri yalnizca reklamdi).
- *   En eski hali Tedarikle fiyatlanmisti ve "3. kule mi, hava destegi mi" savas
- *   ici taktik karariydi; o karar KALKTI ve GERI GELMEDI — guclendirici hala
- *   Tedarik HARCAMIYOR. IAP turunda uzerine bir coin yolu eklendi (kullanici
- *   karari: coin satiliyorsa harcanacak yeri olmali), ama reklam BIRINCIL kaldi.
- *   Pay-to-win kalkani korunuyor: [BoosterType.sharedUseCap] = 2 sayesinde
- *   coin + reklam UCUNCU bir vurus acmaz, yani savas basina toplam hasar
- *   2 x [EconomyConfig.AIR_SUPPORT_DAMAGE_FRACTION] = 0,90 < 1,0 sinirinda kalir
- *   ve hicbir bakiye tam canli bir dusmani tek basina oldurtemez.
- *
- *   ⚠ BAYAT VERI: [boosterPrice] hâlâ AIR_SUPPORT icin sifir olmayan bir Tedarik
- *   fiyati donduruyor ve kendi sozlesmesiyle ("AD_ONLY tipler icin 0") celisiyor.
- *   Bugun ULASILAMAZ (ucretli yol [BoosterDecision.PaidPathUnavailable] ile
- *   kapali) ve ulasilamazlik `adOnlyBoostersCanNeverChargeAnyCurrency` testiyle
- *   kilitli. Fiyati 0'a cekmek ayri bir urun karari.
- *
- * - [BoosterType.BASE_REPAIR] -> **COIN**. Etkisi savas ici Tedarik dongusunun
- *   disindadir (us cani), dolayisiyla Tedarikle fiyatlamak anlamsiz olurdu; ayrica
- *   coin agacina (13.900) karsi gercek bir firsat maliyeti yaratir. **Konuslanma
- *   Rezervi'ne tabidir** — rezerv coini tamire harcanamaz, yoksa soft-lock garantisi
- *   kirilir.
- *
- * - [BoosterType.EMERGENCY_SUPPLY] -> **YALNIZCA REKLAM**. Coin ile satilamaz, cunku
- *   coin -> Tedarik donusumu DECISIONS/GDD D.4 tarafindan YASAKTIR. Tedarikle de
- *   satilamaz (dairesel). Geriye tek mesru yol kalir: rewarded. Bu bir kisitlama
- *   degil avantaj: ilk 6 bolumde hic coini olmayan oyuncuya "neden reklam izleyeyim"
- *   sorusunun cevabini verir ve GDD D.4'u ihlal etmez (yeni bir KAYNAK, donusum degil).
- *   Kill switch: [EconomyConfig.EMERGENCY_SUPPLY_ENABLED].
+ * - [BoosterType.AIR_SUPPORT]: coin, savas basina [EconomyConfig.AIR_SUPPORT_USES_PER_BATTLE]
+ *   kullanim, iki kullanim ayni fiyat. Hava destegi Tedarik HARCAMAZ. Pay-to-win kalkani:
+ *   `maxUsesPerBattle x AIR_SUPPORT_DAMAGE_FRACTION < 1,0` (bkz. EconomyConfig).
+ * - [BoosterType.BASE_REPAIR]: coin, 2 kullanim. 1. kullanim [EconomyConfig.BASE_REPAIR_LIVES_FIRST_USE]
+ *   can; 2. kullanim [EconomyConfig.BASE_REPAIR_LIVES_SECOND_USE] can ve CAN BASINA AYNI FIYAT
+ *   ([boosterPrice]) — eskiden reklamla bedava olan 7 canlik hak artik acikca fiyatli.
+ *   Yildiz notrdur ([effectiveStarHealth]): tamir hayatta kalma satin alir, yildiz/coin asla.
+ * - [BoosterType.EMERGENCY_SUPPLY]: coin, 1 kullanim; fiyat = verdigi Tedarik x
+ *   [EconomyConfig.EMERGENCY_SUPPLY_COIN_PER_SUPPLY]. Eski "fiyat >= en ucuz kalici rank (200)"
+ *   tabani bu kalem icin UYGULANMAZ: L2-L3'te R(L,1)=170/200 oldugundan "tabandan buyuk ve
+ *   R(L,1)'den kucuk" araligi bos.
  *
  * ---------------------------------------------------------------------------------
  * 3. NEDEN ENVANTER DEGIL
  * ---------------------------------------------------------------------------------
- * Guclendiriciler **savasa kapsamlidir**: satin alinir, o savasta kullanilir, savas
- * bitince kaybolur. Stoklanabilir envanter olsaydi (a) yeni `SaveManager` alani ve
- * migrasyon gerekirdi, (b) "20 tane biriktir, son bolumu ez" farming'i acilirdi,
- * (c) uygulamayi yeniden baslatarak sayac sifirlama exploit'i dogar. Savasa kapsamli
- * model bunlarin ucunu de yapisal olarak kapatir ve testcinin istedigi seyi
- * ("zor durumda kalinca 1 kereye mahsus") birebir karsilar.
- *
- * Savaslar arasi tasinan TEK sayac [BoosterState.adViewsToday]'dir ve **coin
- * odemedigi icin** kaybolmasi ekonomi exploit'i DEGILDIR (yalnizca oyuncu daha fazla
- * reklam izleyebilir — gelir yonu olumlu). Kaliciligi opsiyoneldir; bkz.
- * ECONOMY_SPEC 9 devir listesi.
+ * Guclendiriciler **savasa kapsamlidir**: satin alinir, o savasta kullanilir, savas bitince
+ * kaybolur. Stoklanabilir envanter yeni kayit alani, "20 tane biriktir" farming'i ve
+ * uygulamayi yeniden baslatarak sayac sifirlama exploit'i getirirdi.
  *
  * ---------------------------------------------------------------------------------
  * 4. PAY-TO-WIN YOK
  * ---------------------------------------------------------------------------------
- * - Her bolum **sifir guclendiriciyle** gecilebilir olmali; guclendiriciler
- *   `LEVEL_DESIGN` zorluk hesabina GIRMEZ.
- * - [EconomyConfig.AIR_SUPPORT_DAMAGE_FRACTION] < 1,0 — hava destegi tam canli hicbir
- *   dusmani tek basina oldurmez, dolayisiyla "dalga temizleme butonu" degildir.
- * - [BoosterType.BASE_REPAIR] **yildiz notrdur**: yildiz, savas boyunca gorulen EN
- *   DUSUK cana gore hesaplanir ([effectiveStarHealth]), yani tamir hayatta kalma
- *   satin alir, ASLA yildiz/coin satin almaz. Bu olmadan "tamir et -> yildiz atla ->
- *   tamirden fazla coin kazan" arbitraji acilirdi.
+ * - Her bolum **sifir guclendiriciyle** gecilebilir olmali; guclendiriciler zorluk hesabina
+ *   GIRMEZ.
+ * - Hava destegi tam canli hicbir dusmani tek basina oldurmez.
+ * - [BoosterType.BASE_REPAIR] yildiz notrdur, bkz. [effectiveStarHealth].
  */
 
 // =====================================================================================
 // Tipler
 // =====================================================================================
 
-/** Bir guclendiricinin ucretli yolunun hangi para biriminde oldugu. */
+/** Bir guclendiricinin odeme yolunun hangi para biriminde oldugu. */
 enum class BoosterCurrency {
-    /** Savas ici Tedarik (bolum sonu sifirlanir). */
+    /** Savas ici Tedarik (bolum sonu sifirlanir). Bugun hicbir guclendirici bunu kullanmiyor. */
     SUPPLY,
 
     /** Meta Coin (kalici). Konuslanma Rezervi'ne tabidir. */
     COIN,
-
-    /** Ucretli yol YOK — yalnizca rewarded reklamla alinir. */
-    AD_ONLY,
 }
 
 /**
- * Savas ici tek kullanimlik guclendiriciler.
+ * Savas ici guclendiriciler.
  *
  * @param unlockLevel bu guclendiricinin **oynanan bolum** bu degere ulastiginda gorunur.
- * @param currency ucretli yolun para birimi ([BoosterCurrency.AD_ONLY] = ucretli yol yok).
- * @param paidUsesPerBattle ucretli yolla savas basina en fazla kac kullanim.
- * @param adUsesPerBattle rewarded reklamla savas basina en fazla kac EK kullanim.
+ * @param currency odeme yolunun para birimi.
+ * @param paidUsesPerBattle savas basina en fazla kac kullanim.
  */
 enum class BoosterType(
     val unlockLevel: Int,
     val currency: BoosterCurrency,
     val paidUsesPerBattle: Int,
-    val adUsesPerBattle: Int,
-    /**
-     * Savas basina TOPLAM kullanim tavani (ucretli + reklam BIRLIKTE). null =
-     * tavan yok, toplam = paid + ad. Hava Destegi 2'de sabitlenir ki coin yolu
-     * eklenince ucuncu bir vurus dogmasin (bkz. EconomyConfig.AIR_SUPPORT_SHARED_USE_CAP).
-     */
-    val sharedUseCap: Int? = null,
-    /**
-     * Reklam yolu BIRINCIL mi? true ise arbitraj kalkani ("ucretli tukenmeden
-     * reklam acilmaz") bu tipe uygulanmaz: reklam her zaman acik, ucretli yol
-     * uzanti. Yalnizca Hava Destegi (2026-09-02).
-     */
-    val adPathIsPrimary: Boolean = false,
 ) {
-    /**
-     * **Acil Tedarik** — aninda Tedarik enjeksiyonu.
-     * Ucretli yolu yok (GDD D.4: coin -> Tedarik donusumu yasak). Ilk 6 bolumde
-     * reklamin tek anlamli degeri budur.
-     */
+    /** **Acil Tedarik** — aninda Tedarik enjeksiyonu. */
     EMERGENCY_SUPPLY(
         unlockLevel = EconomyConfig.EMERGENCY_SUPPLY_UNLOCK_LEVEL,
-        currency = BoosterCurrency.AD_ONLY,
-        paidUsesPerBattle = 0,
-        adUsesPerBattle = 1,
+        currency = BoosterCurrency.COIN,
+        paidUsesPerBattle = EconomyConfig.EMERGENCY_SUPPLY_USES_PER_BATTLE,
     ),
 
-    /**
-     * **Hava Destegi** — ekrandaki tum dusmanlara agir hasar, uzun bekleme.
-     * Her bolume DEAKTIF baslar; yalnizca rewarded reklamla aktiflesir ve bir
-     * bolumde IKI kez cagrilabilir.
-     *
-     * ⚠ 2026-08-21 — TAMAMEN REKLAM YOLUNA CEVRILDI (kullanici karari).
-     *
-     * Eskiden Tedarikle alinirdi (paid 1 + reklam 1). Yeni kural: her bolume
-     * DEAKTIF baslar, reklam izleyince aktiflesir, ve bir bolumde IKI kez
-     * izlenip iki kez cagrilabilir.
-     *
-     * Gerekce kullanicinin kendi sozu: *"ad izlemeye tesvik etmeliyiz."*
-     * Tedarik yolu acikken oyuncunun reklam izlemek icin sebebi yoktu —
-     * guclendirici gelir getirmiyordu, sadece Tedarik yakiyordu.
-     *
-     * TASARIM ETKISI acikca soylenmeli: hava destegi artik "3. kule mi, hava
-     * destegi mi" TAKTIK KARARI OLMAKTAN CIKTI. Tedarik harcanmadigi icin
-     * savas ici ekonomiye dokunmuyor; bedeli para degil ZAMAN.
-     */
+    /** **Hava Destegi** — ekrandaki tum dusmanlara agir hasar, uzun bekleme. */
     AIR_SUPPORT(
         unlockLevel = EconomyConfig.AIR_SUPPORT_UNLOCK_LEVEL,
-        // 2026-09-02 — COIN YOLU EKLENDI (kullanici: "hava destegini coinle
-        // satabiliriz"). Reklam yolu birincil ve 2 hak aynen; coin uzanti; toplam
-        // vurus sharedUseCap ile 2'de sabit. Gerekce ve kisitlar:
-        // EconomyConfig.AIR_SUPPORT_COIN_PATH_ENABLED blogu. Bayrak kapaliysa
-        // davranis 2026-08-21'deki AD_ONLY haline BIREBIR doner.
-        currency = if (EconomyConfig.AIR_SUPPORT_COIN_PATH_ENABLED) BoosterCurrency.COIN else BoosterCurrency.AD_ONLY,
-        paidUsesPerBattle = if (EconomyConfig.AIR_SUPPORT_COIN_PATH_ENABLED) 1 else 0,
-        adUsesPerBattle = 2,
-        sharedUseCap = EconomyConfig.AIR_SUPPORT_SHARED_USE_CAP,
-        adPathIsPrimary = true,
+        currency = BoosterCurrency.COIN,
+        paidUsesPerBattle = EconomyConfig.AIR_SUPPORT_USES_PER_BATTLE,
     ),
 
-    /**
-     * **Us Tamiri** — kaybedilen us caninin bir kismini geri verir.
-     * Coinle alinir, rezerve dokunmaz, **yildiz notrdur** ([effectiveStarHealth]).
-     */
+    /** **Us Tamiri** — kaybedilen us caninin bir kismini geri verir; yildiz notrdur. */
     BASE_REPAIR(
         unlockLevel = EconomyConfig.BASE_REPAIR_UNLOCK_LEVEL,
         currency = BoosterCurrency.COIN,
-        paidUsesPerBattle = 1,
-        adUsesPerBattle = 1,
+        paidUsesPerBattle = EconomyConfig.BASE_REPAIR_USES_PER_BATTLE,
     ),
     ;
 
-    /** Savas basina toplam kullanim tavani (ucretli + reklam; [sharedUseCap] varsa o). */
-    val maxUsesPerBattle: Int
-        get() = sharedUseCap?.coerceAtMost(paidUsesPerBattle + adUsesPerBattle)
-            ?: (paidUsesPerBattle + adUsesPerBattle)
-
-    /** Ucretli bir yolu var mi? */
-    val hasPaidPath: Boolean get() = currency != BoosterCurrency.AD_ONLY
+    /** Savas basina toplam kullanim tavani. */
+    val maxUsesPerBattle: Int get() = paidUsesPerBattle
 
     /** Bu guclendirici bu build'de acik mi (kill switch). */
     val enabled: Boolean
@@ -212,13 +115,10 @@ enum class BoosterType(
 
 /**
  * Bir savasin guclendirici durumu. **Savasa kapsamlidir**: [startBattle] ile dogar,
- * savas bitince atilir. Tek istisna [adViewsToday].
+ * savas bitince atilir.
  *
  * @param level oynanan bolum. Fiyat ve etki bundan turetilir.
- * @param paidUses guclendirici -> bu savasta ucretli yolla yapilan kullanim sayisi.
- * @param adUses guclendirici -> bu savasta reklamla yapilan kullanim sayisi.
- * @param adViewsToday **gun boyunca** guclendirici icin izlenen dolu reklam sayisi.
- *   Coin odemez, bu yuzden kaybolmasi ekonomi exploit'i degildir (bkz. dosya basi 3).
+ * @param paidUses guclendirici -> bu savasta yapilan kullanim sayisi.
  * @param repairedHealth [BoosterType.BASE_REPAIR] ile geri verilen toplam us cani.
  *   Yildiz hesabindan DUSULUR ([effectiveStarHealth]) — tamir yildiz satin almaz.
  * @param lastUseMs guclendirici -> son kullanim ani (motor saati). Bekleme kontrolu.
@@ -226,35 +126,24 @@ enum class BoosterType(
 data class BoosterState(
     val level: Int,
     val paidUses: Map<BoosterType, Int> = emptyMap(),
-    val adUses: Map<BoosterType, Int> = emptyMap(),
-    val adViewsToday: Int = 0,
     val repairedHealth: Int = 0,
     val lastUseMs: Map<BoosterType, Long> = emptyMap(),
 ) {
     init {
         require(level >= 1) { "level >= 1 olmali: $level" }
-        require(adViewsToday >= 0) { "negatif gunluk reklam sayaci: $adViewsToday" }
         require(repairedHealth >= 0) { "negatif tamir: $repairedHealth" }
         BoosterType.entries.forEach { type ->
-            val paid = paidUses[type] ?: 0
-            val ad = adUses[type] ?: 0
-            require(paid in 0..type.paidUsesPerBattle) { "$type ucretli kullanim $paid aralik disi" }
-            require(ad in 0..type.adUsesPerBattle) { "$type reklam kullanimi $ad aralik disi" }
+            val used = paidUses[type] ?: 0
+            require(used in 0..type.paidUsesPerBattle) { "$type kullanim $used aralik disi" }
         }
     }
 
     fun paidUsesOf(type: BoosterType): Int = paidUses[type] ?: 0
-    fun adUsesOf(type: BoosterType): Int = adUses[type] ?: 0
-    fun usesOf(type: BoosterType): Int = paidUsesOf(type) + adUsesOf(type)
-
-    /** Bu gun guclendirici reklami icin kalan hak. */
-    val adViewsLeftToday: Int
-        get() = (EconomyConfig.BOOSTER_AD_VIEWS_PER_DAY - adViewsToday).coerceAtLeast(0)
+    fun usesOf(type: BoosterType): Int = paidUsesOf(type)
 
     companion object {
-        /** Yeni savas. Gunluk reklam sayaci tasinir, kullanim sayaclari sifirlanir. */
-        fun startBattle(level: Int, adViewsToday: Int = 0): BoosterState =
-            BoosterState(level = level, adViewsToday = adViewsToday.coerceAtLeast(0))
+        /** Yeni savas: tum kullanim sayaclari sifirlanir. */
+        fun startBattle(level: Int): BoosterState = BoosterState(level = level)
     }
 }
 
@@ -267,14 +156,12 @@ data class BoosterState(
  */
 sealed class BoosterDecision {
     /**
-     * @param price odenecek miktar (AD_ONLY ve reklam yolunda 0).
+     * @param price odenecek miktar.
      * @param currency hangi para biriminden dusulecek.
-     * @param viaAd reklam yoluyla mi.
      */
     data class Allowed(
         val price: Int,
         val currency: BoosterCurrency,
-        val viaAd: Boolean,
     ) : BoosterDecision()
 
     /** Bu build'de kapali (kill switch). */
@@ -283,24 +170,8 @@ sealed class BoosterDecision {
     /** Bolum henuz bu guclendiriciyi acmadi. */
     data class Locked(val requiredLevel: Int) : BoosterDecision()
 
-    /** Ucretli kullanim hakki bu savasta tukendi. */
+    /** Kullanim hakki bu savasta tukendi. */
     data object PaidLimitReached : BoosterDecision()
-
-    /** Reklam kullanim hakki bu savasta tukendi. */
-    data object AdLimitReached : BoosterDecision()
-
-    /** Gunluk guclendirici-reklam hakki tukendi. */
-    data class DailyAdLimitReached(val perDay: Int) : BoosterDecision()
-
-    /**
-     * **ARBITRAJ KALKANI.** Reklam yolu ucretli yolun YERINE gecemez; once ucretli
-     * kullanim tuketilmeli. Bu dal olmadan oyuncu 120 Tedarik yerine bedava reklam
-     * secer ve Tedarik fiyatlamasi anlamsizlasir.
-     */
-    data class PaidPathNotExhausted(val paidUsesLeft: Int) : BoosterDecision()
-
-    /** Bu guclendiricinin ucretli yolu YOK (yalnizca reklam). */
-    data object PaidPathUnavailable : BoosterDecision()
 
     /** Savas ici Tedarik yetmiyor. */
     data class InsufficientSupply(val price: Int, val shortfall: Int) : BoosterDecision()
@@ -325,25 +196,31 @@ sealed class BoosterDecision {
 // =====================================================================================
 
 /**
- * Bu bolumde bu guclendiricinin **ucretli** fiyati.
+ * Bu bolumde bu guclendiricinin [useNumber]. kullaniminin coin fiyati (1'den baslar).
  *
- * AD_ONLY tipler ve reklam yolu icin 0. Fiyat bolumle dogrusal buyur ki gec oyunda
- * "anlamsiz derecede ucuz" olmasin (ECONOMY_SPEC B fiyat tablosu).
+ * Fiyat bolumle dogrusal buyur ki gec oyunda "anlamsiz derecede ucuz" olmasin.
+ * Us Tamiri'nin 2. kullanimi CAN BASINA 1. kullanimla ayni fiyattir
+ * (`round10(fiyat1 x can2 / can1)`): eski reklam hakki bedavaydi, artik indirimsiz fiyatli.
  */
-fun boosterPrice(type: BoosterType, level: Int): Int {
+fun boosterPrice(type: BoosterType, level: Int, useNumber: Int = 1): Int {
     require(level in 1..EconomyConfig.CAMPAIGN_LEVELS) { "level $level aralik disi" }
+    require(useNumber in 1..type.paidUsesPerBattle) { "$type icin useNumber $useNumber aralik disi" }
     return when (type) {
-        BoosterType.EMERGENCY_SUPPLY -> 0
-        // 2026-09-02: fiyat artik COIN (ucretli yol coin'e cevrildi). Eski
-        // Tedarik tablosu (101 + 8(L-1)) EconomyConfig'te duruyor ama okunmuyor;
-        // coin yolu bayrakla kapatilirsa tip AD_ONLY olur ve KDoc geregi 0 doner.
+        BoosterType.EMERGENCY_SUPPLY ->
+            emergencySupplyAmount(level) * EconomyConfig.EMERGENCY_SUPPLY_COIN_PER_SUPPLY
         BoosterType.AIR_SUPPORT ->
-            if (BoosterType.AIR_SUPPORT.currency == BoosterCurrency.AD_ONLY) 0
-            else EconomyConfig.AIR_SUPPORT_COIN_BASE +
-                EconomyConfig.AIR_SUPPORT_COIN_STEP * (level - 1)
-        BoosterType.BASE_REPAIR ->
-            EconomyConfig.BASE_REPAIR_COIN_BASE +
-                EconomyConfig.BASE_REPAIR_COIN_STEP * (level - 1)
+            EconomyConfig.AIR_SUPPORT_COIN_BASE + EconomyConfig.AIR_SUPPORT_COIN_STEP * (level - 1)
+        BoosterType.BASE_REPAIR -> {
+            val first = EconomyConfig.BASE_REPAIR_COIN_BASE + EconomyConfig.BASE_REPAIR_COIN_STEP * (level - 1)
+            if (useNumber == 1) {
+                first
+            } else {
+                roundToTen(
+                    first.toDouble() * EconomyConfig.BASE_REPAIR_LIVES_SECOND_USE /
+                        EconomyConfig.BASE_REPAIR_LIVES_FIRST_USE
+                )
+            }
+        }
     }
 }
 
@@ -351,8 +228,7 @@ fun boosterPrice(type: BoosterType, level: Int): Int {
  * Acil Tedarik'in verdigi Tedarik miktari.
  *
  * SERT KISIT (ECONOMY_SPEC A.4): bu miktar, sikilastirilmis bolum butcesine
- * eklendiginde eski (fazla bol) butceyi **asmamalidir**. Yani reklam izleyen oyuncu
- * bile bugunku bol ekonomiden daha rahat olmaz — reklam sikilastirmayi geri almaz.
+ * eklendiginde eski (fazla bol) butceyi **asmamalidir**.
  */
 fun emergencySupplyAmount(level: Int): Int {
     require(level in 1..EconomyConfig.CAMPAIGN_LEVELS) { "level $level aralik disi" }
@@ -363,17 +239,15 @@ fun emergencySupplyAmount(level: Int): Int {
 }
 
 /**
- * Us Tamiri'nin geri verecegi can. Kaybedilmis candan fazlasini vermez, maks cani
- * asmaz. Us cani zaten tamsa 0 doner ve [boosterAllowed] [BoosterDecision.NoEffect] verir.
+ * Us Tamiri'nin [useNumber]. kullanimda geri verecegi can. Kaybedilmis candan fazlasini
+ * vermez. Us cani zaten tamsa 0 doner ve [boosterAllowed] [BoosterDecision.NoEffect] verir.
  */
-fun baseRepairAmount(currentHealth: Int, maxHealth: Int, viaAd: Boolean = false): Int {
+fun baseRepairAmount(currentHealth: Int, maxHealth: Int, useNumber: Int = 1): Int {
     require(maxHealth > 0) { "maxHealth > 0 olmali" }
     val lost = (maxHealth - currentHealth).coerceAtLeast(0)
     if (lost == 0) return 0
-    // Iki yol, iki sayi: coin 4 / reklam 7. Kayip candan FAZLASI verilmez —
-    // "tam cana tamamla" bir tavan degil, sadece israfi engelleyen sinir.
     val nominal =
-        if (viaAd) EconomyConfig.BASE_REPAIR_LIVES_AD else EconomyConfig.BASE_REPAIR_LIVES_PAID
+        if (useNumber >= 2) EconomyConfig.BASE_REPAIR_LIVES_SECOND_USE else EconomyConfig.BASE_REPAIR_LIVES_FIRST_USE
     return minOf(nominal, lost)
 }
 
@@ -413,8 +287,7 @@ const val ENEMY_COUNT_UNKNOWN: Int = -1
  * Bir guclendiriciyi kullanmaya izin var mi?
  *
  * KONTROL SIRASI (analytics ve UI mesaji bu siraya baglidir):
- * kill switch -> bolum kilidi -> kullanim tavani -> **arbitraj kalkani** -> gunluk
- * reklam hakki -> bekleme -> etki -> odeme gucu -> rezerv.
+ * kill switch -> bolum kilidi -> kullanim tavani -> bekleme -> etki -> odeme gucu -> rezerv.
  *
  * "ETKI" adimi guclendiricinin **hicbir sey yapmayacagi** durumlari yakalar ve
  * [BoosterDecision.NoEffect] doner. Bu adim odeme gucu kontrolunden ONCE gelir:
@@ -423,7 +296,6 @@ const val ENEMY_COUNT_UNKNOWN: Int = -1
  *   - [BoosterType.BASE_REPAIR] ve us cani zaten tam,
  *   - [BoosterType.AIR_SUPPORT] ve sahada hedef yok ([enemiesOnField] == 0).
  *
- * @param viaAd rewarded reklam yolu mu deneniyor.
  * @param supplyOnHand savas ici mevcut Tedarik (yalnizca SUPPLY fiyatli tipler icin).
  * @param baseHealth / [maxBaseHealth] yalnizca [BoosterType.BASE_REPAIR] icin anlamli.
  * @param enemiesOnField su an sahada bulunan dusman sayisi; yalnizca
@@ -433,7 +305,6 @@ const val ENEMY_COUNT_UNKNOWN: Int = -1
 fun boosterAllowed(
     state: BoosterState,
     type: BoosterType,
-    viaAd: Boolean,
     wallet: PlayerWallet,
     supplyOnHand: Int = 0,
     baseHealth: Int = 0,
@@ -444,34 +315,8 @@ fun boosterAllowed(
     if (!type.enabled) return BoosterDecision.Disabled
     if (state.level < type.unlockLevel) return BoosterDecision.Locked(type.unlockLevel)
 
-    // PAYLASIMLI TAVAN (Hava Destegi): ucretli + reklam toplami savas basina
-    // sharedUseCap'i asamaz. Yol ne olursa olsun ilgili "limit doldu" karari
-    // doner; UI ikisini de "USED" olarak cizer.
-    val cap = type.sharedUseCap
-    if (cap != null && state.usesOf(type) >= cap) {
-        return if (viaAd) BoosterDecision.AdLimitReached else BoosterDecision.PaidLimitReached
-    }
-
-    if (viaAd) {
-        if (state.adUsesOf(type) >= type.adUsesPerBattle) return BoosterDecision.AdLimitReached
-        // ARBITRAJ KALKANI: ucretli yolu olan bir guclendiricide reklam, ucretli
-        // kullanim tukenmeden acilmaz. Reklam ikame degil, uzantidir.
-        //
-        // ISTISNA — adPathIsPrimary (Hava Destegi, 2026-09-02): orada reklam
-        // zaten birincil yol, coin ikame degil EK. Kalkan uygulanirsa oyuncu
-        // reklam izleyebilmek icin once coin harcamak zorunda kalirdi — bu,
-        // 2026-08-21 "reklam izlemeye tesvik" kararinin tam tersi olurdu.
-        if (type.hasPaidPath && !type.adPathIsPrimary) {
-            val left = type.paidUsesPerBattle - state.paidUsesOf(type)
-            if (left > 0) return BoosterDecision.PaidPathNotExhausted(left)
-        }
-        if (state.adViewsLeftToday <= 0) {
-            return BoosterDecision.DailyAdLimitReached(EconomyConfig.BOOSTER_AD_VIEWS_PER_DAY)
-        }
-    } else {
-        if (!type.hasPaidPath) return BoosterDecision.PaidPathUnavailable
-        if (state.paidUsesOf(type) >= type.paidUsesPerBattle) return BoosterDecision.PaidLimitReached
-    }
+    val usedSoFar = state.paidUsesOf(type)
+    if (usedSoFar >= type.paidUsesPerBattle) return BoosterDecision.PaidLimitReached
 
     val cooldown = boosterCooldownMs(type)
     val last = state.lastUseMs[type]
@@ -480,33 +325,24 @@ fun boosterAllowed(
     }
 
     // ETKI. Ucret kesilmeden, kullanim hakki yakilmadan ve bekleme baslatilmadan
-    // once "bu kullanim hicbir sey yapmayacak" durumlari elenir.
+    // once "bu kullanim hicbir sey yapmayacak" durumlari elenir. Kapi ekonomi
+    // katmanindadir (UI'da degil): yeni bir cagiran eklendiginde sessizce atlanmaz.
     if (type == BoosterType.BASE_REPAIR && baseRepairAmount(baseHealth, maxBaseHealth) == 0) {
         return BoosterDecision.NoEffect
     }
-    // Hava Destegi ekrandaki dusmanlara vurur; hedef yoksa savas basina IKI reklam
-    // hakkindan biri ve gunluk reklam butcesinden bir gosterim HICBIR SEYE yanar,
-    // ustune 45 sn bekleme baslar. Geri alma yok. (2026-08-21 oncesinde yanan sey
-    // 96-264 Tedarik'ti; reklam-only modelde bedel Tedarik degil, oyuncunun
-    // izledigi reklam — yani kapinin sebebi ZAYIFLAMADI, guclendi.) Kapi bu yuzden
-    // ekonomi katmanindadir (UI'da degil): yeni bir cagiran eklendiginde sessizce
-    // atlanmaz.
     if (type == BoosterType.AIR_SUPPORT && enemiesOnField == 0) {
         return BoosterDecision.NoEffect
     }
 
-    // Reklam yolu hicbir para birimi odemez.
-    val price = if (viaAd) 0 else boosterPrice(type, state.level)
-    if (viaAd || price == 0) {
-        return BoosterDecision.Allowed(0, type.currency, viaAd)
-    }
+    val price = boosterPrice(type, state.level, useNumber = usedSoFar + 1)
+    if (price == 0) return BoosterDecision.Allowed(0, type.currency)
 
     return when (type.currency) {
         BoosterCurrency.SUPPLY -> {
             if (supplyOnHand < price) {
                 BoosterDecision.InsufficientSupply(price, price - supplyOnHand)
             } else {
-                BoosterDecision.Allowed(price, BoosterCurrency.SUPPLY, false)
+                BoosterDecision.Allowed(price, BoosterCurrency.SUPPLY)
             }
         }
 
@@ -520,12 +356,10 @@ fun boosterAllowed(
                 if (wallet.coins - price < reserve) {
                     BoosterDecision.ReserveLocked(price, reserve, reserve - (wallet.coins - price))
                 } else {
-                    BoosterDecision.Allowed(price, BoosterCurrency.COIN, false)
+                    BoosterDecision.Allowed(price, BoosterCurrency.COIN)
                 }
             }
         }
-
-        BoosterCurrency.AD_ONLY -> BoosterDecision.PaidPathUnavailable
     }
 }
 
@@ -538,16 +372,13 @@ fun boosterAllowed(
 fun useBooster(
     state: BoosterState,
     type: BoosterType,
-    viaAd: Boolean,
     decision: BoosterDecision,
     nowMs: Long = Long.MAX_VALUE / 2,
     repairedHealth: Int = 0,
 ): BoosterState {
     if (decision !is BoosterDecision.Allowed) return state
     return state.copy(
-        paidUses = if (viaAd) state.paidUses else state.paidUses + (type to state.paidUsesOf(type) + 1),
-        adUses = if (viaAd) state.adUses + (type to state.adUsesOf(type) + 1) else state.adUses,
-        adViewsToday = if (viaAd) state.adViewsToday + 1 else state.adViewsToday,
+        paidUses = state.paidUses + (type to state.paidUsesOf(type) + 1),
         repairedHealth = state.repairedHealth +
             if (type == BoosterType.BASE_REPAIR) repairedHealth.coerceAtLeast(0) else 0,
         lastUseMs = state.lastUseMs + (type to nowMs),
@@ -568,7 +399,7 @@ fun payForBooster(wallet: PlayerWallet, decision: BoosterDecision): PlayerWallet
  * degildir diye varsaymaz, [applied] bayragina bakar.
  *
  * @param supplyGranted savas ici Tedarige EKLENECEK miktar (Acil Tedarik).
- * @param supplyCharged savas ici Tedarikten DUSULECEK miktar (Hava Destegi).
+ * @param supplyCharged savas ici Tedarikten DUSULECEK miktar.
  * @param healthRestored us canina eklenecek can (Us Tamiri).
  * @param airSupportDamageFraction ekrandaki her dusmandan silinecek maks can orani.
  * @param coinsSpent cuzdandan dusulen coin (ekonomi katmani zaten dusmustur).
@@ -576,7 +407,6 @@ fun payForBooster(wallet: PlayerWallet, decision: BoosterDecision): PlayerWallet
 data class BoosterActivation(
     val type: BoosterType,
     val decision: BoosterDecision,
-    val viaAd: Boolean,
     val supplyGranted: Int = 0,
     val supplyCharged: Int = 0,
     val healthRestored: Int = 0,
@@ -587,20 +417,18 @@ data class BoosterActivation(
 }
 
 // =====================================================================================
-// Yildiz notrlugu — Us Tamiri arbitrajinin kapatilmasi
+// Yildiz notrlugu — Us Tamiri / Devam arbitrajinin kapatilmasi
 // =====================================================================================
 
 /**
  * Yildiz hesabina girecek "etkin can".
  *
- * SORUN: yildiz kalan us canina bakiyor ([starsFor]) ve yildiz coin oduyor. Us Tamiri
- * cani geri verdigi icin, tamir ucreti < yildiz atlamanin coin degeri oldugu her
- * durumda "tamir et, yildiz atla, kar et" arbitraji dogar. L22'de 2 -> 3 yildiz farki
- * 230 coin; tamir 435 coin oldugundan tek atlamada karli degil, ama Kusursuz Savunma
- * madalyasi ve cift atlamalar hesabi bozabilir.
+ * SORUN: yildiz kalan us canina bakiyor ([starsFor]) ve yildiz coin oduyor. Us Tamiri ve
+ * Devam cani geri verdigi icin, ucret < yildiz atlamanin coin degeri oldugu her
+ * durumda "tamir et, yildiz atla, kar et" arbitraji dogar.
  *
- * COZUM: tamir edilen can yildiz hesabindan DUSULUR. Boylece yildiz her zaman savas
- * boyunca gorulen en kotu duruma gore verilir; tamir **hayatta kalma** satin alir,
+ * COZUM: geri verilen can yildiz hesabindan DUSULUR. Boylece yildiz her zaman savas
+ * boyunca gorulen en kotu duruma gore verilir; tamir/devam **hayatta kalma** satin alir,
  * yildiz ve coin ASLA. Arbitraj fiyatlamaya bagli olmaktan cikar, yapisal olarak yok
  * olur.
  *
@@ -618,30 +446,26 @@ fun effectiveStarHealth(finalHealth: Int, state: BoosterState): Int =
 // =====================================================================================
 
 /**
- * Bir bolumde guclendiricilerin oynanisa katabilecegi **en fazla** Tedarik.
- * Hava Destegi Tedarik HARCAR, bu yuzden yalnizca Acil Tedarik sayilir.
+ * Bir bolumde guclendiricilerin oynanisa katabilecegi **en fazla** Tedarik. Yalnizca
+ * Acil Tedarik Tedarik ekler (Hava Destegi Tedarik harcamaz).
  */
 fun maxBoosterSupplyInjection(level: Int): Int =
     if (boosterUnlocked(BoosterType.EMERGENCY_SUPPLY, level)) {
-        emergencySupplyAmount(level) * BoosterType.EMERGENCY_SUPPLY.adUsesPerBattle
+        emergencySupplyAmount(level) * BoosterType.EMERGENCY_SUPPLY.paidUsesPerBattle
     } else {
         0
     }
 
 /**
- * Bir bolumde guclendiricilere harcanabilecek **en fazla** coin.
- * Gunluk coin cikisinin ust sinirini olcmek icin ECONOMY_SPEC B tablosunda kullanilir.
+ * Bir bolumde guclendiricilere harcanabilecek **en fazla** coin (her kullanim kendi
+ * fiyatiyla, [boosterPrice]). Coin para birimli TUM guclendiriciler taranir; elle liste
+ * yok, boylece yeni bir coin kalemi eklendiginde tavan kendiliginden dogru kalir.
  *
- * 2026-09-02 — HAVA DESTEGI EKLENDI. Fonksiyon yalnizca Us Tamiri'ni sayiyordu
- * cunku yazildiginda coin harcayan TEK guclendirici oydu. Hava Destegi coin
- * yoluna cevrilince (IAP turu) tavan sessizce EKSIK olcmeye basladi: L7'de
- * 240 yerine 240 + 266 = 506, L55'te 1.200 yerine 1.200 + 1.322 = 2.522.
- * Yani gercek coin cikisinin yarisindan fazlasi gorunmez oldu.
- *
- * Elle liste YOK: coin para birimli TUM guclendiriciler taranir, boylece
- * ucuncu bir coin kalemi eklendiginde tavan kendiliginden dogru kalir.
+ * Bu, TEKRARLAYAN (savas basina) harcama tavanidir; TEK SEFERLIK cikislar
+ * (kilitler, agac, prestij) `StoreCatalog.oneTimeSinkTotal` icindedir ve ikisi
+ * ayri raporlanir.
  */
 fun maxBoosterCoinSpend(level: Int): Int =
     BoosterType.entries
         .filter { it.currency == BoosterCurrency.COIN && boosterUnlocked(it, level) }
-        .sumOf { boosterPrice(it, level) * it.paidUsesPerBattle }
+        .sumOf { type -> (1..type.paidUsesPerBattle).sumOf { use -> boosterPrice(type, level, use) } }

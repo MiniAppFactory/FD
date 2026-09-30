@@ -47,10 +47,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.miniappfactory.frontlinedefender.BuildConfig
 import com.miniappfactory.frontlinedefender.R
-import com.miniappfactory.frontlinedefender.game.ads.AdHost
-import com.miniappfactory.frontlinedefender.game.ads.ConsentManager
-import com.miniappfactory.frontlinedefender.game.ads.NoOpAdHost
-import com.miniappfactory.frontlinedefender.game.ads.findActivity
 import com.miniappfactory.frontlinedefender.game.settings.AppLanguage
 import com.miniappfactory.frontlinedefender.game.settings.LocalAppLanguage
 import com.miniappfactory.frontlinedefender.ui.theme.ArtTextPrimary
@@ -64,17 +60,10 @@ import com.miniappfactory.frontlinedefender.ui.theme.SleekTextAccent
  * GERCEK AYARLAR EKRANI.
  *
  * ## Neden var
- * Ana menudeki disli ikonu bugune kadar **yalnizca bir ses ac/kapa dugmesiydi**
- * ve arkasinda bir ekran yoktu. Bu, iki bagimsiz denetimin buldugu iki
- * maddeden birincisinin de sebebiydi: **UMP "Gizlilik Secenekleri" girisi
- * hicbir yere bagli degildi.**
- *
- * [AdHost.showPrivacyOptions] ve [AdHost.privacyOptionsRequired] Faz 5'te dogru
- * yazilmisti ama `game/ui/` altindan **sifir cagri** vardi. Yani oyuncunun
- * rizasini geri cekebilecegi KALICI bir giris yoktu. Bu, AdMob AB Kullanici
- * Rizasi Politikasi (ve GDPR) acisindan ihlaldir; yaptirimi **AdMob hesap
- * seviyesinde** gelir, tek bir uygulamanin kaldirilmasiyla sinirli kalmaz.
- * Ekranin ilk varlik sebebi budur; ses satiri buraya **tasindi**.
+ * Ana menudeki disli ikonu eskiden **yalnizca bir ses ac/kapa dugmesiydi** ve arkasinda
+ * bir ekran yoktu. Ekran ses, muzik, dokunsal geri bildirim ve sifirlama eylemlerini
+ * toplar. Oyunda reklam ve riza formu YOKTUR (2026-09-30); onlarin eski "Gizlilik
+ * Secenekleri" girisi kaldirildi.
  *
  * ## Bilincli olarak GENISLETILEBILIR
  * Ayni kod tabaninda su an muzik ve haptik yazan baska bir is kolu var; onlarin
@@ -99,11 +88,6 @@ import com.miniappfactory.frontlinedefender.ui.theme.SleekTextAccent
  * @param onSoundEnabledChange kalici kayda VE calisan ses motoruna yazmak
  *   cagiranin isidir (bkz. `GameDialogs.kt`); ekran yalnizca niyeti bildirir.
  * @param onDismiss ekrandan cikis. Geri tusu de bunu cagirir.
- * @param adHost gizlilik secenekleri satirinin sahibi. Varsayilani
- *   [LocalAdHost] — cunku bu ekrani acan composable'lar (`MainMenuOverlay`,
- *   `PauseMenuModal`) `AdHost` almiyor ve imzalarini degistirmek `GameScreen.kt`
- *   dosyasindaki cagri yerlerine dokunmayi gerektirirdi (o dosya baska bir is
- *   kolunun elinde).
  */
 @Composable
 fun SettingsScreen(
@@ -139,17 +123,10 @@ fun SettingsScreen(
     onResetTutorial: () -> Unit = {},
     onResetProgress: () -> Unit = {},
     modifier: Modifier = Modifier,
-    adHost: AdHost = LocalAdHost.current,
     versionName: String = BuildConfig.VERSION_NAME,
     versionCode: Int = BuildConfig.VERSION_CODE
 ) {
     BackHandler(onBack = onDismiss)
-
-    val context = LocalContext.current
-    val activity = remember(context) { context.findActivity() }
-
-    // UMP formu kapaninca "gizlilik secenekleri gerekli mi" cevabi degisebilir.
-    var privacyTick by remember { mutableIntStateOf(0) }
 
     // "Ilerlemeyi sifirla" IKI ADIMLI. Diyalog yerine yerinde onay:
     // bu ekran zaten kaydirilabilir bir overlay ve ustune ikinci bir Dialog
@@ -160,16 +137,6 @@ fun SettingsScreen(
     // Islem sonrasi geri bildirim. Sifirlama SESSIZ olursa oyuncu dokunup
     // hicbir sey olmadigini sanir ve tekrar dokunur.
     var resetDone by remember { mutableStateOf<String?>(null) }
-
-    // `privacyOptionsRequired` @Volatile bir ALAN, akis degil — kendi basina
-    // recomposition tetiklemez. Riza akisi sonuclandiginda degisen gozlenebilir
-    // sinyal `canRequestAdsFlow`; onu toplayip alani YENIDEN OKUYORUZ. Ayni
-    // kalip banner yuvasinda da kullaniliyor (`GameScreen.kt`), yani yeni degil.
-    val consentSettled by ConsentManager.canRequestAdsFlow.collectAsState()
-
-    val showPrivacyOptions = remember(adHost, consentSettled, privacyTick, activity) {
-        shouldShowPrivacyOptions(adHost, hasActivity = activity != null)
-    }
 
     BoxWithConstraints(
         modifier = modifier
@@ -332,29 +299,6 @@ fun SettingsScreen(
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
                 )
 
-                // ---------------------------------------------------------
-                // GIZLILIK
-                //
-                // Satir KOSULLU: yalnizca UMP "bu oyuncu icin gizlilik
-                // secenekleri gerekli" dediginde cizilir (pratikte AB/EEA ve
-                // UK oyuncular). Kosul saglanmadiginda form ACILMAZ; her
-                // zaman gorunen bir satir, dokununca hicbir sey olmayan bir
-                // satir olurdu.
-                // ---------------------------------------------------------
-                if (showPrivacyOptions && activity != null) {
-                    SettingsSectionHeader(stringResource(R.string.settings_section_privacy))
-                    SettingsActionRow(
-                        label = stringResource(R.string.settings_ad_settings),
-                        description = stringResource(R.string.settings_ad_settings_desc),
-                        onClick = {
-                            // Form kapaninca gereklilik degismis olabilir
-                            // (oyuncu rizayi geri cekti) -> satiri yeniden oku.
-                            openPrivacyOptions(adHost, activity) { privacyTick++ }
-                        },
-                        testTag = "settings_privacy_options_row"
-                    )
-                }
-
                 // >>> GIZLILIK POLITIKASI BAGLANTISI BURAYA GELECEK. <<<
                 // Metin docs/PRIVACY_POLICY.md icinde HAZIR ama HOST EDILMEDI.
                 // Gercek URL olusmadan satir eklenmez.
@@ -457,42 +401,6 @@ fun SettingsScreen(
 }
 
 /**
- * "Reklam Ayarlari" satiri cizilsin mi?
- *
- * Composable'dan AYRI bir fonksiyon cunku bu, ekranin tek gercek KARARI ve
- * Compose kurmadan dogrulanabilmesi gerekiyor (bkz. `SettingsPrivacyGateTest`).
- *
- * Iki kosul da zorunlu:
- *  - [AdHost.privacyOptionsRequired] — UMP "bu oyuncu icin gizlilik secenekleri
- *    gerekli" diyor mu? Gerekmiyorsa form ACILMAZ; her zaman gorunen bir satir,
- *    dokununca hicbir sey olmayan bir satir olurdu.
- *  - [hasActivity] — UMP formu Activity ister. Activity bulunamadiginda
- *    (onizleme, test harness'i) satir cizilmez; crash yerine yokluk.
- */
-internal fun shouldShowPrivacyOptions(adHost: AdHost, hasActivity: Boolean): Boolean =
-    hasActivity && adHost.privacyOptionsRequired
-
-/**
- * "Reklam Ayarlari" satirina dokunuldugunda calisan is.
- *
- * [activity] null olamayacagi bir yerden cagriliyor ([shouldShowPrivacyOptions]
- * zaten bunu garanti ediyor), ama savunma yine de burada: Activity kaybolmus bir
- * kenar durumda **cokme yok** — form acilmaz ve [onClosed] yine tam bir kez
- * cagrilir. Bu, reklam katmaninin genel sozlesmesiyle ayni ("hicbir cagri
- * basarisiz olamaz, callback tam bir kez gelir" — `AdHost` KDoc).
- *
- * [onClosed] satirin YENIDEN OKUNMASINI tetikler: oyuncu formda rizasini geri
- * cekmis olabilir ve `privacyOptionsRequired` degismis olabilir.
- */
-internal fun openPrivacyOptions(adHost: AdHost, activity: Activity?, onClosed: () -> Unit) {
-    if (activity == null) {
-        onClosed()
-        return
-    }
-    adHost.showPrivacyOptions(activity, onClosed)
-}
-
-/**
  * Bolum basligi. Yeni bir ayar grubu (ornegin "OYNANIS") tek satirla acilir.
  */
 @Composable
@@ -576,7 +484,7 @@ fun SettingsToggleRow(
 }
 
 /**
- * Dokununca bir sey ACAN satir (su an: UMP gizlilik secenekleri formu).
+ * Dokununca bir sey ACAN satir (su an: sifirlama eylemleri).
  *
  * Aciklama satiri sarabilir — `maxLines` YOK. Kart genisligi sabit, yukseklik
  * esner; boylece uzun ceviri kirpilmaz.
@@ -618,19 +526,3 @@ fun SettingsActionRow(
         }
     }
 }
-
-/**
- * Ayarlar ekranina [AdHost]'u tasiyan kanal.
- *
- * Neden CompositionLocal: reklam katmaninin sahibi `MainActivity`'dir ve host
- * oradan `GameScreen`'e parametre olarak veriliyor. Ancak ayarlari ACAN
- * composable'lar (`MainMenuOverlay`, `PauseMenuModal`) `AdHost` almiyor; onlara
- * parametre eklemek `GameScreen.kt`'deki cagri yerlerini degistirmeyi
- * gerektirirdi ve o dosya su an baska bir is kolunun elinde. CompositionLocal,
- * ARADAKI dosyalara dokunmadan degeri gecirmenin tam da bu duruma uygun araci.
- *
- * Varsayilan [NoOpAdHost]: saglayici kurulmamissa (onizleme, birim testi)
- * `privacyOptionsRequired == false` doner, yani satir hic cizilmez. Guvenli
- * taraf varsayilan.
- */
-val LocalAdHost = staticCompositionLocalOf<AdHost> { NoOpAdHost() }

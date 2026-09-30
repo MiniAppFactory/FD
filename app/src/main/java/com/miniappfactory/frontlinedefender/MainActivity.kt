@@ -13,48 +13,16 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import com.miniappfactory.frontlinedefender.game.ads.AdMobAdHost
-import com.miniappfactory.frontlinedefender.game.ads.SaveManagerAdProgressStore
-import com.miniappfactory.frontlinedefender.game.data.SaveManager
 import com.miniappfactory.frontlinedefender.game.ui.BiomeBackgroundCache
 import com.miniappfactory.frontlinedefender.game.settings.AppLanguageProvider
 import com.miniappfactory.frontlinedefender.game.settings.LanguagePreference
 import com.miniappfactory.frontlinedefender.game.ui.GameScreen
-import com.miniappfactory.frontlinedefender.game.ui.LocalAdHost
 import com.miniappfactory.frontlinedefender.ui.theme.FrontlineDefenderTheme
 
 class MainActivity : ComponentActivity() {
-
-    /**
-     * Faz 5 — reklam katmaninin SAHIBI Activity'dir, Composable degil.
-     *
-     * Sebep: UMP riza formu ve tam ekran reklamlar Activity ister, ve
-     * `MobileAds.initialize` uygulama basina **bir kez** cagrilmalidir.
-     * Composable icinde `remember` edilseydi her yapilandirma degisikliginde
-     * (donme, dil, karanlik mod) yeni bir host uretme riski olurdu.
-     */
-    /**
-     * Reklam sayaci KALICI depoya baglandi (2026-08-22).
-     *
-     * Eskiden `AdMobAdHost()` varsayilan `InMemoryAdProgressStore`u
-     * kullaniyordu ve sayac her acilista sifirlaniyordu — yani
-     * `ONBOARDING_FREE_BATTLES` (3) ve `FIRST_SESSION_WARMUP_MS` (3 dk) HER
-     * OTURUMDA bastan uygulaniyordu. Cihaz raporu: *"level 1 bitirdim, next
-     * level dedigimde reklam gelmedi."*
-     *
-     * `SaveManager` burada `by lazy`: `Context` Activity olusturulurken hazir
-     * degil, `onCreate`ta hazir. `adHost` da lazy olmak zorunda cunku ona
-     * bagimli.
-     */
-    private val saveManager by lazy { SaveManager(applicationContext) }
-
-    private val adHost by lazy {
-        AdMobAdHost(progressStore = SaveManagerAdProgressStore(saveManager))
-    }
 
     /**
      * Faz 14 — ARKA PLANDA BITMAP IADESI.
@@ -139,12 +107,6 @@ class MainActivity : ComponentActivity() {
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
 
-        // UMP riza + SDK baslatma + on-yukleme. Oyunu BLOKLAMAZ: bu cagri
-        // aninda doner, sonuc callback ile gelir ve `setContent` beklemez.
-        // Riza alinamazsa reklam istenmez, oyun reklamsiz tam oynanir
-        // (offline oynanabilir bir oyundur).
-        adHost.initialize(this)
-
         val languagePreference = LanguagePreference(this)
 
         setContent {
@@ -190,28 +152,7 @@ class MainActivity : ComponentActivity() {
                             .fillMaxSize()
                             .windowInsetsPadding(WindowInsets.safeDrawing)
                     ) {
-                        // Faz 13 — ODUL KOPRUSU ARTIK BURADAN GECMIYOR.
-                        //
-                        // Eskiden bu cagri `rewardBridge = LoggingAdRewardBridge`
-                        // veriyordu: oyuncuya "reklam izle, +150 coin al" deniyor
-                        // ve hicbir sey verilmiyordu. Yerine gercek kopru
-                        // (`EconomyAdRewardBridge`) gecti ve onu `GameScreen`
-                        // kuruyor — adapte ettigi ekonomi nesnesinin ve
-                        // carpilacak taban odulun sahibi orasi. Activity reklam
-                        // HOST'unun sahibi olmaya devam ediyor (SDK + UMP + tam
-                        // ekran cagrilari).
-                        //
-                        // `LocalAdHost`: ayni host'u AYARLAR EKRANINA tasir.
-                        // Ayarlari acan composable'lar (`MainMenuOverlay`,
-                        // `PauseMenuModal`) `AdHost` parametresi almiyor ve
-                        // almalari `GameScreen.kt` icindeki cagri yerlerini
-                        // degistirmeyi gerektirirdi. Saglayici olmadan ayarlar
-                        // ekrani `NoOpAdHost` gorur ve "Gizlilik Secenekleri"
-                        // satiri hic cizilmez — yani bu saglayici, UMP satirinin
-                        // CALISMASININ sarti.
-                        CompositionLocalProvider(LocalAdHost provides adHost) {
-                            GameScreen(adHost = adHost)
-                        }
+                        GameScreen()
                     }
                     }
                 }
@@ -226,8 +167,7 @@ class MainActivity : ComponentActivity() {
      * kaybedip geri aldiginda sistem cubuklari GERI GELIR. Bu oyunda odagin
      * kaybedildigi yer istisna degil KURAL:
      *
-     *   - her odullu/gecis reklami (tam ekran, ayri Activity),
-     *   - UMP riza formu,
+     *   - Play Billing satin alma ekrani (ayri Activity),
      *   - bildirim panelini acip kapatma,
      *   - uygulama degistirip geri donme.
      *
@@ -236,7 +176,7 @@ class MainActivity : ComponentActivity() {
      * yok" hatasinin odak-olayli akrabasi.
      *
      * `hasFocus` kapisi bilincli: odak YOKKEN gizlemeye calismak (ornegin
-     * reklam onde iken) reklamin kendi pencere ayarlariyla yarisir.
+     * satin alma ekrani onde iken) o ekranin kendi pencere ayarlariyla yarisir.
      */
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
@@ -248,10 +188,4 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onDestroy() {
-        // Bekleyen timeout handler'lari ve on-yuklenmis reklam referanslari
-        // birakilir; aksi halde Activity sizar.
-        adHost.dispose()
-        super.onDestroy()
-    }
 }

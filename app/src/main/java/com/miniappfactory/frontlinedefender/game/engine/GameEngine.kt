@@ -1195,19 +1195,19 @@ class GameEngine(
     }
 
     /**
-     * Faz 13 — R2 TAKVIYE: yenilgiden cikip savasi **kaldigi dalgadan** surdurur.
+     * DEVAM (eski R2 "Takviye"; 2026-09-30'dan beri COIN karsiligi, reklamsiz): yenilgiden cikip
+     * savasi **kaldigi dalgadan** surdurur. Tek motor ayagi budur; bedeli ekonomi tarafi
+     * (`CampaignProgressImpl.continueAfterDefeat`) YALNIZCA bu metot `> 0` dondururse keser.
      *
-     * Bu API eksikti ve `AdRewardBridge.reinforcementSupported` tam da bu yuzden
-     * `false` idi: DEFEAT terminaldi, disari cikan tek yol `startNewGame()` yani
-     * savasi BASTAN baslatmakti. "Reklam izle, savasa devam et" teklifi ancak
-     * gercek bir devam varsa mesrudur.
+     * DEFEAT terminaldir; disari cikan diger yol `startNewGame()` yani savasi BASTAN baslatmaktir
+     * (ucretsiz). "Devam" ancak gercek bir devamsa mesrudur.
      *
      * ## Ne yapar
      * 1. Us cani [lives] degerine getirilir ([maxLives] tavaniyla kirpilir).
      * 2. **Sahadaki dusmanlar ve mermiler temizlenir.** Bu sart: yenilgi ani,
      *    ussun dibinde birden fazla dusmanin oldugu andir; temizlemeden devam
-     *    edilirse takviye ilk saniyede tukenir ve oyuncu reklami bosa izlemis
-     *    olur — "calismayan odul"un ta kendisi.
+     *    edilirse takviye ilk saniyede tukenir ve oyuncu coin'ini bosa harcamis
+     *    olur — "calismayan satin alma"nin ta kendisi.
      * 3. Kaldigi dalga BASTAN kurulur ve oyun PREPARATION'a doner: oyuncu
      *    savunmasini duzeltmek icin hazirlik suresi bulur.
      * 4. **Kuleler, Tedarik ve skor KORUNUR** — oyuncunun o ana kadarki
@@ -1216,8 +1216,8 @@ class GameEngine(
      *
      * ## Ne YAPMAZ
      * - [_battleEpoch] ARTMAZ: bu ayni savasin devamidir, yeni savas degil.
-     *   Artsaydi savas-basi sayaclar (guclendirici haklari, rewarded savas
-     *   hakki) sifirlanir ve sinirsiz takviye acilirdi.
+     *   Artsaydi savas-basi sayaclar (guclendirici haklari, savasa kapsamli
+     *   devam sayaci) sifirlanir ve sinirsiz takviye acilirdi.
      * - Yildiza dokunmaz. Geri verilen can ekonomi tarafinda yildiz hesabindan
      *   dusulur (`CampaignProgressImpl.noteReinforcement`), yani takviye
      *   hayatta kalma satin alir; yildiz ve coin ASLA.
@@ -1584,13 +1584,8 @@ class GameEngine(
         // cagiran taraf `activateBooster`i bu kontrolden GECTIKTEN sonra
         // cagirmalidir.
         //
-        // !!! REWARDED REKLAM TUZAGI (UI tarafinin cozmesi gereken dikis) !!!
-        // Rewarded reklam acilinca ON_PAUSE -> `pauseForLifecycle()` -> PAUSED
-        // gelir ve oyun BILINCLI olarak PAUSED kalir (GameScreen: "oyuncu devam
-        // tusuna kendi basar"). Reklam odulu callback'inde dogrudan buraya
-        // gelinirse durum hala PAUSED'dir, `false` doner ve oyuncu reklami
-        // izleyip HICBIR SEY alamaz. Odul akisi ya once oyunu devam ettirmeli
-        // ya da aktivasyonu oyun devam edene kadar bekletmelidir.
+        // Reddedilirse (`false`) cagiran, harcanan coin'i `CampaignProgressImpl.undoBooster` ile
+        // GERI ALIR (yalniz senkron; bkz. BoosterRail) — oyuncu coin verip etki almamis olmaz.
         if (!acceptsBattlefieldInput()) return false
         if (!activation.applied) return false
 

@@ -34,8 +34,6 @@ class SaveManagerEconomyTest {
         assertTrue(wallet.clearedLevels.isEmpty())
         assertEquals(0, wallet.starsOf(1))
         assertEquals(MetaUpgrades(), save.loadMetaUpgrades())
-        assertEquals(RequisitionState(), save.loadRequisitionState())
-        assertEquals(0, save.boostedReplaysUsedToday)
         assertTrue(save.soundEnabled)
         assertEquals(EconomyConfig.SAVE_VERSION, save.saveVersion)
     }
@@ -178,7 +176,7 @@ class SaveManagerEconomyTest {
         store.putRaw("eco_upg_firepower", 99)
         store.putRaw("eco_upg_salvage", -3)
         store.putRaw("level_stars_1", 17)
-        store.putRaw("eco_r1_coins_paid_today", 999_999)
+        store.putRaw("eco_rerolls_used_today", 999_999) // eski eco_r1_* sayaci yerine (reklam kalkti)
         store.putRaw("eco_reward_multiplier_pct", 4_000)
 
         val save = manager(store)
@@ -191,8 +189,8 @@ class SaveManagerEconomyTest {
         assertEquals(0, upgrades.salvage)
 
         assertEquals(
-            EconomyConfig.R1_COIN_BUDGET_PER_DAY,
-            save.loadRequisitionState().coinsPaidToday,
+            EconomyConfig.DAILY_REROLLS_PER_DAY,
+            save.loadMissionState().rerollsUsedToday,
         )
         assertEquals(1.0, save.loadMissionState().rewardMultiplier, 1e-9)
     }
@@ -322,13 +320,17 @@ class SaveManagerEconomyTest {
         val save = manager(store)
         save.saveWallet(PlayerWallet(coins = 900, unlockedLevels = (1..9).toSet(), clearedLevels = (1..8).toSet()))
         save.saveMetaUpgrades(MetaUpgrades(firepower = 3))
-        save.saveRequisitionState(RequisitionState(filledViewsToday = 3, coinsPaidToday = 450))
-        save.boostedReplaysUsedToday = 3
+        // 2026-09-30: reklam sayaclari (requisition/boostedReplays/eco_r1_*) kalkti; gunluk
+        // sayaclar artik yenileme hakki ve gunluk gorev ilerlemesidir.
+        store.putRaw("eco_rerolls_used_today", EconomyConfig.DAILY_REROLLS_PER_DAY)
+        store.putRaw("eco_daily_progress", "d_v_kill120:57:0")
+        assertEquals(EconomyConfig.DAILY_REROLLS_PER_DAY, save.loadMissionState().rerollsUsedToday)
+        assertEquals(mapOf("d_v_kill120" to 57), save.loadDailyProgress())
 
         save.resetDailyCounters()
 
-        assertEquals(RequisitionState(), save.loadRequisitionState())
-        assertEquals(0, save.boostedReplaysUsedToday)
+        assertEquals("gunluk yenileme hakki sifirlanir", 0, save.loadMissionState().rerollsUsedToday)
+        assertTrue("gunluk gorev ilerlemesi sifirlanir", save.loadDailyProgress().isEmpty())
         assertEquals("coin ETKILENMEZ", 900, save.loadWallet().coins)
         assertEquals("yukseltme ETKILENMEZ", 3, save.loadMetaUpgrades().firepower)
         assertEquals("kilit durumu ETKILENMEZ", (1..9).toSet(), save.loadWallet().unlockedLevels)

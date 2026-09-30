@@ -2,9 +2,12 @@ package com.miniappfactory.frontlinedefender.game.billing
 
 import android.app.Activity
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import com.android.billingclient.api.AcknowledgePurchaseParams
 import com.android.billingclient.api.BillingClient
+import com.android.billingclient.api.BillingClient.BillingResponseCode
 import com.android.billingclient.api.BillingClientStateListener
 import com.android.billingclient.api.BillingFlowParams
 import com.android.billingclient.api.BillingResult
@@ -16,77 +19,104 @@ import com.android.billingclient.api.PurchasesUpdatedListener
 import com.android.billingclient.api.QueryProductDetailsParams
 import com.android.billingclient.api.QueryPurchasesParams
 import com.miniappfactory.frontlinedefender.game.economy.StoreCatalog
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 
 /**
- * PLAY BILLING KOPRUSU — coin paketleri ve "Reklamlari Kaldir" (2026-09-02).
+ * PLAY BILLING KOPRUSU — coin paketleri (2026-09-02; dayaniklilik yeniden yazimi 2026-09-30).
  *
- * Kron-Drive'daki `billing/BillingManager` ile AYNI desen (oradaki 2026-09-01
- * `refresh()` duzeltmesi dahil): Android'e bagli her sey burada, karar/veri
- * tarafi saf Kotlin'de ([StoreCatalog]). Boylece paket dengesi JVM testiyle
- * kilitlenir.
+ * Android'e bagli olan HER SEY burada (SDK cagrilari, yasam dongusu); KARAR ve
+ * DEFTER tarafi saf Kotlin'de: [PurchasePolicy]/[PurchaseFulfiller] (ne yapilir),
+ * `SaveManager.fulfillPurchase` (kalici defter), [StoreSession] (baglanti/urun
+ * durumu). Boylece butun odeme matrisi JVM testiyle kilitlenir.
  *
- * ## DEGISMEZ KURALLAR
+ * ## DEGISMEZ KURALLAR (ayrintisi [PurchasePolicy]de)
  *
- * 1. **Coin ONCE yazilir, `consume` SONRA.** Tersi olursa tuketilmis ama
- *    yazilmamis bir satin alma KALICI olarak kaybolur — Play onu bir daha
- *    vermez.
- *
- *    ⚠ Bu kuralin eski son cumlesi ("tuketim yalnizca [onCoinsPurchased]
- *    `true` dondugunde yapilir") KODLA CELISIYORDU ve kod hakliydi: `consume`
- *    DONUS DEGERINE BAKILMADAN cagrilir. Sebep, yazimin basarisiz olmasi
- *    degil — `false` "zaten odenmis" demektir ve o durumda onceki oturumda
- *    YARIM KALMIS bir `consumeAsync` olabilir. Kosulsuz yeniden tuketim, o
- *    satin almayi tamamlayip urunu yeniden satin alinabilir yapan TEK yoldur;
- *    kosula baglamak, jetonu sonsuza kadar tuketilmemis birakirdi.
- *
- *    Yani sira garantisi ("once yaz, sonra tuket") GECERLI; tuketimin
- *    kosullu oldugu iddiasi YANLISTI.
- * 2. **Idempotenlik cagiranin isi.** `queryPurchasesAsync` her acilista
- *    tuketilmemis satin almalari yeniden getirir; ayni jetonun iki kez
- *    odenmesini engelleyen kayit `SaveManager.grantPurchasedCoins`tadir.
- * 3. **PENDING yutulmaz.** Turkiye'de nakit/havale odemeleri `PENDING` gelir.
- *    Ele alinmazsa oyuncu oder ve hicbir sey almaz; bu durumda satin alma
- *    SONRA `PURCHASED`a doner ve o anda odenir.
- * 4. **Tuketilmeyen urun `acknowledge` edilmeli.** Uc gun icinde
- *    onaylanmayan satin almayi Play OTOMATIK iade eder.
- * 5. **Fiyat metni koda yazilmaz.** Ekrandaki her fiyat
- *    `ProductDetails.oneTimePurchaseOfferDetails.formattedPrice`tan gelir.
+ * 1. **Coin ONCE dayanikli yazilir, `consume` SONRA** — ve `consume` YALNIZCA
+ *    dayanikli `Granted` ya da ESLESEN `AlreadyGranted` sonrasi. Eski surum geri
+ *    cagri `false` dondugunde "zaten odenmis" sayip kosulsuz tuketiyordu; `false`
+ *    ayni zamanda "yazamadim" demek olabildigi icin bu, odenmemis + tuketilmis =
+ *    kalici kayip demekti.
+ * 2. **PENDING yutulmaz, odenmez, tuketilmez, onaylanmaz.** `PURCHASED` olunca
+ *    ayni jeton ON_RESUME/baglanti/elle kontrolle yeniden gelir.
+ * 3. **Bilinmeyen urun id'si loglanir; asla odenmez/tuketilmez/onaylanmaz.**
+ * 4. **Eski `coins_*` id'leri ESKI miktarla odenir; eski `remove_ads` yalnizca
+ *    onaylanir** (Play onaylanmayan satin almayi 3 gun sonra otomatik iade eder).
+ * 5. **Fiyat metni koda yazilmaz.** Ekrandaki her fiyat `ProductDetails`in
+ *    `formattedPrice`indan gelir.
+ * 6. **`restorePurchases` ASLA `iap_remove_ads = false` yazmaz.** Play "bu urunu
+ *    gormuyorum" dediginde bunun iade mi, cevrimdisi mi, baska hesap mi oldugu
+ *    ayirt edilemez; eski alicinin yapiskan isareti silinmez.
+ * 7. **Coin paketleri Play'den "geri yuklenemez"**: tuketildikten sonra Play'de
+ *    gorunmezler. "Geri yukle" yalnizca ODENMIS ama TESLIM EDILMEMIS (yarim kalan)
+ *    satin almalari bulur; ekran metni bunu vaat etmemeli.
  *
  * ## Sunucusuz dogrulama
  *
- * Bu oyunun sunucusu ve hesabi yok. Jeton dogrulamasi (Play Developer API)
- * backend ister; yok. Yalnizca `BillingClient`in dondurdugune guveniriz. Kabul
- * edilebilir: coin bakiyesi ZATEN yerel (`SharedPreferences`) ve rootlu cihazda
- * bugun de duzenlenebilir — sunucu dogrulamasi bugun korunmayan bir seyi
- * korumuyor olurdu.
+ * Bu oyunun sunucusu ve hesabi yok; jeton dogrulamasi (Play Developer API)
+ * backend ister. Yalnizca `BillingClient`in dondurduguna guveniriz. Coin bakiyesi
+ * zaten yerel ve rootlu cihazda duzenlenebilir — sunucu dogrulamasi bugun
+ * korunmayan bir seyi korumuyor olurdu.
  *
  * ## Nerede yasar
  *
  * FD'de ViewModel yok; `GameScreen` bunu `remember` ile kurar, `ON_RESUME`da
- * [refresh] cagirir ve `DisposableEffect` ile [endConnection] eder.
+ * [refresh] cagirir ve `DisposableEffect` ile [endConnection] eder. Play geri
+ * cagrilari ana is parcaciginda gelir; defter yazimi (`commit()`) da orada
+ * kosar (kucuk dosya, ms).
+ *
+ * ## Dogrulanmadi
+ *
+ * Bu sinifin SDK'ya bagli kismi (baglanti, `launchBillingFlow`, `consumeAsync`)
+ * JVM'de sinanamaz ve gercek Play'e/cihaza KARSI CALISTIRILMADI. Karar/defter
+ * mantigi (PurchasePolicy, PurchaseFulfiller, PurchaseGrantLedger, StoreSession)
+ * JVM testleriyle kilitlidir.
  */
 class BillingManager(
     context: Context,
     /**
-     * Coin yazimi. **`true` = yazildi.** Ayni jeton daha once odenmisse `false`
-     * donmeli — ama `false` tuketimi ENGELLEMEZ (gerekce: sinif belgesi kural 1).
+     * Dayanikli coin yazimi: **acik sonuc** ([GrantResult]). `Boolean` DEGIL — `false`
+     * hem "zaten odenmis" hem "yazilamadi" demek olabiliyordu. `GameScreen` bunu
+     * `SaveManager.fulfillPurchase` uzerinden kurar ve `Granted` sonrasi cuzdan
+     * sahibini yeniler.
      */
-    private val onCoinsPurchased: (purchaseToken: String, coins: Int) -> Boolean,
-    /** "Reklamlari Kaldir" hakkinin son durumu — her kontrolde yazilir. */
-    private val onRemoveAdsChanged: (purchased: Boolean) -> Unit,
+    private val grantPurchase: (PurchaseGrantRequest) -> GrantResult,
+    /**
+     * ESKI "Reklamlari Kaldir" satin alimi goruldugunde `true` ile cagrilir. **`false`
+     * ile ASLA cagrilmaz** (yapiskan eski-alici isareti). Reklamlar kalktiysa cagiran
+     * bunu yok sayabilir.
+     */
+    private val onRemoveAdsChanged: (purchased: Boolean) -> Unit = {},
 ) {
 
-    /** Baglanti ayakta mi — magaza ekrani "baglaniyor" yazisi icin okur. */
+    private val session = StoreSession()
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    @Volatile
+    private var closed = false
+
+    /** Baglanti durumu: CONNECTING / READY / UNAVAILABLE. */
+    val connection: StateFlow<StoreConnection> = session.connection
+
+    /** Urun detaylarinin durumu: LOADING / LOADED / FAILED. */
+    val productsState: StateFlow<ProductsState> = session.productsState
+
+    /** Baglanti kurulamadiysa tanilama metni (yerellestirilmez; UI [FailureReason] metnini kullanir). */
+    val unavailableReason: StateFlow<String?> = session.unavailableReason
+
+    /** Baglanti ayakta mi — eski ekranlar bunu okur. `connection == READY` ile aynidir. */
     private val _ready = MutableStateFlow(false)
     val ready: StateFlow<Boolean> = _ready.asStateFlow()
 
     /**
-     * Urun id -> Play'den gelen detay (onemlisi `formattedPrice`). Bos olmasi
-     * NORMAL: urunler Play Console'da henuz olusturulmamis olabilir; magaza
-     * ekrani o satira "su an satin alinamiyor" yazar, satiri GIZLEMEZ.
+     * Urun id -> Play'den gelen detay (onemlisi `formattedPrice`). YALNIZCA satistaki urunler.
+     * Eksik satir NORMAL olabilir (Console'da henuz olusturulmamis); ekran o satira
+     * "su an satin alinamiyor" yazar, satiri GIZLEMEZ.
      */
     private val _products = MutableStateFlow<Map<String, ProductDetails>>(emptyMap())
     val products: StateFlow<Map<String, ProductDetails>> = _products.asStateFlow()
@@ -95,89 +125,183 @@ class BillingManager(
     private val _purchaseInFlight = MutableStateFlow(false)
     val purchaseInFlight: StateFlow<Boolean> = _purchaseInFlight.asStateFlow()
 
-    /** Elle baslatilan "satin almalari geri yukle" isleminin son durumu. */
+    /**
+     * Play'in son sorguda PENDING (odeme tamamlanmamis, ornegin nakit/havale) bildirdigi satin
+     * alma sayisi. > 0 iken ekran "odeme onaylaninca coin otomatik gelir" notu gosterebilir.
+     */
+    private val _pendingCount = MutableStateFlow(0)
+    val pendingCount: StateFlow<Int> = _pendingCount.asStateFlow()
+
+    /** Elle baslatilan "satin almalari kontrol et" isleminin son durumu. */
     enum class RestoreState { IDLE, RUNNING, DONE, FAILED }
 
     private val _restoreState = MutableStateFlow(RestoreState.IDLE)
     val restoreState: StateFlow<RestoreState> = _restoreState.asStateFlow()
 
     /**
-     * Baglanti kurulmadan once dokunulmus "satin almalari geri yukle" istegi.
-     * Baglanti kurulunca kosar, baglanti basarisiz olursa `FAILED` olur.
+     * Tek seferlik olaylar (Granted / Pending / Cancelled / Failed / AlreadyCredited). Kanal
+     * TAMPONLU: magaza ekrani kapaliyken gelen olay (ornegin arka planda tamamlanan odeme) ekran
+     * acilinca bir kez gosterilir, sessizce KAYBOLMAZ. Tek toplayici varsayilir.
+     */
+    private val eventChannel = Channel<StoreEvent>(capacity = 16, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    val events: Flow<StoreEvent> = eventChannel.receiveAsFlow()
+
+    /**
+     * Baglanti kurulmadan once dokunulmus "kontrol et" istegi. Baglanti kurulunca kosar,
+     * baglanti basarisiz olursa `FAILED` olur.
      */
     private var pendingManualRestore = false
 
     private val purchasesUpdatedListener = PurchasesUpdatedListener { result, purchases ->
         _purchaseInFlight.value = false
         when (result.responseCode) {
-            BillingClient.BillingResponseCode.OK ->
-                purchases?.forEach { handlePurchase(it) }
+            BillingResponseCode.OK -> handleInfos(
+                infos = purchases.orEmpty().map { it.toInfo() },
+                announce = true,
+                fullQuery = false,
+                fulfiller = fulfiller,
+            )
 
-            // Kullanici vazgecti — hata degil, sessizce gecilir.
-            BillingClient.BillingResponseCode.USER_CANCELED -> Unit
+            // Kullanici vazgecti — hata degil.
+            BillingResponseCode.USER_CANCELED -> emit(StoreEvent.Cancelled)
 
-            else -> Log.w(TAG, "Satin alma basarisiz: ${result.debugMessage}")
+            // Bu tuketilebilir urunun onceki alimi TUKETILMEMIS: kurtar (odenmemisse ode, tuket).
+            BillingResponseCode.ITEM_ALREADY_OWNED -> recover(announce = true, manual = false)
+
+            else -> {
+                Log.w(TAG, "Satin alma basarisiz: ${describe(result)}")
+                emit(StoreEvent.Failed(reasonOf(result), describe(result)))
+            }
         }
     }
 
     private val client: BillingClient = BillingClient.newBuilder(context.applicationContext)
         .setListener(purchasesUpdatedListener)
-        // Bekleyen satin almalar ACIKCA etkin. Billing 6+'da bu bayrak olmadan
-        // `PENDING` hic gelmez ve nakit/havale ile odeyen oyuncu parasini verip
-        // hicbir sey almaz.
+        // Bekleyen satin almalar ACIKCA etkin. Billing 6+'da bu bayrak olmadan `PENDING` hic
+        // gelmez ve nakit/havale ile odeyen oyuncu parasini verip hicbir sey almaz.
         .enablePendingPurchases(
             PendingPurchasesParams.newBuilder().enableOneTimeProducts().build()
         )
         .build()
 
+    /** Gercek Play'e tuketme/onay gonderen uygulayici. */
+    private val realFinisher = object : PurchaseFinisher {
+        override fun consume(purchaseToken: String, onResult: (ConsumeResult) -> Unit) {
+            client.consumeAsync(
+                ConsumeParams.newBuilder().setPurchaseToken(purchaseToken).build()
+            ) { result, _ ->
+                onResult(
+                    when (result.responseCode) {
+                        BillingResponseCode.OK -> ConsumeResult.CONSUMED
+                        BillingResponseCode.ITEM_NOT_OWNED -> ConsumeResult.ALREADY_CONSUMED
+                        else -> {
+                            Log.w(TAG, "Tuketilemedi: ${describe(result)}")
+                            ConsumeResult.FAILED
+                        }
+                    }
+                )
+            }
+        }
+
+        override fun acknowledge(purchaseToken: String, onResult: (AcknowledgeResult) -> Unit) {
+            client.acknowledgePurchase(
+                AcknowledgePurchaseParams.newBuilder().setPurchaseToken(purchaseToken).build()
+            ) { result ->
+                onResult(
+                    if (result.responseCode == BillingResponseCode.OK) {
+                        AcknowledgeResult.ACKNOWLEDGED
+                    } else {
+                        Log.w(TAG, "Onaylanamadi (3 gun icinde iade riski): ${describe(result)}")
+                        AcknowledgeResult.FAILED
+                    }
+                )
+            }
+        }
+    }
+
+    private val fulfiller = PurchaseFulfiller(
+        grants = PurchaseGrantPort { grantPurchase(it) },
+        finisher = realFinisher,
+        log = { Log.i(TAG, it) },
+    )
+
+    // ---------------------------------------------------------------- baglanti
+
     /**
-     * Baglantiyi kurar, duserse SINIRLI sayida yeniden dener. Sinirsiz dongu
-     * pil yakar; Play Store guncellenirken baglanti duser ve yeniden
-     * baglanmayan bir istemci magazayi oturum boyunca olu birakir.
+     * Baglantiyi kurar. **Tek ucus:** zaten yoldaysa ikinci `startConnection` BASLATILMAZ
+     * (soguk acilista `GameScreen` yasam dongusu gozlemcisi + acik `connect()` iki kez cagirir).
+     * Duserse SINIRLI sayida ustel geri cekilmeyle yeniden dener.
      */
-    fun connect(attempt: Int = 0) {
+    fun connect() {
+        if (closed) return
         if (client.isReady) {
-            _ready.value = true
+            markReady()
             return
         }
+        if (!session.beginConnect()) return
+        _ready.value = false
         client.startConnection(object : BillingClientStateListener {
             override fun onBillingSetupFinished(result: BillingResult) {
-                if (result.responseCode == BillingClient.BillingResponseCode.OK) {
-                    _ready.value = true
-                    queryProducts()
-                    // Baglanti kurulmadan once dokunulmus "geri yukle" varsa
-                    // ISTEK SIMDI KOSAR ve sonucu oyuncuya bildirilir.
-                    if (pendingManualRestore) {
-                        pendingManualRestore = false
-                        restorePurchases(manuel = true)
-                        return
-                    }
-                    // HER BAGLANTIDA: yarim kalan satin almalari tamamlar ve
-                    // "Reklamlari Kaldir" hakkini geri yukler. Bu cagri olmadan
-                    // "param gitti, urun gelmedi" destek talebi kacinilmaz.
-                    restorePurchases()
+                if (closed) return
+                if (result.responseCode == BillingResponseCode.OK) {
+                    markReady()
+                    ensureProducts()
+                    // Baglanti kurulmadan once dokunulmus elle istek varsa SIMDI kosar.
+                    val manual = pendingManualRestore
+                    pendingManualRestore = false
+                    // HER BAGLANTIDA: yarim kalan satin almalari tamamlar. Bu cagri olmadan
+                    // "param gitti, coin gelmedi" destek talebi kacinilmaz.
+                    recover(announce = manual, manual = manual)
                 } else {
                     _ready.value = false
-                    // Baglantinin KENDISI basarisiz: bekleyen elle istek artik
-                    // gercekten basarisizdir ve oyuncuya oyle bildirilir.
+                    session.connectFailed(describe(result))
+                    // Baglantinin KENDISI basarisiz: bekleyen elle istek artik gercekten basarisizdir.
                     if (pendingManualRestore) {
                         pendingManualRestore = false
                         _restoreState.value = RestoreState.FAILED
                     }
-                    Log.w(TAG, "Billing baglanamadi: ${result.debugMessage}")
+                    Log.w(TAG, "Billing baglanamadi: ${describe(result)}")
                 }
             }
 
             override fun onBillingServiceDisconnected() {
+                if (closed) return
                 _ready.value = false
-                if (attempt < MAX_RECONNECT_ATTEMPTS) connect(attempt + 1)
+                val delayMs = session.disconnected()
+                if (delayMs != null) mainHandler.postDelayed({ connect() }, delayMs)
             }
         })
     }
 
+    private fun markReady() {
+        session.connectSucceeded()
+        _ready.value = true
+    }
+
     fun endConnection() {
+        closed = true
+        session.close()
+        mainHandler.removeCallbacksAndMessages(null)
         _ready.value = false
         client.endConnection()
+    }
+
+    // ---------------------------------------------------------------- urunler
+
+    /**
+     * Satistaki urunlerden biri eksikse (bos sonuc, ag hatasi, Console'da eksik urun) VE bir sorgu
+     * yolda degilse yeniden sorar. `refresh()` ve magaza acilisi bunu cagirir; eskiden sorgu yalnizca
+     * ilk baglantida bir kez calisiyor ve basarisiz olursa magaza oturum boyunca bos kaliyordu.
+     */
+    fun ensureProducts() {
+        if (closed) return
+        if (!client.isReady) {
+            connect()
+            return
+        }
+        if (session.connection.value != StoreConnection.READY) markReady()
+        val haveAll = _products.value.keys.containsAll(StoreCatalog.allProductIds)
+        if (session.beginProductQuery(haveAll)) queryProducts()
     }
 
     private fun queryProducts() {
@@ -190,175 +314,247 @@ class BillingManager(
         client.queryProductDetailsAsync(
             QueryProductDetailsParams.newBuilder().setProductList(urunler).build()
         ) { result, queryResult ->
-            if (result.responseCode != BillingClient.BillingResponseCode.OK) {
-                Log.w(TAG, "Urun detaylari alinamadi: ${result.debugMessage}")
+            if (closed) return@queryProductDetailsAsync
+            if (result.responseCode != BillingResponseCode.OK) {
+                Log.w(TAG, "Urun detaylari alinamadi: ${describe(result)}")
+                session.productsFailed()
                 return@queryProductDetailsAsync
             }
-            // Billing 8: callback duz liste degil `QueryProductDetailsResult`
-            // doner. Bulunamayan urunler `unfetchedProductList`te gelir — Play
-            // Console'da henuz olusturulmamis urun icin NORMAL durum.
-            _products.value = queryResult.productDetailsList.associateBy { it.productId }
+            // Billing 8: bulunamayan urunler `unfetchedProductList`te gelir — Play Console'da henuz
+            // olusturulmamis urun icin NORMAL durum. Yalnizca SATISTAKI id'ler alinir.
+            _products.value = queryResult.productDetailsList
+                .filter { it.productId in StoreCatalog.allProductIds }
+                .associateBy { it.productId }
+            session.productsLoaded()
         }
     }
 
+    // ---------------------------------------------------------------- kurtarma / yenileme
+
     /**
-     * Play'deki mevcut satin almalari okur. Iki isi var, ikisi de kritik:
-     *  1. **Yarim kalanlari tamamlar** — coin yazilmis ama tuketilmemis, ya da
-     *     hic yazilmamis satin almalar burada ele alinir.
-     *  2. **"Reklamlari Kaldir" hakkini geri yukler** — tuketilmeyen urun
-     *     oldugu icin cihaz degisse de Play'den geri gelir. (Coin paketleri
-     *     GELMEZ: tuketildikten sonra Play'de gorunmezler.)
+     * Play'deki mevcut satin almalari okur ve **yarim kalanlari tamamlar** (odenmis ama
+     * tuketilmemis, ya da hic yazilmamis; arka planda tamamlanan PENDING dahil).
+     *
+     * ⚠ Coin paketleri Play'den "GERI YUKLENMEZ": tuketildikten sonra Play'de gorunmezler. Bu
+     * cagri yalnizca teslim edilmemis satin almalari bulur. Ayrica ESKI `remove_ads`i onaylar ve
+     * yapiskan isareti `true` yapar; **`false` ASLA yazilmaz** (bkz. sinif belgesi kural 6).
+     *
+     * @param manuel oyuncu elle istedi: durum [restoreState]e yazilir, sonuclar olay olarak bildirilir.
      */
-    fun restorePurchases(manuel: Boolean = false) {
+    fun restorePurchases(manuel: Boolean = false) = recover(announce = manuel, manual = manuel)
+
+    private fun recover(announce: Boolean, manual: Boolean) {
+        if (closed) return
         if (!client.isReady) {
-            // ⚠ ESKIDEN BURADA DOGRUDAN `FAILED` YAZILIYORDU ve durum KILITLENIYORDU.
-            //
-            // Oyuncu magazayi acar acmaz "geri yukle"ye dokunursa baglanti henuz
-            // kurulmamis olabilir. Eski kod bunu BASARISIZLIK olarak raporluyordu,
-            // oysa hicbir sey denenmemisti. Daha kotusu, durum temizlenmiyordu:
-            // `BillingManager` `remember(campaignProgress)` ile tutuldugu ve magaza
-            // yalnizca bir `storeOpen` bayragiyla acilip kapandigi icin ekrani
-            // kapatip acmak AYNI StateFlow'u geri okur. `refresh()` de temizleyemez
-            // (o `manuel = false` ile cagirir). Yani hata mesaji, ikinci bir elle
-            // deneme ya da surec olumune kadar ekranda kalirdi — ustelik satin alma
-            // gercekten VARSA ayni ekranda "SATIN ALINDI" rozetiyle CELISEREK.
-            //
-            // Artik dokunus BEKLEMEYE alinir: baglanti kurulunca istek gercekten
-            // kosar ve oyuncu OLAN sonucu gorur.
-            if (manuel) {
+            // Oyuncu magazayi acar acmaz "kontrol et"e dokunursa baglanti henuz kurulmamis olabilir.
+            // Bu BASARISIZLIK degildir (hicbir sey denenmedi): istek BEKLEMEYE alinir, baglanti
+            // kurulunca gercekten kosar ve oyuncu OLAN sonucu gorur.
+            if (manual) {
                 _restoreState.value = RestoreState.RUNNING
                 pendingManualRestore = true
             }
             connect()
             return
         }
-        if (manuel) _restoreState.value = RestoreState.RUNNING
+        if (manual) _restoreState.value = RestoreState.RUNNING
         client.queryPurchasesAsync(
             QueryPurchasesParams.newBuilder()
                 .setProductType(BillingClient.ProductType.INAPP)
                 .build()
         ) { result, purchases ->
-            if (result.responseCode != BillingClient.BillingResponseCode.OK) {
-                // HAK BURADA SILINMEZ. Play "hayir" demedi, "cevap veremiyorum"
-                // dedi (cogunlukla ag yok). Bu dali sessizce `false` yazmaya
-                // baglamak, cevrimdisi bir acilista odenmis hakki silmek olurdu.
-                Log.w(TAG, "Geri yukleme basarisiz: ${result.debugMessage}")
-                if (manuel) _restoreState.value = RestoreState.FAILED
+            if (closed) return@queryPurchasesAsync
+            if (result.responseCode != BillingResponseCode.OK) {
+                // Play "hayir" demedi, "cevap veremiyorum" dedi. Hicbir hak SILINMEZ.
+                Log.w(TAG, "Satin almalar sorgulanamadi: ${describe(result)}")
+                if (manual) _restoreState.value = RestoreState.FAILED
                 return@queryPurchasesAsync
             }
-            val reklamsiz = purchases.any {
-                it.purchaseState == Purchase.PurchaseState.PURCHASED &&
-                    StoreCatalog.PRODUCT_REMOVE_ADS in it.products
-            }
-            onRemoveAdsChanged(reklamsiz)
-            purchases.forEach { handlePurchase(it) }
-            if (manuel) _restoreState.value = RestoreState.DONE
+            handleInfos(
+                infos = purchases.map { it.toInfo() },
+                announce = announce,
+                fullQuery = true,
+                fulfiller = fulfiller,
+            )
+            if (manual) _restoreState.value = RestoreState.DONE
         }
     }
 
     /**
-     * Uygulama on plana gelince cagrilir (`ON_RESUME`).
-     *
-     * Kron-Drive 2026-09-01 dersi: `restorePurchases` yalnizca ILK baglantida
-     * kosuyordu; oyuncu `remove_ads` alip uygulamayi cevrimdisi acarsa hak
-     * yazilamiyor ve surec omru boyunca BIR DAHA DENENMIYORDU — "odedim, hala
-     * reklam goruyorum". Play'in kendi onerisi de bu: her on plana gelmede
-     * satin almalar sorgulanir (arka planda tamamlanan `PENDING` odeme dahil).
+     * Uygulama on plana gelince cagrilir (`ON_RESUME`). Kron-Drive 2026-09-01 dersi: satin almalar
+     * yalnizca ilk baglantida sorgulanirsa cevrimdisi acilista yazilamayan hak ve arka planda
+     * tamamlanan PENDING odeme surec omru boyunca bir daha denenmez. Eksik urunler de yeniden sorulur.
      */
     fun refresh() {
-        if (client.isReady) restorePurchases() else connect()
+        if (closed) return
+        if (client.isReady) {
+            recover(announce = false, manual = false)
+            ensureProducts()
+        } else {
+            connect()
+        }
     }
+
+    // ---------------------------------------------------------------- satin alma akisi
 
     /** Magazadan tek bir urun icin satin alma akisini baslatir. */
     fun launchPurchase(activity: Activity, productId: String) {
-        val details = _products.value[productId] ?: run {
-            Log.w(TAG, "Urun detayi yok, satin alma baslatilamadi: $productId")
+        if (closed) return
+        if (productId !in StoreCatalog.allProductIds) {
+            // Satista olmayan (ornegin eski) urun ASLA baslatilmaz.
+            Log.w(TAG, "Satista olmayan urun istendi: $productId")
+            emit(StoreEvent.Failed(FailureReason.PRODUCT_UNAVAILABLE, "product not on sale: $productId"))
             return
         }
         if (_purchaseInFlight.value) return
-        _purchaseInFlight.value = true
-        val params = BillingFlowParams.newBuilder()
-            .setProductDetailsParamsList(
-                listOf(
-                    BillingFlowParams.ProductDetailsParams.newBuilder()
-                        .setProductDetails(details)
-                        .build()
-                )
-            )
-            .build()
-        val result = client.launchBillingFlow(activity, params)
-        if (result.responseCode != BillingClient.BillingResponseCode.OK) {
-            _purchaseInFlight.value = false
-            Log.w(TAG, "Satin alma akisi acilamadi: ${result.debugMessage}")
-        }
-    }
-
-    /**
-     * Tek bir satin almayi isler.
-     *
-     * `PENDING` satin alma RAHAT BIRAKILIR, hata sayilmaz: kullanici odemeyi
-     * tamamlayinca durum `PURCHASED` olur ve bir sonraki [restorePurchases]te
-     * odenir.
-     */
-    private fun handlePurchase(purchase: Purchase) {
-        if (purchase.purchaseState != Purchase.PurchaseState.PURCHASED) return
-
-        val pack = purchase.products.firstNotNullOfOrNull { StoreCatalog.packOf(it) }
-        if (pack != null) {
-            // ⚠ ADET (quantity) HESABA KATILIR.
-            //
-            // Play Console'da "cok adetli satin almaya izin ver" tek seferlik
-            // urunlerde VARSAYILAN OLARAK KAPALI, yani bugun her `Purchase`
-            // quantity = 1 ile gelir ve odeme dogrudur. Ama bu, ISTEMCININ
-            // ZORLAYAMADIGI bir Console ayarina bagli sessiz bir tuzak: o
-            // anahtar bir gun acilirsa Play TEK bir `Purchase` icinde N adet
-            // ve TEK jeton dondurur. Sabit `pack.coins` odemek, oyuncunun N
-            // paket parasi odeyip 1 paket almasi olurdu — ve jeton
-            // `iap_granted_tokens`e yazildigi icin fark KALICI olarak kaybolur,
-            // idempotenlik korumasi da telafiyi imkansiz kilardi.
-            //
-            // Jeton hala TEK idempotenlik anahtaridir; degisen yalnizca miktar.
-            val adet = purchase.quantity.coerceAtLeast(1)
-            // TUKETILEN: once yaz, sonra tuket (kural 1). `yazildi == false` ise
-            // jeton zaten odenmis ama tuketim yarim kalmis olabilir — urunun
-            // yeniden satin alinabilir olmasi icin yine tuketilir.
-            val yazildi = onCoinsPurchased(purchase.purchaseToken, pack.coins * adet)
-            if (!yazildi) Log.i(TAG, "Jeton zaten odenmis, yalnizca tuketiliyor: ${pack.id}")
-            consume(purchase)
+        if (!client.isReady) {
+            emit(StoreEvent.Failed(FailureReason.NOT_READY, "not connected to Google Play"))
+            connect()
             return
         }
+        val details = _products.value[productId]
+        if (details == null) {
+            Log.w(TAG, "Urun detayi yok, satin alma baslatilamadi: $productId")
+            emit(StoreEvent.Failed(FailureReason.PRODUCT_UNAVAILABLE, "no product details for $productId"))
+            ensureProducts()
+            return
+        }
+        _purchaseInFlight.value = true
+        val productParams = BillingFlowParams.ProductDetailsParams.newBuilder().setProductDetails(details)
+        // Billing 8: tek seferlik urunlerde secilen teklifin jetonu (varsa) verilmeli.
+        details.oneTimePurchaseOfferDetailsList?.firstOrNull()?.offerToken?.let { productParams.setOfferToken(it) }
+        val params = BillingFlowParams.newBuilder()
+            .setProductDetailsParamsList(listOf(productParams.build()))
+            .build()
+        val result = client.launchBillingFlow(activity, params)
+        when (result.responseCode) {
+            BillingResponseCode.OK -> Unit
+            BillingResponseCode.ITEM_ALREADY_OWNED -> {
+                _purchaseInFlight.value = false
+                recover(announce = true, manual = false)
+            }
 
-        if (StoreCatalog.PRODUCT_REMOVE_ADS in purchase.products) {
-            // TUKETILMEYEN: tuketilmez, yalnizca onaylanir (kural 4).
-            onRemoveAdsChanged(true)
-            if (!purchase.isAcknowledged) {
-                client.acknowledgePurchase(
-                    AcknowledgePurchaseParams.newBuilder()
-                        .setPurchaseToken(purchase.purchaseToken)
-                        .build()
-                ) { result ->
-                    if (result.responseCode != BillingClient.BillingResponseCode.OK) {
-                        Log.w(TAG, "Onaylanamadi (3 gun icinde iade riski): ${result.debugMessage}")
-                    }
-                }
+            else -> {
+                _purchaseInFlight.value = false
+                Log.w(TAG, "Satin alma akisi acilamadi: ${describe(result)}")
+                emit(StoreEvent.Failed(reasonOf(result), describe(result)))
             }
         }
     }
 
-    private fun consume(purchase: Purchase) {
-        client.consumeAsync(
-            ConsumeParams.newBuilder().setPurchaseToken(purchase.purchaseToken).build()
-        ) { result, _ ->
-            if (result.responseCode != BillingClient.BillingResponseCode.OK) {
-                Log.w(TAG, "Tuketilemedi: ${result.debugMessage}")
+    // ---------------------------------------------------------------- isleme
+
+    /**
+     * Bir grup satin almayi [fulfiller]a verir ve sonuclari olaya cevirir.
+     *
+     * @param announce true = kullanici akisi (ya da elle/ITEM_ALREADY_OWNED kurtarma): tekrar gelen
+     *   jeton, PENDING, bilinmeyen/reddedilen bildirilir. false = sessiz arka plan yenilemesi; yine
+     *   de `Granted` (odeme arkadan tamamlandi) ve `SAVE_FAILED` (oyuncu para odedi, coin YAZILAMADI)
+     *   HER ZAMAN bildirilir.
+     * @param fullQuery true = `queryPurchasesAsync`in tam listesi: PENDING sayaci bundan guncellenir.
+     */
+    private fun handleInfos(
+        infos: List<PurchaseInfo>,
+        announce: Boolean,
+        fullQuery: Boolean,
+        fulfiller: PurchaseFulfiller,
+    ) {
+        var pending = 0
+        for (info in infos) {
+            try {
+                when (val outcome = fulfiller.process(info)) {
+                    is FulfillmentOutcome.Granted ->
+                        emit(StoreEvent.Granted(outcome.productId, outcome.coins, outcome.legacy))
+
+                    is FulfillmentOutcome.AlreadyCredited ->
+                        if (announce) emit(StoreEvent.AlreadyCredited(outcome.productId))
+
+                    is FulfillmentOutcome.Pending -> {
+                        pending++
+                        if (announce) emit(StoreEvent.Pending(outcome.productId))
+                    }
+
+                    is FulfillmentOutcome.LegacyRemoveAds -> onRemoveAdsChanged(true)
+
+                    is FulfillmentOutcome.Unknown ->
+                        if (announce) emit(StoreEvent.Failed(FailureReason.UNKNOWN_ITEM, outcome.reason))
+
+                    is FulfillmentOutcome.Rejected ->
+                        if (announce) emit(StoreEvent.Failed(FailureReason.REJECTED, outcome.reason))
+
+                    is FulfillmentOutcome.PersistFailed ->
+                        emit(StoreEvent.Failed(FailureReason.SAVE_FAILED, outcome.reason))
+                }
+            } catch (e: Exception) {
+                // Bir satin alimin isleme hatasi digerlerini ya da uygulamayi DUSURMEZ; tuketilmemis kalir.
+                Log.w(TAG, "Satin alma islenirken hata, tuketilmedi: ${e.javaClass.simpleName}: ${e.message}")
             }
         }
+        if (fullQuery) _pendingCount.value = pending
+    }
+
+    private fun emit(event: StoreEvent) {
+        eventChannel.trySend(event)
+    }
+
+    private fun Purchase.toInfo(): PurchaseInfo = PurchaseInfo(
+        productIds = products,
+        purchaseToken = purchaseToken,
+        state = when (purchaseState) {
+            Purchase.PurchaseState.PURCHASED -> PurchaseState.PURCHASED
+            Purchase.PurchaseState.PENDING -> PurchaseState.PENDING
+            else -> PurchaseState.UNSPECIFIED
+        },
+        quantity = quantity,
+        acknowledged = isAcknowledged,
+    )
+
+    private fun reasonOf(result: BillingResult): FailureReason = when (result.responseCode) {
+        BillingResponseCode.SERVICE_DISCONNECTED,
+        BillingResponseCode.SERVICE_UNAVAILABLE,
+        BillingResponseCode.NETWORK_ERROR -> FailureReason.NETWORK
+
+        BillingResponseCode.BILLING_UNAVAILABLE,
+        BillingResponseCode.FEATURE_NOT_SUPPORTED -> FailureReason.BILLING_UNAVAILABLE
+
+        BillingResponseCode.ITEM_UNAVAILABLE -> FailureReason.PRODUCT_UNAVAILABLE
+        BillingResponseCode.DEVELOPER_ERROR -> FailureReason.DEVELOPER_ERROR
+        else -> FailureReason.BILLING_ERROR
+    }
+
+    private fun describe(result: BillingResult): String =
+        "code ${result.responseCode}: ${result.debugMessage}"
+
+    // ---------------------------------------------------------------- DEBUG: sahte satin alma
+
+    /**
+     * YALNIZ DEBUG: sahte bir satin almayi GERCEK isleme hattindan ([PurchasePolicy] ->
+     * [PurchaseFulfiller] -> `SaveManager.fulfillPurchase`) gecirir. Yalnizca Play'e giden
+     * tuketme/onay sahtedir ([FakeBilling.consumedTokens]). Release'te ([FakeBilling.enabled]
+     * `false`) hicbir sey yapmaz.
+     */
+    fun debugSubmit(info: PurchaseInfo) {
+        if (!FakeBilling.enabled) return
+        handleInfos(listOf(info), announce = true, fullQuery = false, fulfiller = debugFulfiller)
+    }
+
+    /** Debug paneli senaryosunu calistirir (bkz. [FakeBilling.Scenario]). */
+    fun debugRun(scenario: FakeBilling.Scenario) {
+        if (!FakeBilling.enabled) return
+        when (scenario) {
+            FakeBilling.Scenario.CANCEL -> emit(StoreEvent.Cancelled)
+            FakeBilling.Scenario.ARM_PERSIST_FAILURE -> FakeBilling.armPersistFailure()
+            else -> FakeBilling.infoFor(scenario)?.let { debugSubmit(it) }
+        }
+    }
+
+    private val debugFulfiller: PurchaseFulfiller by lazy {
+        FakeBilling.newDebugFulfiller(
+            grants = PurchaseGrantPort { grantPurchase(it) },
+            log = { Log.i(TAG, "[debug] $it") },
+        )
     }
 
     private companion object {
         const val TAG = "FDBilling"
-
-        /** Play Store guncellenirken dusen baglanti icin sinirli yeniden deneme. */
-        const val MAX_RECONNECT_ATTEMPTS = 3
     }
 }

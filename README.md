@@ -8,7 +8,7 @@ her bolumun hedefi tum dalgalari kaybedilen can sayisina gore 1-3 yildizla tamam
 - **22 bolumluk kampanya**, olculmus geometriyle baglanmis **11 harita**
 - Compose Canvas uzerinde cizim, sabit adimli (fixed timestep) oyun dongusu
 - 34 WebP sprite + 15 OGG ses efektinden olusan varlik paketi
-- AdMob iskeleti (banner / interstitial / rewarded) — su anda **yalnizca test kimlikleri**
+- **Reklam yok** (2026-09-30'da AdMob/UMP kaldirildi). Gelir yalnizca istege bagli Google Play Billing coin paketleri
 
 ## Teknik ozet
 
@@ -66,12 +66,12 @@ set KEY_PASSWORD=...
 
 Keystore dosyalari ve sifreler **depoya girmez** (`.gitignore` + global CLAUDE.md §8).
 
-## Reklamlar
+## Reklam yok, satin alma var
 
-`game/ads/AdIds.kt` reklam kimliklerinin tek kaynagidir. `USE_TEST_ADS = true`
-oldugu surece tum build tiplerinde Google'in herkese acik test kimlikleri kullanilir.
-Gercek (production) kimlikler **ayri bir karardir ve kullanici onayi gerektirir**;
-`PRODUCTION_*` sabitleri bilincli olarak bostur.
+Oyunda **hicbir reklam yoktur** (AdMob, UMP ve reklam izinleri 2026-09-30'da kaldirildi).
+Tek gelir yolu, Google Play Billing ile satilan istege bagli coin paketleridir
+(`game/billing/`, katalog: `game/economy/StoreCatalog.kt`). Fiyat metni kodda yoktur;
+ekrandaki fiyat yalnizca Play'den gelir.
 
 ## Depo duzeni
 
@@ -81,7 +81,7 @@ source/                  <- git deposunun KOKU (bu dizin)
     engine/    oyun dongusu, carpisma, dalga ilerleyisi
     model/     varliklar, bolum/dalga tanimlari, harita geometrisi
     ui/        Compose Canvas cizimi, HUD, bolum secimi
-    ads/       AdMob sarmalayicilari
+    billing/   Google Play Billing sarmalayicisi (coin paketleri)
     audio/     ses calma
     data/      kayit/yukleme
   app/src/main/res/drawable-nodpi/   WebP sprite'lar ve harita arkaplanlari

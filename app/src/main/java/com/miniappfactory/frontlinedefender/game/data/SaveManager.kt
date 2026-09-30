@@ -2,13 +2,16 @@ package com.miniappfactory.frontlinedefender.game.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.miniappfactory.frontlinedefender.game.billing.GrantResult
+import com.miniappfactory.frontlinedefender.game.billing.LedgerRecord
+import com.miniappfactory.frontlinedefender.game.billing.PurchaseGrantRequest
 import com.miniappfactory.frontlinedefender.game.economy.EconomyConfig
 import com.miniappfactory.frontlinedefender.game.economy.Mission
 import com.miniappfactory.frontlinedefender.game.economy.MissionState
 import com.miniappfactory.frontlinedefender.game.economy.MetaUpgrades
 import com.miniappfactory.frontlinedefender.game.economy.MissionPools
 import com.miniappfactory.frontlinedefender.game.economy.PlayerWallet
-import com.miniappfactory.frontlinedefender.game.economy.RequisitionState
+import com.miniappfactory.frontlinedefender.game.economy.StoreCatalog
 import com.miniappfactory.frontlinedefender.game.economy.UpgradeLine
 import com.miniappfactory.frontlinedefender.game.economy.WeeklyMission
 
@@ -30,7 +33,11 @@ import com.miniappfactory.frontlinedefender.game.economy.WeeklyMission
  *    testleri [InMemoryKeyValueStore] ile Robolectric OLMADAN kosar.
  * 5. Ekonomi SAYISI burada tanimlanmaz; hepsi [EconomyConfig]'ten okunur.
  */
-class SaveManager internal constructor(private val store: KeyValueStore) {
+class SaveManager internal constructor(
+    private val store: KeyValueStore,
+    /** Satin alma defteri damgasi icin saat — testler sabit saat verir. */
+    clock: () -> Long = System::currentTimeMillis,
+) {
 
     constructor(context: Context) : this(SharedPrefsStore(context))
 
@@ -83,8 +90,6 @@ class SaveManager internal constructor(private val store: KeyValueStore) {
 
         // ---- Ilk oturum onboarding (game/ui/TutorialOverlay.kt) ---------------
         private const val KEY_TUTORIAL_STATUS = "tutorial_status"
-        /** Reklam politikasi: kurulumdan beri tamamlanan savas sayisi. */
-        private const val KEY_LIFETIME_BATTLES = "ads_lifetime_battles"
 
         /** [tutorialStatus] alfabesi. Aralik disi deger [TUTORIAL_UNSEEN]e kirpilir. */
         const val TUTORIAL_UNSEEN = 0
@@ -104,18 +109,20 @@ class SaveManager internal constructor(private val store: KeyValueStore) {
         private const val KEY_HINT_PREFIX = "hint_seen_"
 
         // ---- IAP (2026-09-02) — bkz. StoreCatalog / billing/BillingManager ----
-        /** "Reklamlari Kaldir" hakki. Play'den dogrulanir; RESET'TE KORUNUR. */
+        /**
+         * ESKI "Reklamlari Kaldir" hakki. **Yapiskan (sticky) eski-alici isareti:** yalnizca
+         * `true` yazilir, Play "bu urunu gormuyorum" dese de ASLA `false` yazilmaz (bkz.
+         * `BillingManager.restorePurchases`). RESET'TE KORUNUR.
+         */
         private const val KEY_IAP_REMOVE_ADS = "iap_remove_ads"
-        /** Odenmis purchaseToken'lar (virgullu). Ayni jetonun IKI kez coin yazmasini engeller; RESET'TE KORUNUR. */
+        /**
+         * ESKI odenmis purchaseToken listesi (virgullu). 2026-09-30'dan beri YALNIZCA OKUNUR:
+         * yeni odemeler defterde ([PurchaseGrantLedger]). Eski jeton tekrar gelirse
+         * `AlreadyGranted` doner ve coin yazilmaz. RESET'TE KORUNUR.
+         */
         private const val KEY_IAP_GRANTED_TOKENS = "iap_granted_tokens"
         /** Satin alinan toplam coin — `lifetimeEarned`den AYRI (o oynanisla kazanilani olcer). */
         private const val KEY_IAP_LIFETIME_COINS = "iap_lifetime_purchased_coins"
-
-        private const val KEY_R1_FILLED_VIEWS = "eco_r1_filled_views_today"
-        private const val KEY_R1_COINS_PAID = "eco_r1_coins_paid_today"
-        private const val KEY_BOOSTED_REPLAYS = "eco_boosted_replays_today"
-        /** Gunluk guclendirici-reklam gosterimi. Bkz. [boosterAdViewsToday]. */
-        private const val KEY_BOOSTER_AD_VIEWS = "eco_booster_ad_views_today"
 
         /** Ayarlar ilerleme sifirlamasinda KORUNUR (GDD H.1). */
         /**
@@ -127,8 +134,25 @@ class SaveManager internal constructor(private val store: KeyValueStore) {
         private val PRESERVED_ON_RESET = setOf(
             KEY_SOUND_ENABLED, KEY_SAVE_VERSION,
             KEY_IAP_REMOVE_ADS, KEY_IAP_GRANTED_TOKENS, KEY_IAP_LIFETIME_COINS,
+            PurchaseGrantLedger.KEY_COMMIT_SEQ,
         )
+
+        /** Ayrica `iap_ledger_<jeton>` anahtarlarinin HEPSI korunur (onek tabanli). */
+        private fun isPreservedOnReset(key: String): Boolean =
+            key in PRESERVED_ON_RESET || PurchaseGrantLedger.isLedgerKey(key)
+
+        /** [grantPurchasedCoins] urunu katalogdan cozemediginde defterin urun alani. */
+        const val PRODUCT_UNSPECIFIED = "unspecified"
     }
+
+    /** Satin alma defteri: cuzdan + kayit + omur sayaci tek atomik yazim. */
+    private val purchaseLedger = PurchaseGrantLedger(
+        store = store,
+        walletCoinsKey = KEY_COINS,
+        lifetimeCoinsKey = KEY_IAP_LIFETIME_COINS,
+        legacyTokensKey = KEY_IAP_GRANTED_TOKENS,
+        clock = clock,
+    )
 
     // =================================================================================
     // Surum / migrasyon
@@ -351,22 +375,6 @@ class SaveManager internal constructor(private val store: KeyValueStore) {
 
     fun loadDailyClaims(): Set<String> = decodeClaims(store.getString(KEY_DAILY_PROGRESS, ""))
 
-    // =================================================================================
-    // Faz 9 — gunluk reklam / tekrar sayaclari
-    // =================================================================================
-
-    fun loadRequisitionState(): RequisitionState = RequisitionState(
-        filledViewsToday = store.getInt(KEY_R1_FILLED_VIEWS, 0)
-            .coerceIn(0, EconomyConfig.R1_VIEWS_PER_DAY),
-        coinsPaidToday = store.getInt(KEY_R1_COINS_PAID, 0)
-            .coerceIn(0, EconomyConfig.R1_COIN_BUDGET_PER_DAY),
-    )
-
-    fun saveRequisitionState(state: RequisitionState) {
-        store.putInt(KEY_R1_FILLED_VIEWS, state.filledViewsToday)
-        store.putInt(KEY_R1_COINS_PAID, state.coinsPaidToday)
-    }
-
     /**
      * Bolum basina ELIT zafer sayisi ("7:2,12:1" bicimi — gorev ilerlemesiyle
      * ayni encode dili). Yildizdan AYRI tutulur: elit yildiz vermez/dusurmez.
@@ -399,54 +407,8 @@ class SaveManager internal constructor(private val store: KeyValueStore) {
             store.putInt(KEY_PRESTIGE_RANK, value.coerceIn(0, EconomyConfig.PRESTIGE_MAX))
         }
 
-    var boostedReplaysUsedToday: Int
-        get() = store.getInt(KEY_BOOSTED_REPLAYS, 0).coerceAtLeast(0)
-        set(value) {
-            store.putInt(KEY_BOOSTED_REPLAYS, value.coerceAtLeast(0))
-        }
-
-    /**
-     * Gun boyunca guclendirici icin izlenen dolu reklam sayisi.
-     *
-     * ⚠ 2026-09-02'ye kadar bu sayac YALNIZCA BELLEKTEYDI
-     * (`CampaignProgressImpl.boosterAdViewsToday = mutableStateOf(0)`) ve her
-     * uygulama acilisinda sifirlaniyordu. Kardes gunluk sayaclarin
-     * ([KEY_R1_FILLED_VIEWS], [KEY_BOOSTED_REPLAYS]) hepsi kaliciydi; tutarsizlik
-     * ayni dosyada goruluyordu ve `ECONOMY_SPEC` 9. bolum devir listesi madde 5
-     * bunu zaten "SaveManager'a tek Int alani yeter" diye isaretlemisti.
-     *
-     * IKI SEBEPLE ARTIK KALICI:
-     *
-     *  1. **Reklam yorgunlugu tavani GERCEK OLDU.**
-     *     [EconomyConfig.BOOSTER_AD_VIEWS_PER_DAY] kendi KDoc'unda acikca
-     *     "reklam yorgunlugu tavani" olarak tanimli. Bellekteki bir sayac bu isi
-     *     YAPISAL OLARAK yapamaz: uygulamayi kapatip acmak tavani sifirlar.
-     *
-     *  2. **Hava Destegi'nin COIN yolunu acan tek kapi buydu** (2026-09-02 IAP
-     *     turu). `BoosterRail` reklam yolu acikken REKLAM gosterir; coin fiyati
-     *     ancak gunluk gosterim hakki bittiginde ortaya cikar. Sayac her
-     *     acilista sifirlandigi surece o kapi HIC acilmiyordu — yani IAP ile
-     *     satilan coinin bu kalemdeki harcama yolu OLU idi.
-     *
-     * Eski gerekce ("yeniden baslatmayla sifirlamak ekonomi exploit'i degil,
-     * oyuncu yalnizca daha fazla reklam izler, gelir yonu olumlu") kendi
-     * icinde tutarliydi ama iki seyi hesaba katmiyordu: tavanin OYUNCU KORUMASI
-     * olmasi ve coin satisinin baslamasi.
-     *
-     * [resetDailyCounters] ile gun donusunde sifirlanir.
-     */
-    var boosterAdViewsToday: Int
-        get() = store.getInt(KEY_BOOSTER_AD_VIEWS, 0).coerceAtLeast(0)
-        set(value) {
-            store.putInt(KEY_BOOSTER_AD_VIEWS, value.coerceAtLeast(0))
-        }
-
     /** Gun donusunde sifirlanan sayaclar. Bolum/coin/yukseltme ilerlemesi ETKILENMEZ. */
     fun resetDailyCounters() {
-        store.putInt(KEY_R1_FILLED_VIEWS, 0)
-        store.putInt(KEY_R1_COINS_PAID, 0)
-        store.putInt(KEY_BOOSTED_REPLAYS, 0)
-        store.putInt(KEY_BOOSTER_AD_VIEWS, 0)
         store.putInt(KEY_REROLLS_USED, 0)
         store.putString(KEY_DAILY_PROGRESS, "")
     }
@@ -505,46 +467,14 @@ class SaveManager internal constructor(private val store: KeyValueStore) {
     }
 
     // =================================================================================
-    // Reklam politikasi sayaci (GDD §G.2/1)
+    // IAP — coin paketleri (2026-09-02) ve ESKI "Reklamlari Kaldir" isareti
     // =================================================================================
 
     /**
-     * Kurulumdan bu yana SONUNA KADAR oynanmis savas sayisi.
-     *
-     * ⚠ 2026-08-22 — BU ALAN KALICI DEGILDI ve bu gercek bir hataydi.
-     *
-     * `AdProgressStore`in KDoc'u *"Kaliciligi bu katman yapmaz —
-     * DataStore/SaveManager tarafina Faz 6'da baglanir"* diyordu. Faz 6 geldi
-     * gecti, baglanmadi: uretimde `AdMobAdHost` varsayilan
-     * `InMemoryAdProgressStore`u kullaniyordu ve o sinifin kendi yorumu
-     * *"surec olumunde sifirlanir"* diyordu.
-     *
-     * Sonuc: sayac HER UYGULAMA ACILISINDA 0'a donuyordu, dolayisiyla
-     *   - `ONBOARDING_FREE_BATTLES = 3` (ilk uc savas reklamsiz) her oturumda
-     *     bastan uygulaniyordu,
-     *   - `isFirstSession` hep `true` oldugu icin `FIRST_SESSION_WARMUP_MS`
-     *     (3 dakika) da her oturumda uygulaniyordu.
-     * Yani "yeni oyuncu muafiyeti" HIC BITMIYORDU. Cihaz raporu: *"level 1
-     * bitirdim, next level dedigimde reklam gelmedi."*
-     *
-     * Bu deponun 4 numarali tekrar eden hatasi: **kod var, cagiran yok.**
-     *
-     * `resetProgress` bunu da siler (PRESERVED_ON_RESET disinda) — dogru
-     * davranis: ilerlemesini sifirlayan oyuncu muafiyeti yeniden hak eder.
-     */
-    var lifetimeBattlesCompleted: Int
-        get() = store.getInt(KEY_LIFETIME_BATTLES, 0).coerceAtLeast(0)
-        set(value) = store.putInt(KEY_LIFETIME_BATTLES, value.coerceAtLeast(0))
-
-    // =================================================================================
-    // IAP — "Reklamlari Kaldir" hakki ve coin paketleri (2026-09-02)
-    // =================================================================================
-
-    /**
-     * "Reklamlari Kaldir" satin alindi mi. `AdProgressStore.adsRemoved` bunu okur;
-     * yalnizca INTERSTITIAL kapanir (banner zaten kapali, rewarded oyuncunun kendi
-     * actigi musluk — kalir). Kaynak Play'dir (`BillingManager.restorePurchases`),
-     * bu alan onun cihazdaki kopyasi. [resetProgress] SILMEZ.
+     * ESKI "Reklamlari Kaldir" hakki (2026-09-30'dan beri satista DEGIL; oyunda reklam kalmadi).
+     * **Yapiskan eski-alici isareti:** `BillingManager` bunu yalnizca `true` yapar; Play
+     * "bu urunu gormuyorum" dese de `false` YAZMAZ (iade ile cevrimdisi ayirt edilemez ve odenmis
+     * hak silinmemeli). [resetProgress] SILMEZ. Ayarici iki yone de yazabilir (debug paneli sifirlar).
      */
     var adsRemoved: Boolean
         get() = store.getBoolean(KEY_IAP_REMOVE_ADS, false)
@@ -552,38 +482,70 @@ class SaveManager internal constructor(private val store: KeyValueStore) {
 
     /** Satin alinan toplam coin (rapor/telemetri icin). Oynanis kazancina karismaz. */
     val lifetimePurchasedCoins: Int
-        get() = store.getInt(KEY_IAP_LIFETIME_COINS, 0).coerceAtLeast(0)
-
-    /** Bu jeton daha once coin'e cevrildi mi? */
-    fun isPurchaseTokenGranted(token: String): Boolean =
-        token.isNotBlank() && token in decodeTokens(store.getString(KEY_IAP_GRANTED_TOKENS, ""))
+        get() = purchaseLedger.lifetimePurchasedCoins
 
     /**
-     * Satin alinan coin'i YAZAR — IDEMPOTENT. Ayni `purchaseToken` ikinci kez
-     * gelirse `false` doner ve bakiye DEGISMEZ.
+     * Bu jeton daha once coin'e cevrildi mi? Eski jeton listesi VEYA defter (diske dayanikli
+     * kayit). Commit'i dogrulanamamis (belirsiz) jeton `false` doner.
+     */
+    fun isPurchaseTokenGranted(token: String): Boolean = purchaseLedger.isGranted(token)
+
+    /** Jetonun diske dayanikli defter kaydi (eski liste jetonlari icin `null`). */
+    fun purchaseRecordOf(token: String): LedgerRecord? = purchaseLedger.recordOf(token)
+
+    /**
+     * Satin alinan coin'i YAZAR — IDEMPOTENT, ATOMIK ve SONUCU KONTROLLU.
      *
-     * NEDEN BURADA (CampaignProgressImpl degil): `queryPurchasesAsync` her
-     * acilista tuketilmemis paketleri yeniden getirir; "odenmis mi" kaydi
-     * cuzdanla AYNI dosyada ve AYNI islemde yazilmali ki yarim kalan bir
-     * `consume` coin'i iki kez basmasin. Cuzdan `PlayerWallet.credited` ile
-     * DEGIL dogrudan yazilir: `credited` `lifetimeEarned`i artirir, o sayac
-     * oynanis kazancidir ve ekonomi raporlari onu okur.
+     * Cuzdan + defter kaydi + omur sayaci + artan yazim sayaci TEK toplu `commit()`tir ve
+     * donus degeri kontrol edilir; ayrintili sozlesme ve `commit()`in bellegi yine de
+     * guncelleme tuzagi icin bkz. [PurchaseGrantLedger].
      *
-     * @return true = coin yazildi (cagiran simdi `consume` edebilir).
+     * Cuzdan `PlayerWallet.credited` ile DEGIL dogrudan yazilir: `credited` `lifetimeEarned`i
+     * artirir, o sayac oynanis kazancidir ve ekonomi raporlari onu okur.
+     *
+     * ⚠ **Cagiran, `Granted` sonrasi bellekteki cuzdan kopyasini YENILEMEK zorundadir**
+     * (`CampaignProgressImpl` cuzdani kurulumda bir kez okur; yenilemezse bir sonraki
+     * `commitWallet` satin alinan coin'in USTUNE bayat bakiyeyi yazar).
+     */
+    fun fulfillPurchase(request: PurchaseGrantRequest): GrantResult {
+        val result = purchaseLedger.grant(request)
+        if (result is GrantResult.Granted) {
+            synchronized(walletSyncPending) { walletSyncPending += request.purchaseToken }
+        }
+        return result
+    }
+
+    /**
+     * Cuzdan sahibinin (`CampaignProgressImpl`) henuz haberdar EDILMEDIGI, [fulfillPurchase] ile
+     * kredilenmis jetonlar. [grantPurchasedCoins] bunu "yenile" sinyali olarak tuketir.
+     */
+    private val walletSyncPending = HashSet<String>()
+
+    /**
+     * ESKI (jeton, coin) sekilli giris — `CampaignProgressImpl.grantPurchasedCoins` ve debug
+     * paneli bunu cagirir. `true` = **bu cagrida** kredilendi (cagiran cuzdani yeniler).
+     *
+     * Iki durumda `true` doner:
+     *  1. [fulfillPurchase] bu jetonu az once kredilemis ve cuzdan sahibi henuz yenilenmemis
+     *     (`GameScreen`in `BillingManager` koprusu bunu boyle kullanir; yalnizca "yenile"
+     *     sinyalidir, ikinci bir odeme YAPMAZ).
+     *  2. Jeton yeni ve bu cagri kendisi krediledi. Urun kimligi katalogdan miktara gore
+     *     cozulur (bulunamazsa [PRODUCT_UNSPECIFIED]); ayni jeton baska miktarla gelirse
+     *     reddedilir.
+     *
+     * `false` = kredilenmedi (zaten odenmis, reddedildi ya da yazim dogrulanamadi). Ayrim
+     * gerekiyorsa [fulfillPurchase] kullanin — bu `Boolean` "zaten odenmis" ile "yazilamadi"yi
+     * AYIRAMAZ ve bu yuzden `consume` kararina ASLA dayanak olmamalidir.
      */
     fun grantPurchasedCoins(purchaseToken: String, coins: Int): Boolean {
         if (purchaseToken.isBlank() || coins <= 0) return false
-        val granted = decodeTokens(store.getString(KEY_IAP_GRANTED_TOKENS, ""))
-        if (purchaseToken in granted) return false
-        val wallet = loadWallet()
-        saveWallet(wallet.copy(coins = wallet.coins + coins))
-        store.putInt(KEY_IAP_LIFETIME_COINS, lifetimePurchasedCoins + coins)
-        store.putString(KEY_IAP_GRANTED_TOKENS, (granted + purchaseToken).joinToString(","))
-        return true
+        val claimed = synchronized(walletSyncPending) { walletSyncPending.remove(purchaseToken) }
+        if (claimed) return true
+        val productId = StoreCatalog.coinPacks.firstOrNull { it.coins == coins }?.id ?: PRODUCT_UNSPECIFIED
+        // Defter DOGRUDAN: bu cagiran zaten sonucu (true) alip cuzdani kendi yeniler; "yenile"
+        // isaretini birakmak, ayni jetonun sonraki tekrarini yanlislikla `true` yapardi.
+        return purchaseLedger.grant(PurchaseGrantRequest(purchaseToken, productId, coins)) is GrantResult.Granted
     }
-
-    private fun decodeTokens(raw: String): Set<String> =
-        raw.split(',').map { it.trim() }.filter { it.isNotEmpty() }.toSet()
 
     /**
      * Bayrak eklenmeden ONCE olusmus kayitlar icin bir kerelik tohumlama.
@@ -664,7 +626,7 @@ class SaveManager internal constructor(private val store: KeyValueStore) {
 
     /** Tum ilerleme silinir, **ayarlar (ses/dil) korunur**. */
     fun resetProgress() {
-        store.keys().filterNot { it in PRESERVED_ON_RESET }.forEach { store.remove(it) }
+        store.keys().filterNot { isPreservedOnReset(it) }.forEach { store.remove(it) }
         store.putInt(KEY_SAVE_VERSION, EconomyConfig.SAVE_VERSION)
         store.remove(KEY_ELITE_CLEARS)
         store.remove(KEY_PRESTIGE_RANK)
@@ -738,6 +700,17 @@ interface KeyValueStore {
     fun hasKey(key: String): Boolean
     fun remove(key: String)
     fun keys(): Set<String>
+
+    /**
+     * [batch]i TEK atomik yazim olarak uygular ve **YALNIZCA diske dayanikli yazildiysa `true`**
+     * doner (`SharedPreferences.Editor.commit()` sonucu). `false` = yazim DOGRULANAMADI; bellekteki
+     * gorunum yine de yeni degerleri gosteriyor olabilir (Android bellegi diskten ONCE gunceller) —
+     * bkz. [PurchaseGrantLedger] tuzak notu. Diger `put*` cagrilari bu garantiyi VERMEZ (`apply()`).
+     */
+    fun commit(batch: StoreBatch): Boolean
+
+    /** Ayni depolama uzerindeki tum yazicilar icin ortak kilit + belirsiz-jeton kaydi. */
+    val purchaseGuard: PurchaseGuard
 }
 
 /**
@@ -768,6 +741,31 @@ internal class SharedPrefsStore(context: Context) : KeyValueStore {
     override fun hasKey(key: String): Boolean = prefs.contains(key)
     override fun remove(key: String) = prefs.edit().remove(key).apply()
     override fun keys(): Set<String> = prefs.all.keys.toSet()
+
+    /**
+     * TEK `Editor`, TEK `commit()` (senkron; ana is parcaciginda kucuk dosya icin ms). Donen deger
+     * aynen iletilir — `apply()` KULLANILMAZ: satin alma yalnizca diske dustukten sonra tuketilir.
+     */
+    override fun commit(batch: StoreBatch): Boolean {
+        val editor = prefs.edit()
+        for (op in batch.operations) {
+            when (op) {
+                is StoreOp.PutInt -> editor.putInt(op.key, op.value)
+                is StoreOp.PutLong -> editor.putLong(op.key, op.value)
+                is StoreOp.PutString -> editor.putString(op.key, op.value)
+                is StoreOp.PutBoolean -> editor.putBoolean(op.key, op.value)
+                is StoreOp.Remove -> editor.remove(op.key)
+            }
+        }
+        return editor.commit()
+    }
+
+    /** Ayni dosyayi kullanan TUM `SharedPrefsStore` ornekleri tek guard'i paylasir. */
+    override val purchaseGuard: PurchaseGuard get() = SHARED_GUARD
+
+    private companion object {
+        val SHARED_GUARD = PurchaseGuard()
+    }
 }
 
 /**
@@ -780,18 +778,38 @@ class InMemoryKeyValueStore(
 
     /** Yanlis tipte / cop deger yazar — bozuk kayit simulasyonu. */
     fun putRaw(key: String, value: Any) {
-        map[key] = value
+        synchronized(map) { map[key] = value }
     }
 
-    override fun getInt(key: String, default: Int): Int = map[key] as? Int ?: default
-    override fun getLong(key: String, default: Long): Long = map[key] as? Long ?: default
-    override fun getBoolean(key: String, default: Boolean): Boolean = map[key] as? Boolean ?: default
-    override fun getString(key: String, default: String): String = map[key] as? String ?: default
-    override fun putInt(key: String, value: Int) { map[key] = value }
-    override fun putLong(key: String, value: Long) { map[key] = value }
-    override fun putBoolean(key: String, value: Boolean) { map[key] = value }
-    override fun putString(key: String, value: String) { map[key] = value }
-    override fun hasKey(key: String): Boolean = map.containsKey(key)
-    override fun remove(key: String) { map.remove(key) }
-    override fun keys(): Set<String> = map.keys.toSet()
+    // Her erisim `map` uzerinde kilitli: es zamanli satin alma testleri gercek bir yaris yaratir
+    // ve duz `LinkedHashMap` bunda bozulur. Maliyet testlerde onemsiz.
+    override fun getInt(key: String, default: Int): Int = synchronized(map) { map[key] as? Int ?: default }
+    override fun getLong(key: String, default: Long): Long = synchronized(map) { map[key] as? Long ?: default }
+    override fun getBoolean(key: String, default: Boolean): Boolean = synchronized(map) { map[key] as? Boolean ?: default }
+    override fun getString(key: String, default: String): String = synchronized(map) { map[key] as? String ?: default }
+    override fun putInt(key: String, value: Int) { synchronized(map) { map[key] = value } }
+    override fun putLong(key: String, value: Long) { synchronized(map) { map[key] = value } }
+    override fun putBoolean(key: String, value: Boolean) { synchronized(map) { map[key] = value } }
+    override fun putString(key: String, value: String) { synchronized(map) { map[key] = value } }
+    override fun hasKey(key: String): Boolean = synchronized(map) { map.containsKey(key) }
+    override fun remove(key: String) { synchronized(map) { map.remove(key) } }
+    override fun keys(): Set<String> = synchronized(map) { map.keys.toSet() }
+
+    /** Bellek deposu: hep "dayanikli" — `true`. Basarisizlik testlerde ayri bir sahte depoyla simule edilir. */
+    override fun commit(batch: StoreBatch): Boolean {
+        synchronized(map) {
+            for (op in batch.operations) {
+                when (op) {
+                    is StoreOp.PutInt -> map[op.key] = op.value
+                    is StoreOp.PutLong -> map[op.key] = op.value
+                    is StoreOp.PutString -> map[op.key] = op.value
+                    is StoreOp.PutBoolean -> map[op.key] = op.value
+                    is StoreOp.Remove -> map.remove(op.key)
+                }
+            }
+        }
+        return true
+    }
+
+    override val purchaseGuard: PurchaseGuard = PurchaseGuard()
 }

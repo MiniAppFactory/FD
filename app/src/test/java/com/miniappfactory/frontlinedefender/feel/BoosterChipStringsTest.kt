@@ -1,6 +1,8 @@
 package com.miniappfactory.frontlinedefender.feel
 
+import com.miniappfactory.frontlinedefender.game.economy.BoosterType
 import com.miniappfactory.frontlinedefender.game.economy.EconomyConfig
+import com.miniappfactory.frontlinedefender.game.economy.boosterPrice
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -60,12 +62,18 @@ class BoosterChipStringsTest {
             EconomyConfig.EMERGENCY_SUPPLY_COOLDOWN_MS
         ).let { ((it + 999) / 1000).toString() }
 
+        /** Enum'un fiyatlayabilecegi en buyuk coin bedeli (tum tip x bolum x kullanim). */
+        val WIDEST_COIN_PRICE: Int = BoosterType.entries.maxOf { type ->
+            (1..EconomyConfig.CAMPAIGN_LEVELS).maxOf { level ->
+                (1..type.paidUsesPerBattle).maxOf { use -> boosterPrice(type, level, use) }
+            }
+        }
+
         /** Ileriye donuk pay: bekleme suresi uc haneye cikarsa da kirpma olmamali. */
         const val SECONDS_SAMPLE_FUTURE = "999"
 
         /** Cip yuvasini paylasan TUM anahtarlar — hepsi ayni 44 dp'ye sigmali. */
         val CHIP_KEYS = listOf(
-            "booster_chip_ad",
             "booster_chip_cooldown",
             "booster_chip_confirm",
             "booster_chip_spent",
@@ -195,7 +203,7 @@ class BoosterChipStringsTest {
     @Test
     fun theCooldownChipIsNotTheWidestCandidate() {
         val priceCoin = english.getValue("booster_chip_price_coin")
-        val widestPrice = FORMAT_ARG.replace(priceCoin) { "540" }
+        val widestPrice = FORMAT_ARG.replace(priceCoin) { WIDEST_COIN_PRICE.toString() }
         listOf("en" to english, "tr" to turkish).forEach { (lang, strings) ->
             val cooldown = rendered(strings.getValue(COOLDOWN_KEY))
             assertTrue(
@@ -204,6 +212,26 @@ class BoosterChipStringsTest {
                 cooldown.length <= widestPrice.length
             )
         }
+    }
+
+    /**
+     * REKLAMSIZ DUNYA (2026-09-30): her guclendirici artik coin fiyatli ve cip
+     * fiyati DOKUNUSTAN ONCE "N COIN" olarak gosteriyor — Acil Tedarik ve Us
+     * Tamiri'nin 2. kullanimi dahil. Cipe sigmasi gereken en genis sayi elle
+     * yazilmaz: enum'un fiyatlayabilecegi HER (tip, bolum, kullanim) uclusunun
+     * en pahalisi. Bugun Us Tamiri 2. kullanim L55 = 2.100 -> "2100 COIN" (9).
+     */
+    @Test
+    fun everyCoinPriceTheEnumCanQuoteFitsTheChipBudget() {
+        val template = english.getValue("booster_chip_price_coin")
+        val ceiling = WIDEST_COIN_PRICE
+        assertTrue("fiyat tavani anlamsiz: $ceiling", ceiling >= 1_000)
+        val line = FORMAT_ARG.replace(template) { ceiling.toString() }
+        assertTrue(
+            "en pahali fiyat cipi '$line' (${line.length}) butceyi ($CHIP_BUDGET_CHARS) asiyor — " +
+                "7 sp'de bile kirpilir; genislik butcesi yeniden turetilmeli",
+            line.length <= CHIP_BUDGET_CHARS
+        )
     }
 
     // =========================================================================

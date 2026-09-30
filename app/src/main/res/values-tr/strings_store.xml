@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    İKMAL DEPOSU — coin paketi rütbeleri, satın alma geri bildirimi ve hata metinleri (2026-09-30, M3 billing).
+
+    KURALLAR (StoreStringsTest kilitler):
+      * Bu dosyada FİYAT metni ve fiyattan türetilmiş YÜZDE YOK. Fiyat yalnızca Google Play'den gelir
+        (ProductDetails.formattedPrice); paketleri ayırt eden şey coin MİKTARIDIR.
+      * Teslim edilmiş coin paketleri Google Play'den geri yüklenemez. Burada "geri yükle" vaadi yok.
+      * İki dilde de aynı adlar bulunur (values/strings_store.xml).
+-->
+<resources>
+    <string name="store_tier_recruit">Acemi Er</string>
+    <string name="store_tier_sergeant">Çavuş</string>
+    <string name="store_tier_captain">Yüzbaşı</string>
+    <string name="store_tier_colonel">Albay</string>
+    <string name="store_tier_general">General</string>
+    <string name="store_pack_tier_amount">%1$s · %2$s COIN</string>
+
+    <string name="store_event_granted">Cüzdanına %1$s coin eklendi.</string>
+    <string name="store_event_already_credited">Bu satın alma cüzdanına zaten yazılmıştı.</string>
+    <string name="store_event_pending">Ödeme bekleniyor. Google Play ödemeyi onaylayınca coinlerin otomatik gelir.</string>
+    <string name="store_event_cancelled">Satın alma iptal edildi.</string>
+
+    <string name="store_error_not_ready">Google Play\'e henüz bağlanılmadı. Birazdan tekrar dene.</string>
+    <string name="store_error_network">Google Play\'e ulaşılamadı. Bağlantını kontrol edip tekrar dene.</string>
+    <string name="store_error_billing_unavailable">Bu cihazda veya hesapta satın alma kullanılamıyor.</string>
+    <string name="store_error_product_unavailable">Bu paket şu an satın alınamıyor.</string>
+    <string name="store_error_developer">Mağaza yapılandırma hatası. Lütfen daha sonra tekrar dene.</string>
+    <string name="store_error_save_failed">Ödemen alındı ama coinler henüz kaydedilemedi. Hiçbir şey kaybolmadı: mağazayı yeniden açtığında ya da oyunu yeniden başlattığında otomatik tekrar denenir.</string>
+    <string name="store_error_rejected">Bu satın alma güvenle işlenemedi. Ücret çekildiyse destekle iletişime geç.</string>
+    <string name="store_error_unknown_item">Bu ürün oyunun bu sürümünce tanınmıyor. Oyunu güncelleyip tekrar dene.</string>
+    <string name="store_error_generic">Google Play ile bir sorun oluştu. Lütfen tekrar dene.</string>
+
+    <string name="store_products_loading">Paketler Google Play\'den yükleniyor…</string>
+    <string name="store_products_failed">Paketler Google Play\'den yüklenemedi.</string>
+    <string name="store_products_retry">TEKRAR DENE</string>
+    <string name="store_pending_note">Bekleyen bir ödeme var (örneğin nakit veya havale). Google Play onaylayınca coinlerin otomatik gelir.</string>
+
+    <string name="store_recover_button">YARIM KALAN SATIN ALMALARI KONTROL ET</string>
+    <string name="store_recover_running">KONTROL EDİLİYOR…</string>
+    <string name="store_recover_hint">Ödedin ama coin gelmedi mi? Bu, Google Play\'de henüz teslim edilmemiş satın almaları arar. Teslim edilmiş coin paketleri Google Play\'de saklanmaz ve geri yüklenemez.</string>
+    <string name="store_recover_done">Google Play\'de yarım kalan satın almalar kontrol edildi.</string>
+    <string name="store_recover_failed">Google Play\'e ulaşılamadı. Bağlantını kontrol edip tekrar dene.</string>
+</resources>

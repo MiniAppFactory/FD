@@ -28,68 +28,20 @@ import com.miniappfactory.frontlinedefender.game.model.GameConfig
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.miniappfactory.frontlinedefender.game.ads.AdHost
-import com.miniappfactory.frontlinedefender.game.ads.AdPolicyConfig
-import com.miniappfactory.frontlinedefender.game.ads.AdRewardBridge
-import com.miniappfactory.frontlinedefender.game.ads.BannerAdSlot
-import com.miniappfactory.frontlinedefender.game.ads.ConsentManager
-import com.miniappfactory.frontlinedefender.game.ads.InterstitialReason
-import com.miniappfactory.frontlinedefender.game.ads.EconomyAdRewardBridge
-import com.miniappfactory.frontlinedefender.game.ads.LoggingAdRewardBridge
-import com.miniappfactory.frontlinedefender.game.ads.NoOpAdHost
-import com.miniappfactory.frontlinedefender.game.ads.RewardedOfferSheet
-import com.miniappfactory.frontlinedefender.game.ads.RewardedPlacement
-import com.miniappfactory.frontlinedefender.game.ads.SupplyDropBar
-import com.miniappfactory.frontlinedefender.game.ads.applyDoublePayout
-import com.miniappfactory.frontlinedefender.game.ads.applyReinforcement
-import com.miniappfactory.frontlinedefender.game.ads.applySupplyDrop
-import com.miniappfactory.frontlinedefender.game.ads.findActivity
 import com.miniappfactory.frontlinedefender.game.audio.AudioManager
 import com.miniappfactory.frontlinedefender.game.audio.rememberHaptics
 import com.miniappfactory.frontlinedefender.game.billing.BillingManager
-import com.miniappfactory.frontlinedefender.game.economy.BoosterType
 import com.miniappfactory.frontlinedefender.game.economy.CampaignProgressImpl
+import com.miniappfactory.frontlinedefender.game.economy.ContinueDecision
 import com.miniappfactory.frontlinedefender.game.economy.EconomyConfig
 import com.miniappfactory.frontlinedefender.game.economy.LevelClearResult
 import com.miniappfactory.frontlinedefender.game.data.SaveManager
 import com.miniappfactory.frontlinedefender.game.engine.GameEngine
 import com.miniappfactory.frontlinedefender.game.engine.GameState
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
-/**
- * Sonuc modalindan cikis + interstitial. Navigasyon SADECE reklam akisi
- * bittiginde yapilir, ama reklam gelmese de MUTLAKA yapilir.
- */
-private data class PendingBattleExit(
-    val reason: InterstitialReason,
-    val navigate: () -> Unit
-)
-
 @Composable
-fun GameScreen(
-    /**
-     * Faz 5. Varsayilan [NoOpAdHost]: onizlemeler ve testler reklam SDK'sina
-     * hic dokunmaz ve **en kotu senaryoyu** (hicbir reklam yok) yasar. Gercek
-     * host'u `MainActivity` verir — SDK'nin ve rizanin sahibi orasidir.
-     */
-    adHost: AdHost = NoOpAdHost(),
-    /**
-     * Faz 13 — odul koprusu OVERRIDE'i. **Uretimde `null` birakilir**: bu ekran
-     * o zaman ekonomiye bagli gercek kopruyu ([EconomyAdRewardBridge]) kendisi
-     * kurar.
-     *
-     * Neden `MainActivity` enjekte etmiyor: koprunun adapte ettigi iki sey de
-     * — kalici ekonomi nesnesi ([CampaignProgressImpl]) ve R3'un carpacagi
-     * taban odul ([LevelClearResult]) — bu ekranin sahipligindedir. Activity'nin
-     * kopruyu uretmesi, ekonominin sahipligini de Activity'ye tasimak demekti.
-     * Reklam *host*'unun sahibi hala Activity'dir (SDK + UMP + tam ekran).
-     *
-     * Bir deger verilirse (ornegin [LoggingAdRewardBridge]) ekonomi baglanmaz;
-     * bu yalnizca test/onizleme icindir.
-     */
-    rewardBridge: AdRewardBridge? = null
-) {
+fun GameScreen() {
     val context = LocalContext.current
 
     val saveManager = remember { SaveManager(context) }
@@ -184,41 +136,8 @@ fun GameScreen(
     // (onLevelCleared / grantSupplyDrop / gorevler).
     val campaignProgress = remember(saveManager) { CampaignProgressImpl(saveManager) }
 
-    /**
-     * Son bolum sonucu — R3 Cift Odeme odulu bunun uzerine EK katman koyar.
-     * Taban odul reklamdan ONCE yatirilir (GDD G.4), bu yuzden burada tutuyoruz.
-     */
+    /** Son bolum sonucu — zafer ekrani coin odul dokumunu bundan okur. */
     var lastClearResult by remember { mutableStateOf<LevelClearResult?>(null) }
-
-    /**
-     * Faz 13 — ODUL KOPRUSU. Bundan onceki hali `LoggingAdRewardBridge` idi:
-     * oyuncuya "reklam izle, +150 coin al" deniyor ve **hicbir sey verilmiyordu**.
-     *
-     * Kopru burada kuruluyor cunku adapte ettigi iki sey de burada: kalici
-     * ekonomi ([campaignProgress]) ve R3'un carpacagi taban odul dokumu
-     * ([lastClearResult] — zafer aninda, reklamdan ONCE yatirilmis olan).
-     * Miktarlarin sahibi tamamen ekonomidir; reklam katmani yalnizca sonucu
-     * bildirir (bkz. `AdRewardBridge` KDoc'u).
-     *
-     * `remember` anahtari yalnizca [campaignProgress] ve [gameEngine]: taban
-     * odul ve motor durumu LAMBDA ile okunur, yani her zaferde/karede kopru
-     * yeniden kurulmaz ama her zaman GUNCEL degeri gorur.
-     */
-    val economyRewardBridge = remember(campaignProgress, gameEngine) {
-        EconomyAdRewardBridge(
-            progress = campaignProgress,
-            lastClearResult = { lastClearResult },
-            // R2 Takviye: motor artik yenilgiden cikip savasi kaldigi dalgadan
-            // surdurebiliyor (`GameEngine.reinforceAfterDefeat`), bu yuzden
-            // teklif ARTIK GOSTERILEBILIR. Donen 0 = uygulanamadi; kopru o
-            // durumda odulu "verilmedi" sayar ve oyuncu yine yenilgi modalini
-            // gorur — akis hicbir dalda kilitlenmez.
-            resumeBattle = gameEngine::reinforceAfterDefeat,
-        )
-    }
-
-    /** Etkin kopru: uretimde ekonomiye bagli olan, testte disaridan verilen. */
-    val activeRewardBridge = rewardBridge ?: economyRewardBridge
 
     /**
      * Zafer ekranindaki "SONRAKI BOLUM" butonunun hedefi; `null` ise buton
@@ -258,8 +177,9 @@ fun GameScreen(
     val billing = remember(campaignProgress) {
         BillingManager(
             context = context,
-            onCoinsPurchased = { token, coins -> campaignProgress.grantPurchasedCoins(token, coins) },
-            onRemoveAdsChanged = { purchased -> campaignProgress.setAdsRemoved(purchased) },
+            // Dayanikli defter + ACIK sonuc (GrantResult); cuzdan sahibi yenilenir.
+            grantPurchase = campaignProgress::grantPurchase,
+            onRemoveAdsChanged = { campaignProgress.noteLegacyAdFreePurchase() },
         )
     }
     val billingLifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
@@ -339,51 +259,8 @@ fun GameScreen(
         campaignProgress.noteGameSpeed(gameEngine.gameSpeed.value)
     }
 
-    /** Reklam yolu istenen guclendirici; sheet bunun uzerinden acilir. */
-    var boosterAdRequest by remember { mutableStateOf<BoosterType?>(null) }
-
-    // ----------------------------------------------------------------------
-    // Faz 5 — REKLAM CAGRI YERLERI
-    //
-    // Yerlesim (DECISIONS "Reklam doktrini" + GDD §G.1):
-    //   banner        -> YALNIZCA MAIN_MENU ve LEVEL_SELECT, ekranin ALT KENARI
-    //   interstitial  -> YALNIZCA sonuc modali KAPANDIKTAN sonra, bolum secime
-    //                    donuste (zafer VEYA yenilgi). RETRY'de YOK.
-    //   rewarded      -> R1 bolum secim, R3 zafer, R2 yenilgi (motor API'si bekliyor)
-    //   savas ekrani  -> HICBIR reklam yuzeyi yok
-    // ----------------------------------------------------------------------
-    val activity = remember(context) { context.findActivity() }
-    val appContext = remember(context) { context.applicationContext }
-
-    // Riza akisini BURADA topluyoruz: UMP formu kapandiginda GameScreen
-    // recompose olur ve `adHost.bannerAllowed` yeniden okunur. Aksi halde
-    // banner ilk acilista hic gelmez (@Volatile alan recomposition tetiklemez).
-    val canRequestAds by ConsentManager.canRequestAdsFlow.collectAsState()
-    // `BANNER_ENABLED` en basta: kapatildiginda riza durumu ve SDK hic
-    // sorgulanmaz. Gerekce AdPolicyConfig.BANNER_ENABLED KDoc'unda
-    // (yatayda 360 dp ekranin %14'unu yiyordu).
-    val bannerEnabled = AdPolicyConfig.BANNER_ENABLED && canRequestAds && adHost.bannerAllowed
-
     /** Savas gercekten devam ediyor mu? Dalga aralarindaki PREPARATION'i saymaz. */
     var battleActive by remember { mutableStateOf(false) }
-
-    /** Rewarded hak sayaci degisti -> teklif satirlari yeniden okunsun. */
-    var rewardTick by remember { mutableIntStateOf(0) }
-
-    var doublePayoutOfferOpen by remember { mutableStateOf(false) }
-    var reinforcementOfferOpen by remember { mutableStateOf(false) }
-    var supplyDropOfferOpen by remember { mutableStateOf(false) }
-
-    /**
-     * R1b — coin cipinden acilan teklif (`RewardedPlacement.COIN_TOP_UP`).
-     *
-     * `supplyDropOfferOpen` ile AYRI tutuluyor cunku ikisi ayni anda acilirsa
-     * ust uste iki scrim cizilir; ayri bayrak ile hangisinin acik oldugu tek
-     * bir yerde okunur ve `else if` zinciri ikisini karsilikli disliyor.
-     * Odul yolu ve gunluk tavan ise ORTAK (bkz. RewardedPlacement.COIN_TOP_UP).
-     */
-    var coinTopUpOfferOpen by remember { mutableStateOf(false) }
-    var pendingExit by remember { mutableStateOf<PendingBattleExit?>(null) }
 
     // ⛔ GERI TUSU OYUNDAN CIKARIYORDU.
     //
@@ -420,25 +297,17 @@ fun GameScreen(
         }
     }
 
-    // Savas yasam dongusu -> frekans politikasinin sayaclari.
+    // Savas yasam dongusu. `battleActive`, zafer coin odulunun ve bolum kaydinin savas basina
+    // YALNIZCA BIR KEZ yazilmasini saglayan nobettir: recomposition odulu tekrarlamaz ve
+    // savas oynanmadan VICTORY'ye dusen bir durum (ornegin ekran yeniden kurulumu) odul yazmaz.
+    // Yenilgi + devam ayni savasi surdurur; `battleActive` DEFEAT'te bilincli olarak true kalir,
+    // boylece devamla kazanilan zafer de tam bir kez odenir.
     LaunchedEffect(gameState) {
         when (gameState) {
-            GameState.PREPARATION -> if (!battleActive) {
-                battleActive = true
-                adHost.onBattleStarted()
-                rewardTick++
-            }
+            GameState.PREPARATION -> battleActive = true
             GameState.VICTORY -> if (battleActive) {
                 battleActive = false
-                // Interstitial hakki BURADA dogar (GDD §G.2/5): savas sonuna
-                // kadar oynandi. Yarida birakilan savas tetiklemez.
-                adHost.onBattleCompleted()
-                // Sonuc ekrani gorunurken sessiz on-yukleme (GDD §G.4).
-                adHost.preload(appContext)
-                // Faz 9: COIN ODULU BURADA yatirilir — reklamdan ONCE
-                // (GDD G.4). `battleActive` bayragi bu blogun savas basina
-                // YALNIZCA BIR KEZ kosmasini garantiler; recomposition
-                // odulu tekrarlamaz.
+                // Faz 9: COIN ODULU BURADA yatirilir.
                 //
                 // Faz 13: `livesLeft` artik ham `lives.value` DEGIL,
                 // meta-arindirilmis `victoryStarHealth`. Ham deger meta
@@ -447,224 +316,59 @@ fun GameScreen(
                 // 3 yildiz, 10 sizintiyla Kusursuz Savunma (+80 coin)
                 // aliyordu. Ayni duzeltme motorun kendi yildiz hesabinda da
                 // var; iki taraf AYNI girdiyi kullaniyor.
-                // Faz 15 — SAVAS RAPORU BURADA AYRICA GECILMEZ, gecmesi de
-                // GEREKMEZ. Savas boyunca `BattleTelemetry` cagrilari olcumu
-                // ekonominin KENDI `battleReport` alaninda biriktirdi;
-                // `onLevelCleared` once o birikimi dalga tablosundan turetilen
-                // tabanla birlestiriyor, sonra tek seferde goreve isliyor.
-                // Buradan ikinci bir `BattleReport` yollamak ayni olcumu iki
-                // kaynaktan gonderip alan bazinda maks alma kuralina gereksiz
-                // yuk bindirirdi.
+                // Faz 15 — SAVAS RAPORU BURADA AYRICA GECILMEZ: savas boyunca
+                // `BattleTelemetry` cagrilari olcumu ekonominin KENDI
+                // `battleReport` alaninda biriktirdi; `onLevelCleared` once o
+                // birikimi dalga tablosundan turetilen tabanla birlestiriyor,
+                // sonra tek seferde goreve isliyor.
                 if (gameEngine.isEliteMode.value) {
                     // ELIT ZAFER — ayri muhasebe (ECONOMY_ANALYSIS C):
                     // coin YOK, yildiz YOK, gorev sayaci OYNANMAZ; tek kalici
                     // etki elit zafer sayaci. `lastClearResult` null kalir,
-                    // yani zafer modali coin satiri cizmez ve R3 "Cift Odeme"
-                    // teklifi (asagida doublable=0 uzerinden) hic acilmaz —
-                    // katlanacak taban odul yok.
+                    // yani zafer modali coin satiri cizmez.
                     campaignProgress.onEliteCleared(gameEngine.levelSpec.levelId)
                     lastClearResult = null
                 } else {
-                lastClearResult = campaignProgress.onLevelCleared(
-                    levelId = gameEngine.levelSpec.levelId,
-                    livesLeft = gameEngine.victoryStarHealth,
-                    maxLives = gameEngine.levelSpec.maxBaseLives
-                )
+                    lastClearResult = campaignProgress.onLevelCleared(
+                        levelId = gameEngine.levelSpec.levelId,
+                        livesLeft = gameEngine.victoryStarHealth,
+                        maxLives = gameEngine.levelSpec.maxBaseLives
+                    )
                 }
-                // R3 — CARPILACAK TABAN YOKSA TEKLIF DE YOK.
-                //
-                // Eskiden kosul yalnizca `isRewardedOffered` idi, yani zafer
-                // ekraninda "odulunu IKIYE KATLA" teklifi `doublableAmount = 0`
-                // iken de aciliyordu: oyuncu reklami sonuna kadar izliyor ve
-                // +0 coin aliyordu. `AdRewardBridge` KDoc'u bunu zaten
-                // yasakliyor ("calismayan bir odul teklif etmek, oyuncunun bir
-                // daha hicbir reklami izlememesinin en kisa yoludur") ve R2
-                // tarafinda ayni kural `reinforcementSupported` ile
-                // uygulanmisti; R3'te eksikti.
-                //
-                // Bugun bu dal, gunun boost'lu tekrar hakki bittikten sonraki
-                // tekrarlarda calisiyordu (taban 25 katlanmaz — BAYRAK F-7).
-                // Tekrar odulu tamamen kaldirilinca HER tekrar zaferi bu dala
-                // duser, yani hata nadir olmaktan cikip kural haline gelir.
-                val doublable = lastClearResult?.doublableAmount ?: 0
-                doublePayoutOfferOpen = doublable > 0 &&
-                    adHost.isRewardedOffered(RewardedPlacement.DOUBLE_PAYOUT)
-                rewardTick++
-            }
-            GameState.DEFEAT -> if (battleActive) {
-                // R2 yalnizca kopru gercekten takviye uygulayabildiginde
-                // teklif edilir; calismayan bir odul teklif edilmez.
-                val offerReinforcement = activeRewardBridge.reinforcementSupported &&
-                    adHost.isRewardedOffered(RewardedPlacement.REINFORCEMENT)
-                reinforcementOfferOpen = offerReinforcement
-                // KRITIK: teklif acilacaksa savas HENUZ BITMEDI. Takviye kabul
-                // edilirse ayni savas kaldigi dalgadan surer, yani
-                // `onBattleCompleted()` burada cagrilirsa tek savas iki kez
-                // sayilir VE — daha kotusu — savas PREPARATION'a dondugunde
-                // yukaridaki dal `onBattleStarted()` cagirip savas-basi
-                // rewarded hakkini SIFIRLAR, yani sinirsiz takviye acilir.
-                // `battleActive` bilincli olarak true birakiliyor; savas-sonu
-                // muhasebesi teklif kapandiktan SONRA yapiliyor (asagida,
-                // R2 sheet'inin onDismiss'inde).
-                if (!offerReinforcement) {
-                    battleActive = false
-                    adHost.onBattleCompleted()
-                    adHost.preload(appContext)
-                }
-                rewardTick++
             }
             GameState.MAIN_MENU, GameState.LEVEL_SELECT -> {
-                if (battleActive) {
-                    battleActive = false
-                    // Yarida birakildi: interstitial hakki DOGMAZ.
-                    adHost.onBattleAbandoned()
-                }
+                battleActive = false
                 // Guclendiriciler SAVASA KAPSAMLIDIR, stoklanmaz. Zafer/yenilgi
                 // dallarinda DEGIL burada kapatiliyor: `onLevelCleared` yildizi
                 // `starHealthFor` uzerinden hesapliyor ve o da savas
                 // guclendirici durumuna bakiyor — erken kapatmak Us Tamiri'nin
                 // yildiz notrlugunu sessizce devre disi birakirdi.
                 campaignProgress.endBattle()
-                adHost.preload(appContext)
             }
             else -> {}
         }
     }
 
-    // Sonuc modali kapandiktan SONRA interstitial, sonra navigasyon.
-    val exit = pendingExit
-    LaunchedEffect(exit) {
-        if (exit == null) return@LaunchedEffect
-        // Modal bu kare ile birlikte kaldirildi (pendingExit != null iken
-        // cizilmiyor). Bir kare bekleyip reklamin modalin USTUNE acilmasini
-        // kesin olarak engelliyoruz.
-        withFrameNanos { }
-
-        var done = false
-        val proceed = {
-            if (!done) {
-                done = true
-                exit.navigate()
-                pendingExit = null
-            }
-        }
-
-        val act = activity
-        if (act == null) {
-            proceed()
-        } else {
-            adHost.showInterstitial(act, exit.reason) { proceed() }
-            // Son savunma: SDK callback'i hic gelmezse oyuncu modalsiz bir
-            // savas alaninda kilitlenirdi. Hedef ekran her iki yolda da ayni
-            // oldugu icin bu supap hicbir seyi bozmaz.
-            delay(AdPolicyConfig.EXIT_WATCHDOG_MS)
-            proceed()
-        }
-    }
-
-    /**
-     * Faz 12 — REKLAM YOLUYLA GUCLENDIRICI. **SIRA KRITIKTIR.**
-     *
-     * Reklam acilinca `ON_PAUSE` -> [GameEngine.pauseForLifecycle] gelir ve oyun
-     * BILINCLI olarak PAUSED kalir ("oyuncu devam tusuna kendi basar"). Ama
-     * [GameEngine.applyBoosterActivation] `acceptsBattlefieldInput()` kapisina
-     * bakiyor ve PAUSED'da `false` donuyor — oysa
-     * [CampaignProgressImpl.activateBooster] kullanimi ve **gunluk reklam
-     * hakkini o noktada ZATEN harcamis** olurdu. Yani naif sira "reklami izle,
-     * hicbir sey alma" demek olurdu.
-     *
-     * Bu yuzden: once oyun devam ettirilir, kapi DOGRULANIR, ancak ondan sonra
-     * ekonomi katmani cagrilir. Hak, uygulanacagi kesinlesmeden tuketilmez.
-     */
-    fun applyBoosterAd(type: BoosterType, granted: Boolean): String {
-        val name = context.getString(boosterNameRes(type))
-        if (!granted) return context.getString(R.string.booster_ad_unavailable)
-
-        if (gameEngine.gameState.value == GameState.PAUSED) gameEngine.togglePause()
-        if (!gameEngine.acceptsBattlefieldInput()) {
-            // Basarisiz dalda da mesaj okunur: yukarida devam ettirdigimiz
-            // oyunu geri duraklat, yoksa "islem basarisiz" yazisini okurken
-            // savas akmaya devam eder.
-            val blocked = gameEngine.gameState.value
-            if (blocked == GameState.PREPARATION || blocked == GameState.WAVE_RUNNING) {
-                gameEngine.togglePause()
-            }
-            return context.getString(R.string.booster_ad_failed, name)
-        }
-
-        val activation = campaignProgress.activateBooster(
-            type = type,
-            viaAd = true,
-            supplyOnHand = gameEngine.gold.value,
-            baseHealth = gameEngine.lives.value,
-            maxBaseHealth = gameEngine.maxLives,
-            // Reklam yolu da hedef kontrolune TABIDIR. Bu satir olmadan
-            // varsayilan `ENEMY_COUNT_UNKNOWN` gecerdi ve bos sahada reklamla
-            // alinan hava destegi savas basina tek EK hakki ile gunluk 4
-            // reklam hakkindan birini HICBIR SEYE yakardi — ustelik oyuncu
-            // bedelini reklam izleyerek zaten odemis olurdu.
-            enemiesOnField = gameEngine.enemies.size
-        )
-        val message = if (gameEngine.applyBoosterActivation(activation)) {
-            context.getString(R.string.booster_ad_applied, name)
-        } else {
-            context.getString(R.string.booster_ad_failed, name)
-        }
-
-        // SONUC OKUNURKEN SIMULASYON DURUR.
-        //
-        // Yukarida oyunu devam ettirmek ZORUNDAYDIK (`acceptsBattlefieldInput`
-        // kapisi PAUSED'da false doner ve hak yanardi), ama `RewardedOfferSheet`
-        // RESULT fazinda EKRANDA KALIR. Bu satir olmadan oyuncu "Hava destegi
-        // devrede" mesajini okurken dusmanlar ilerliyor ve us cani gidiyordu —
-        // yani odulunu okumanin bedeli can oluyordu.
-        //
-        // Ayni desen takviye teklifinde (R2) zaten uygulanmis; burada eksikti.
-        // `onDismiss` "PAUSED ise togglePause" yaptigi ve idempotent oldugu
-        // icin sheet kapaninca oyun kaldigi yerden devam eder.
-        val stateNow = gameEngine.gameState.value
-        if (stateNow == GameState.PREPARATION || stateNow == GameState.WAVE_RUNNING) {
-            gameEngine.togglePause()
-        }
-        return message
-    }
-
-    /** Boss zaferi (bolum 11/22) politika tarafinda korunur — GDD §G.2/6. */
-    fun victoryExitReason(): InterstitialReason =
-        if (gameEngine.levelSpec.levelId in AdPolicyConfig.BOSS_LEVEL_IDS) {
-            InterstitialReason.BOSS_VICTORY_TO_LEVEL_SELECT
-        } else {
-            InterstitialReason.RESULT_TO_LEVEL_SELECT
-        }
-
     Box(modifier = Modifier.fillMaxSize()) {
         when (gameState) {
             GameState.MAIN_MENU -> {
-                // Banner ALT KENARDA ve Column icinde: no-fill'de 0dp'ye
-                // cokmesi ustteki menunun yerini DEGISTIRMEZ (bindirme yok,
-                // yani parmagin altinda duzen kaymasi da yok).
-                Column(modifier = Modifier.fillMaxSize()) {
-                    Box(modifier = Modifier.weight(1f)) {
-                        MainMenuOverlay(
-                            gameEngine = gameEngine,
-                            onStartGame = { gameEngine.openLevelSelect() },
-                            // CEPHANELIK ve GOREVLER artik ANA MENUDEN de
-                            // acilabiliyor. Ikisi de YENI EKRAN DEGIL —
-                            // bolum secim ekranindan zaten ulasilan aynı iki
-                            // panel, ayni durum degiskenleriyle. Tek degisen
-                            // giris noktasi sayisi.
-                            onOpenArmory = { shopOpen = true },
-                            onOpenMissions = { menuMissionsOpen = true },
-                            // REAKTIF prestij rank'i. `MainMenuOverlay` bunu
-                            // eskiden `SaveManager`dan okuyordu ve satin alma
-                            // sonrasi cip ANCAK yeniden baslatmada cikiyordu
-                            // (2026-09-02 cihaz bulgusu).
-                            prestigeRank = campaignProgress.prestigeRank,
-                            onResetProgress = resetProgressAndReload
-                        )
-                    }
-                    BannerAdSlot(enabled = bannerEnabled)
-                }
+                MainMenuOverlay(
+                    gameEngine = gameEngine,
+                    onStartGame = { gameEngine.openLevelSelect() },
+                    // CEPHANELIK ve GOREVLER artik ANA MENUDEN de
+                    // acilabiliyor. Ikisi de YENI EKRAN DEGIL —
+                    // bolum secim ekranindan zaten ulasilan aynı iki
+                    // panel, ayni durum degiskenleriyle. Tek degisen
+                    // giris noktasi sayisi.
+                    onOpenArmory = { shopOpen = true },
+                    onOpenMissions = { menuMissionsOpen = true },
+                    // REAKTIF prestij rank'i. `MainMenuOverlay` bunu
+                    // eskiden `SaveManager`dan okuyordu ve satin alma
+                    // sonrasi cip ANCAK yeniden baslatmada cikiyordu
+                    // (2026-09-02 cihaz bulgusu).
+                    prestigeRank = campaignProgress.prestigeRank,
+                    onResetProgress = resetProgressAndReload
+                )
 
                 // Iki panel de TAM EKRAN katman ve menunun USTUNDE: acikken
                 // "HAREKATI BASLAT"a kazara basilamaz.
@@ -691,82 +395,38 @@ fun GameScreen(
                 }
             }
             GameState.LEVEL_SELECT -> {
-                // GORUNEN SAYININ SAHIBI EKONOMI (Faz 13).
-                //
-                // Eskiden ikisi de `adHost`tan okunuyordu; oradaki sayac
-                // BELLEK-ICI, ekonomininki KALICI. Uygulamayi kapatip acan
-                // oyuncuya ekran "3 hak" diyor, ekonomi hakki dolu gorup
-                // 150 yerine 50 coin oduyordu. Ekonomi sayaci reklam
-                // katmanininkine her zaman esit veya ondan kucuk oldugu icin
-                // ("consume" yalnizca dolu odulde olur, ekonomi ustune bir de
-                // yeniden baslatmalari hatirlar) kapi HER ZAMAN once ekonomide
-                // kapanir — yani oyuncu hicbir zaman "hakkin var" deyip
-                // reddedilen bir butona basmaz.
-                val supplyRemaining = campaignProgress.supplyDropViewsLeftToday
-                val supplyOffered = supplyRemaining > 0 &&
-                    campaignProgress.supplyDropBudgetLeftToday > 0 &&
-                    adHost.isRewardedOffered(RewardedPlacement.SUPPLY_DROP)
+                LevelSelectScreen(
+                    progress = campaignProgress,
+                    // `elite = false` ACIK: parametresiz varsayilan
+                    // "mevcut bayrak"tir (retry sozlesmesi icin) ve
+                    // buradan gelen her baslatma NORMALDIR.
+                    onPlayLevel = { levelNo -> gameEngine.startNewGame(levelNo, elite = false) },
+                    // ELIT SEVK: bilet ekonomide ODENDIKTEN sonra
+                    // motor elit bayrakla baslatilir. Bilet denemeye
+                    // degil SAVASA kesilir: retry ayni bilete dahil.
+                    onPlayElite = { levelNo ->
+                        if (campaignProgress.buyEliteTicket(levelNo)) {
+                            gameEngine.startNewGame(levelNo, elite = true)
+                        }
+                    },
+                    onBack = { gameEngine.returnToMainMenu() },
+                    // CEPHANELIK girisi bolum secim ekraninin BASLIK SATIRINDA.
+                    // Eskiden serbest bir katmandi ve yatayda (360 dp yukseklik)
+                    // bolum kartlarinin USTUNE biniyordu.
+                    onOpenArmory = { shopOpen = true },
+                    // Faz 20 — PERDE ACILIS KARTI baglantisi. Kalicilik `SaveManager`in
+                    // var olan dizeyle anahtarlanan tek atislik bayrak API'si uzerinden
+                    // yuruyor (`act_intro_1..5`).
+                    actIntroStore = remember(saveManager) {
+                        SaveManagerActIntroStore(saveManager)
+                    },
+                    // COIN CIPI = IKMAL DEPOSU KAPISI (satin alma). Reklamla coin kazanma
+                    // teklifi YOKTUR; cip yalnizca depoyu acar.
+                    onOpenStore = { storeOpen = true }
+                )
 
-                Column(modifier = Modifier.fillMaxSize()) {
-                    Box(modifier = Modifier.weight(1f)) {
-                        LevelSelectScreen(
-                            progress = campaignProgress,
-                            // `elite = false` ACIK: parametresiz varsayilan
-                            // "mevcut bayrak"tir (retry sozlesmesi icin) ve
-                            // buradan gelen her baslatma NORMALDIR.
-                            onPlayLevel = { levelNo -> gameEngine.startNewGame(levelNo, elite = false) },
-                            // ELIT SEVK: bilet ekonomide ODENDIKTEN sonra
-                            // motor elit bayrakla baslatilir. Bilet denemeye
-                            // degil SAVASA kesilir: retry ayni bilete dahil.
-                            onPlayElite = { levelNo ->
-                                if (campaignProgress.buyEliteTicket(levelNo)) {
-                                    gameEngine.startNewGame(levelNo, elite = true)
-                                }
-                            },
-                            onBack = { gameEngine.returnToMainMenu() },
-                            // CEPHANELIK girisi ARTIK BOLUM SECIM EKRANININ
-                            // BASLIK SATIRINDA. Eskiden burada `TopEnd` +
-                            // `top = 62.dp` ile serbest bir katmandi ve yatayda
-                            // (360 dp yukseklik) bolum kartlarinin USTUNE
-                            // biniyordu — cihazda 5. kartin basligini
-                            // ortuyordu. Sabit dp ofseti, kart konumu ekran
-                            // boyutuna gore degistigi icin bu carpismayi
-                            // kacinilmaz kiliyordu.
-                            onOpenArmory = { shopOpen = true },
-                            // Faz 20 — PERDE ACILIS KARTI baglantisi.
-                            // Parametrenin varsayilani `null`, yani bu satir
-                            // olmadan ekran bugunkuyle birebir ayni davranir.
-                            // Kalicilik `SaveManager`in var olan dizeyle
-                            // anahtarlanan tek atislik bayrak API'si uzerinden
-                            // yuruyor (`act_intro_1..5`) — `SaveManager`
-                            // DEGISTIRILMEDI.
-                            actIntroStore = remember(saveManager) {
-                                SaveManagerActIntroStore(saveManager)
-                            },
-                            // R1b — COIN CIPINDEN ODULLU REKLAM.
-                            //
-                            // Kapi `supplyOffered` ile AYNI: iki giris noktasi
-                            // da ayni gunluk hakka ve ayni gunluk coin
-                            // butcesine bakar. Ayri bir kosul yazsaydik biri
-                            // acikken digeri kapali olabilirdi ve oyuncu
-                            // "hakkin var" deyip 0 coin odeyen bir butona
-                            // basardi.
-                            coinAdOffered = supplyOffered,
-                            onCoinAdRequested = { coinTopUpOfferOpen = true }
-                        )
-                    }
-                    // R1 seridi banner ile bolum kartlari ARASINDA: hicbir
-                    // oynanis/navigasyon butonu reklama bitisik durmaz.
-                    SupplyDropBar(
-                        offered = supplyOffered,
-                        remaining = supplyRemaining,
-                        onRequest = { supplyDropOfferOpen = true }
-                    )
-                    BannerAdSlot(enabled = bannerEnabled, guardGapDp = 12.dp)
-                }
-
-                // Cephanelik TAM EKRAN katman: acikken bolum kartlari ve R1
-                // seridi erisilemez olur, boylece kazara sevk/reklam olmaz.
+                // Cephanelik TAM EKRAN katman: acikken bolum kartlari erisilemez olur,
+                // boylece kazara sevk olmaz.
                 if (shopOpen) {
                     UpgradeShopScreen(
                         progress = campaignProgress,
@@ -780,58 +440,6 @@ fun GameScreen(
                         billing = billing,
                         onBack = { storeOpen = false },
                         onPurchase = launchPurchase
-                    )
-                }
-
-                if (supplyDropOfferOpen) {
-                    RewardedOfferSheet(
-                        adHost = adHost,
-                        placement = RewardedPlacement.SUPPLY_DROP,
-                        title = stringResource(R.string.ad_sheet_supply_title),
-                        body = stringResource(
-                            R.string.ad_sheet_supply_body,
-                            AdPolicyConfig.SUPPLY_DROP_FULL_COIN,
-                            AdPolicyConfig.SUPPLY_DROP_REDUCED_COIN
-                        ),
-                        remainingLabel = stringResource(
-                            R.string.ad_sheet_supply_remaining,
-                            supplyRemaining,
-                            AdPolicyConfig.SUPPLY_DROP_DAILY_LIMIT
-                        ),
-                        applyResult = { applySupplyDrop(context, it, activeRewardBridge) },
-                        onDismiss = {
-                            supplyDropOfferOpen = false
-                            rewardTick++
-                        }
-                    )
-                } else if (coinTopUpOfferOpen) {
-                    // R1b — AYNI teklif, AYNI odul yolu, AYNI gunluk tavan;
-                    // degisen tek sey giris noktasi ve dolayisiyla analitik
-                    // etiketi (`placement.name`). Metinler de kasitli olarak
-                    // ayni: oyuncu icin bunlar tek bir "tedarik talebi"dir,
-                    // iki farkli odul degil.
-                    //
-                    // `else if`: iki teklif ayni anda acilirsa iki scrim ust
-                    // uste binerdi.
-                    RewardedOfferSheet(
-                        adHost = adHost,
-                        placement = RewardedPlacement.COIN_TOP_UP,
-                        title = stringResource(R.string.ad_sheet_supply_title),
-                        body = stringResource(
-                            R.string.ad_sheet_supply_body,
-                            AdPolicyConfig.SUPPLY_DROP_FULL_COIN,
-                            AdPolicyConfig.SUPPLY_DROP_REDUCED_COIN
-                        ),
-                        remainingLabel = stringResource(
-                            R.string.ad_sheet_supply_remaining,
-                            supplyRemaining,
-                            AdPolicyConfig.SUPPLY_DROP_DAILY_LIMIT
-                        ),
-                        applyResult = { applySupplyDrop(context, it, activeRewardBridge) },
-                        onDismiss = {
-                            coinTopUpOfferOpen = false
-                            rewardTick++
-                        }
                     )
                 }
             }
@@ -880,16 +488,7 @@ fun GameScreen(
                 // OYNAMAZ ve en sagdaki build pad'in dokunma dairesini ortmez.
                 BoosterRail(
                     gameEngine = gameEngine,
-                    progress = campaignProgress,
-                    onAdBoosterRequested = { type ->
-                        // Teklif ekrani acikken savas AKMAYA DEVAM ETMEMELI:
-                        // scrim dokunusu yutuyor ama simulasyon durmuyordu,
-                        // yani oyuncu teklifi okurken us cani gidiyordu.
-                        if (gameEngine.gameState.value != GameState.PAUSED) {
-                            gameEngine.togglePause()
-                        }
-                        boosterAdRequest = type
-                    }
+                    progress = campaignProgress
                 )
 
                 // ILK OTURUM OGRETICISI (docs/FUN_AUDIT.md 1. madde).
@@ -930,161 +529,58 @@ fun GameScreen(
                     hudInsetPx = hudInsetPx
                 )
 
-                val adBooster = boosterAdRequest
-                if (adBooster != null) {
-                    RewardedOfferSheet(
-                        adHost = adHost,
-                        placement = RewardedPlacement.BOOSTER,
-                        title = stringResource(R.string.ad_sheet_booster_title),
-                        body = stringResource(
-                            R.string.ad_sheet_booster_body,
-                            stringResource(boosterNameRes(adBooster))
-                        ),
-                        remainingLabel = stringResource(
-                            R.string.ad_sheet_booster_remaining,
-                            campaignProgress.boosterAdViewsLeftToday,
-                            EconomyConfig.BOOSTER_AD_VIEWS_PER_DAY
-                        ),
-                        // Reklam gelmemesi oyuncuyu CEZALANDIRMAZ (ev kurali:
-                        // no-fill ilerlemeyi kilitlemez). Ust sinir zaten
-                        // ekonomi katmaninin KALICI gunluk sayacidir.
-                        applyResult = { applyBoosterAd(adBooster, it.grantsSomething) },
-                        onDismiss = {
-                            boosterAdRequest = null
-                            // `applyBoosterAd` basarili yolda oyunu zaten
-                            // devam ettirdi; bu yalnizca iptal/no-fill dalini
-                            // toparlar ve iki kez cagrilmasi guvenlidir.
-                            if (gameEngine.gameState.value == GameState.PAUSED) {
-                                gameEngine.togglePause()
-                            }
-                            rewardTick++
-                        }
-                    )
-                }
-
-                // SAVAS EKRANINDA BANNER YOK (DECISIONS bağlayıcı) — oynanis
-                // yuzeyi hicbir reklam tarafindan kaydirilmaz/kucultulmez.
+                // SAVAS EKRANINDA REKLAM YOK: oynanis yuzeyi hicbir teklif katmani
+                // tarafindan kaydirilmaz/kucultulmez.
 
                 // Overlay Modals
-                // pendingExit != null iken modal cizilmez: interstitial
-                // modalin USTUNE acilmaz, arkasinda da kalmaz.
-                if (pendingExit == null) {
-                    if (reinforcementOfferOpen) {
-                        // R2 — TAKVIYE. `when (gameState)` DISINDA ve butun
-                        // modallarin ONUNDE ciziliyor.
-                        //
-                        // Neden disarida: takviye kabul edilince motor DEFEAT'ten
-                        // cikip PREPARATION'a doner. Sheet `GameState.DEFEAT`
-                        // dalinin icinde kalsaydi tam o anda yok olurdu; sonuc
-                        // mesaji ("takviye indi") hic gorunmez, `onDismiss` hic
-                        // cagrilmaz ve ertelenmis savas-sonu muhasebesi asili
-                        // kalirdi.
-                        RewardedOfferSheet(
-                            adHost = adHost,
-                            placement = RewardedPlacement.REINFORCEMENT,
-                            title = stringResource(R.string.ad_sheet_reinforce_title),
-                            body = stringResource(
-                                R.string.ad_sheet_reinforce_body,
-                                AdPolicyConfig.REINFORCEMENT_LIVES
-                            ),
-                            applyResult = { result ->
-                                val message = applyReinforcement(context, result, activeRewardBridge)
-                                // Takviye uygulandiysa motor PREPARATION'a dondu
-                                // ve hazirlik sayaci AKMAYA BASLADI — oyuncu ise
-                                // hala sonuc mesajini okuyor. Guclendirici
-                                // teklifindeki desenin aynisi: teklif ekrani
-                                // acikken simulasyon durur.
-                                if (gameEngine.gameState.value == GameState.PREPARATION) {
-                                    gameEngine.togglePause()
-                                }
-                                message
+                when (gameState) {
+                    // Faz 4: "MAIN MENU" butonlari eskiden startNewGame() cagiriyordu,
+                    // yani menuye donmek yerine ayni bolumu bastan baslatiyordu.
+                    // Artik gercek bir cikis var.
+                    GameState.PAUSED -> PauseMenuModal(
+                        gameEngine = gameEngine,
+                        onResume = { gameEngine.togglePause() },
+                        onRestart = { gameEngine.startNewGame() },
+                        onMainMenu = { gameEngine.returnToLevelSelect() },
+                        onResetProgress = resetProgressAndReload
+                    )
+                    GameState.VICTORY -> VictoryModal(
+                        gameEngine = gameEngine,
+                        clearResult = lastClearResult,
+                        nextLevelId = nextPlayableLevel,
+                        onNextLevel = nextPlayableLevel?.let { next ->
+                            { gameEngine.startNewGame(next) }
+                        },
+                        onLevelSelect = { gameEngine.returnToLevelSelect() }
+                    )
+                    GameState.DEFEAT -> {
+                        val defeatLevel = gameEngine.levelSpec.levelId
+                        val decision = campaignProgress.continueDecision(defeatLevel)
+                        DefeatModal(
+                            gameEngine = gameEngine,
+                            // RETRY: ucretsiz ve HER ZAMAN acik. "Bir kere daha deneyeyim"
+                            // dongusu hicbir bedelle cezalandirilmaz.
+                            onRetry = { gameEngine.startNewGame() },
+                            onMainMenu = { gameEngine.returnToLevelSelect() },
+                            // DEVAM (coin): karar ve bakiye ekonomiden gelir; ekran kendi
+                            // karsilastirmasini yapmaz. Kill switch kapaliysa satir yok.
+                            continueOffer = if (decision is ContinueDecision.Disabled) {
+                                null
+                            } else {
+                                ContinueOffer(decision, campaignProgress.coins)
                             },
-                            onDismiss = {
-                                reinforcementOfferOpen = false
-                                if (gameEngine.gameState.value == GameState.PAUSED) {
-                                    // Takviye uygulandi: ayni savas kaldigi
-                                    // dalgadan devam eder. Savas-sonu muhasebesi
-                                    // YAPILMAZ, cunku savas bitmedi.
-                                    gameEngine.togglePause()
-                                } else if (battleActive) {
-                                    // Takviye yok (vazgecildi veya motor
-                                    // uygulayamadi): savas gercekten bitti ve
-                                    // ertelenmis muhasebe simdi yapilir.
-                                    battleActive = false
-                                    adHost.onBattleCompleted()
-                                    adHost.preload(appContext)
-                                }
-                                rewardTick++
-                            }
-                        )
-                    } else {
-                        when (gameState) {
-                            // Faz 4: "MAIN MENU" butonlari eskiden startNewGame() cagiriyordu,
-                            // yani menuye donmek yerine ayni bolumu bastan baslatiyordu.
-                            // Artik gercek bir cikis var.
-                            // Guclendirici teklifi acikken oyun BIZIM tarafimizdan
-                            // duraklatildi; duraklatma menusu de acilirsa scrim'in
-                            // altinda birikir ve teklif kapaninca bir kare goz
-                            // kirpar. Oyuncunun istedigi duraklatma degil, tekliftir.
-                            GameState.PAUSED -> if (boosterAdRequest == null) {
-                                PauseMenuModal(
-                                    gameEngine = gameEngine,
-                                    onResume = { gameEngine.togglePause() },
-                                    onRestart = { gameEngine.startNewGame() },
-                                    // Yarida birakma: interstitial YOK (GDD §G.2/5).
-                                    onMainMenu = { gameEngine.returnToLevelSelect() },
-                                    onResetProgress = resetProgressAndReload
+                            // Bedel ve etki TAM BIR KEZ: `continueAfterDefeat` once ekonomiyi
+                            // kontrol eder, motoru surdurur, ANCAK motor surdurduyse bedeli
+                            // dusurur. Ikinci dokunus hicbir sey degistirmez.
+                            onContinue = {
+                                campaignProgress.continueAfterDefeat(
+                                    defeatLevel,
+                                    gameEngine::reinforceAfterDefeat
                                 )
                             }
-                            GameState.VICTORY -> {
-                                if (doublePayoutOfferOpen) {
-                                    // R3 — sonuc modalinin ONUNDE, ustune bindirmeden.
-                                    RewardedOfferSheet(
-                                        adHost = adHost,
-                                        placement = RewardedPlacement.DOUBLE_PAYOUT,
-                                        title = stringResource(R.string.ad_sheet_double_title),
-                                        body = stringResource(R.string.ad_sheet_double_body),
-                                        applyResult = { applyDoublePayout(context, it, activeRewardBridge) },
-                                        onDismiss = {
-                                            doublePayoutOfferOpen = false
-                                            rewardTick++
-                                        }
-                                    )
-                                } else {
-                                    VictoryModal(
-                                        gameEngine = gameEngine,
-                                        clearResult = lastClearResult,
-                                        nextLevelId = nextPlayableLevel,
-                                        onNextLevel = nextPlayableLevel?.let { next ->
-                                            {
-                                                pendingExit = PendingBattleExit(victoryExitReason()) {
-                                                    gameEngine.startNewGame(next)
-                                                }
-                                            }
-                                        },
-                                        onLevelSelect = {
-                                            pendingExit = PendingBattleExit(victoryExitReason()) {
-                                                gameEngine.returnToLevelSelect()
-                                            }
-                                        }
-                                    )
-                                }
-                            }
-                            GameState.DEFEAT -> DefeatModal(
-                                gameEngine = gameEngine,
-                                // RETRY: interstitial YOK. "Bir kere daha
-                                // deneyeyim" dongusu reklamla cezalandirilmaz
-                                // (GDD §G.1: savas BASLAMADAN interstitial yok).
-                                onRetry = { gameEngine.startNewGame() },
-                                onMainMenu = {
-                                    pendingExit = PendingBattleExit(
-                                        InterstitialReason.RESULT_TO_LEVEL_SELECT
-                                    ) { gameEngine.returnToLevelSelect() }
-                                }
-                            )
-                            else -> {}
-                        }
+                        )
                     }
+                    else -> {}
                 }
             }
         }

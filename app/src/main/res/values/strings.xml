@@ -207,6 +207,11 @@
     <!-- %1$d = dusmanin yardigi dalga -->
     <string name="dialog_defeat_body">The enemy broke through your defenses on Wave %1$d.</string>
     <string name="dialog_retry">RETRY</string>
+    <string name="defeat_continue_label">CONTINUE · %1$d COIN</string>
+    <string name="defeat_continue_balance">Balance %1$d COIN · restores %2$d base lives</string>
+    <string name="defeat_continue_short">Need %1$d more COIN (balance %2$d)</string>
+    <string name="defeat_continue_reserve">Coins reserved for the next operation cannot be spent</string>
+    <string name="defeat_continue_used">Continue was already used in this battle</string>
 
     <string name="dialog_paused_title">GAME PAUSED</string>
     <string name="dialog_sound_effects">Sound Effects</string>
@@ -221,9 +226,9 @@
     <string name="level_coin_label" translatable="false">COIN</string>
     <string name="level_coin_amount">%1$d</string>
     <!--
-      Coin cipindeki odullu reklam rozeti (R1b / COIN_TOP_UP).
+      Coin cipindeki Ikmal Deposu kapisi rozeti.
       translatable=false ve TEK KARAKTER: bu rozet baslik satirindaki tek sabit
-      genislikli ogedir. Cevrilebilir bir metin (ornegin "REKLAM IZLE") 740x360
+      genislikli ogedir. Cevrilebilir bir metin (ornegin "DEPO") 740x360
       dp yatayda saga yasli cip grubunu tasirirdi.
     -->
     <string name="level_coin_topup_badge" translatable="false">+</string>
@@ -290,40 +295,8 @@
     <string name="biome_desert">DESERT</string>
     <string name="biome_autumn">AUTUMN</string>
 
-    <!-- Faz 9: reklam teklif metinleri (AdOffers.kt) -->
-    <string name="ad_supply_bar_button">REQUEST SUPPLY DROP  (%1$d left today)</string>
-    <string name="ad_supply_bar_used">Supply requisition used up — resets at midnight</string>
-    <string name="ad_contacting_hq">Contacting HQ…</string>
-    <string name="ad_supply_full">Supply drop secured: +%1$d coin.</string>
-    <string name="ad_supply_reduced">HQ sent what it had: +%1$d coin. Your daily requisition was not used.</string>
-    <string name="ad_supply_unavailable">Supply lines are busy right now. Your daily requisition is still available.</string>
-    <!-- %1$d = reklamla eklenen EK coin (taban odul zaten yatirildi) -->
-    <string name="ad_double_full">Double payout approved: +%1$d coin on top of your payout.</string>
-    <string name="ad_double_reduced">No ad was available. Your operation payout is already banked.</string>
-    <string name="ad_double_claimed">Double payout already claimed for this operation.</string>
-    <string name="ad_reinforce_failed">Reinforcements could not deploy. Your progress is safe.</string>
-    <string name="ad_reinforce_full">Reinforcements deployed: base restored to %1$d lives.</string>
-    <string name="ad_reinforce_noad">No ad was available, but reinforcements deployed anyway: base restored to %1$d lives.</string>
 
-    <!-- Faz 10: rewarded teklif popup metinleri -->
-    <string name="ad_sheet_watch">WATCH AD</string>
-    <string name="ad_sheet_skip">NO THANKS</string>
-    <!-- Faz 17: cihazda goruldu — bu etiket koda GOMULUYDU ("CONTINUE") ve
-         her sey Turkceyken Ingilizce kaliyordu. -->
-    <string name="ad_sheet_continue">CONTINUE</string>
-    <string name="ad_sheet_supply_title">SUPPLY REQUISITION</string>
-    <string name="ad_sheet_supply_body">Watch a short ad and HQ sends %1$d coin. If no ad is available you still get %2$d coin and your daily requisition is kept.</string>
-    <string name="ad_sheet_supply_remaining">%1$d of %2$d left today</string>
-    <string name="ad_sheet_double_title">DOUBLE PAYOUT</string>
-    <string name="ad_sheet_double_body">Watch a short ad to double this operation\'s coin payout. Your base payout is already banked either way.</string>
-    <string name="ad_sheet_reinforce_title">CALL REINFORCEMENTS</string>
-    <string name="ad_sheet_reinforce_body">Watch a short ad to restore your base to %1$d lives and continue this battle from the current wave.</string>
 
-    <!-- Faz 12: R4 savas-ici guclendirici rewarded teklifi (RewardedPlacement.BOOSTER).
-         %1$s = guclendirici adi (Acil Tedarik / Hava Destegi / Us Tamiri). -->
-    <string name="ad_sheet_booster_title">FIELD SUPPORT</string>
-    <string name="ad_sheet_booster_body">Watch a short ad to call in %1$s for this battle. Optional — the battle carries on either way.</string>
-    <string name="ad_sheet_booster_remaining">%1$d of %2$d left today</string>
 
     <!-- Faz 10: ses durumu etiketi (disli ikonu yanilticiydi) -->
     <string name="dialog_sound_on">SOUND ON</string>
@@ -370,7 +343,6 @@
     <string name="booster_chip_price_supply" translatable="false">%1$d</string>
     <string name="booster_chip_price_coin" translatable="false">%1$d COIN</string>
     <string name="booster_chip_short" translatable="false">-%1$d</string>
-    <string name="booster_chip_ad">AD</string>
     <!-- Bekleme cipi. Ciplak sayi YETMEZ: ayni yuvada fiyat da ciplak sayi
          olarak cikiyor (booster_chip_price_supply) ve oyuncu sayaci fiyat
          saniyordu (cihaz geri bildirimi: "bu sayac ne yapiyor anlamadim").
@@ -394,22 +366,13 @@
     <string name="booster_msg_no_repair">Base integrity already full</string>
     <string name="booster_msg_no_targets">No enemies on the field</string>
     <string name="booster_msg_spent">Used up in this battle</string>
-    <string name="booster_msg_daily_ad">Daily ad limit reached — resets at midnight</string>
-    <string name="booster_msg_paid_first">Use your paid charge first</string>
     <string name="booster_repair_star_note">Repaired health does not count toward stars</string>
 
     <string name="booster_desc_ready">%1$s. Costs %2$s. Ready.</string>
-    <string name="booster_desc_ad">%1$s. Free with a short ad.</string>
     <string name="booster_desc_cooldown">%1$s. Ready in %2$d seconds.</string>
     <string name="booster_desc_blocked">%1$s. Unavailable: %2$s</string>
     <string name="booster_desc_armed">%1$s armed. Tap again to confirm.</string>
 
-    <!-- Reklam yolu sonuclari. No-fill oyuncuyu CEZALANDIRMAZ: ust siniri
-         ekonomi katmaninin KALICI gunluk sayaci tutar, reklamin gelip
-         gelmemesi degil. -->
-    <string name="booster_ad_applied">%1$s is in play</string>
-    <string name="booster_ad_unavailable">No ad right now — nothing was spent</string>
-    <string name="booster_ad_failed">Could not deploy %1$s</string>
 
     <!-- ==================== Elite Deploy + Prestige (ECONOMY_ANALYSIS C+B) ====
          Elit Sevk: tekrarlanabilir coin emicisi. Bilet 1-yildiz odulunun
@@ -445,34 +408,19 @@ Normal replay earns no coin; Elite Deploy is a challenge run.</string>
          FIYAT METNI BURADA YOK: her fiyat Play'den (ProductDetails.formattedPrice)
          gelir. Koda yazilan fiyat bir gun yalan soyler. -->
     <string name="store_title">SUPPLY DEPOT</string>
-    <string name="store_section_remove_ads">AD-FREE CAMPAIGN</string>
-    <string name="store_remove_ads_title">REMOVE ADS</string>
-    <string name="store_remove_ads_body">Removes the full-screen ads between battles. One-time purchase, tied to your Google account.</string>
-    <!-- BU CUMLE ZORUNLU: rewarded kalkmaz, oyuncu bunu SATIN ALMADAN ONCE bilmeli. -->
-    <string name="store_remove_ads_note">Optional rewarded ads (free coin, boosters) stay available if you want them.</string>
-    <string name="store_owned">✓ PURCHASED</string>
-    <string name="store_section_coins">COIN PACKS</string>
     <!-- %1$s = binlik ayracli coin miktari -->
     <string name="store_pack_coins">%1$s COIN</string>
-    <string name="store_best_value">BEST VALUE</string>
-    <string name="store_unavailable">unavailable right now</string>
-    <string name="store_connecting">Connecting to Google Play…</string>
-    <string name="store_restore">RESTORE PURCHASES</string>
-    <string name="store_restore_running">CHECKING…</string>
-    <string name="store_restore_done">Purchases on your account were checked.</string>
-    <string name="store_restore_failed">Could not reach Google Play. Check your connection and try again.</string>
-    <string name="store_restore_hint">Changed device or account? Restore Remove Ads here. Coin packs are credited instantly and do not need restoring.</string>
-    <string name="store_coins_hint">Coins unlock levels, buy Armory upgrades, Prestige Insignia, Elite deployments and in-battle Air Support.</string>
+    <!-- %1$d = paketin sirasi, %2$d = toplam paket -->
+    <string name="store_pack_ordinal">PACK %1$d / %2$d</string>
+    <string name="store_price_loading">…</string>
+    <string name="store_price_unavailable">UNAVAILABLE</string>
     <!-- Cephanelik'teki giris karti -->
     <string name="store_card_title">Supply Depot</string>
-    <string name="store_card_body">Buy coin or remove ads</string>
+    <string name="store_card_body">Buy coin packs</string>
     <string name="store_card_open">OPEN</string>
+    <string name="store_card_packs">%1$d PACKS</string>
     <!-- Debug paneli — release'te cizilmez, cevrilmez -->
-    <string name="store_debug_title" translatable="false">DEBUG · SAHTE SATIN ALMA</string>
-    <string name="store_debug_body" translatable="false">Play Console gerekmez; release derlemesinde bu panel YOKTUR. Dugmeler yalnizca CIHAZDAKI test durumunu degistirir, Play\'e dokunmaz. Sahte reklamsiz bayragi uygulama yeniden acilip Play\'e baglaninca silinir (Play sahte satin almayi bilmez).</string>
-    <string name="store_debug_fake_pack" translatable="false">+%1$s COIN (sahte)</string>
-    <string name="store_debug_same_token" translatable="false">AYNI JETONU TEKRAR GONDER (bakiye degismemeli)</string>
-    <string name="store_debug_ads_on" translatable="false">TEST: reklamsiz bayragini AC</string>
-    <string name="store_debug_ads_off" translatable="false">TEST: reklamsiz bayragini SIFIRLA</string>
-    <string name="store_debug_status" translatable="false">Bakiye: %1$s · Reklamsiz: %2$s · Satin alinan toplam: %3$s</string>
+    <string name="store_debug_title" translatable="false">DEBUG · FAKE PURCHASES</string>
+    <string name="store_debug_body" translatable="false">No Play Console needed; this panel does NOT exist in release builds. Each button runs the real fulfilment path (policy, ledger, wallet) with a fake Play token; only the consume/acknowledge call to Play is faked.</string>
+    <string name="store_debug_status" translatable="false">Balance: %1$s · Total purchased: %2$s</string>
 </resources>

@@ -30,8 +30,8 @@ android {
     //
     // Play e HENUZ yuklenmedi; yuklendikten sonra versionCode geri alinamaz
     // ve denenen her kod tukenir — o noktadan sonra artirmadan once sorulmali.
-    versionCode = 55
-    versionName = "0.55"
+    versionCode = 56
+    versionName = "0.56"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -87,38 +87,7 @@ android {
   }
 
   buildTypes {
-    // ADMOB APP ID BUILD TIPINE GORE.
-    //
-    // Manifest meta-data'si DERLEME ZAMANINDA sabitlenir, yani `AdIds` gibi
-    // calisma zamaninda dallanamaz. Placeholder olmadan tek bir deger yazmak
-    // zorunda kalirdik ve iki kotu secenekten birini secerdik: release'de test
-    // App ID (gercek birimler calismaz) ya da debug'da gercek App ID
-    // (gelistirici kendi canli reklamina tiklar -> AdMob gecersiz trafik).
-    //
-    // Degerler `AdIds.PRODUCTION_APP_ID` / `TEST_APP_ID` ile AYNI olmak
-    // zorunda; `AdIdsConsistencyTest` bunu kilitliyor.
-    debug {
-      manifestPlaceholders["admobAppId"] = "ca-app-pub-3940256099942544~3347511713"
-    }
     release {
-      // ⚠ ORNEK (TEST) APP ID ILE RELEASE DERLENEMEZ.
-      //
-      // Bugun deger gercek uretim ID'si ve `AdIdsConsistencyTest` bunu
-      // `AdIds.PRODUCTION_APP_ID` ile ayni tutuyor. Ama o test AdIds sabitini
-      // kontrol eder; BURADAKI dize elle degistirilse (ornegin bir deneme
-      // sirasinda test ID'sine cekilip geri alinmasa) release SESSIZCE
-      // derlenir ve Play'e test reklam yapilandirmasiyla bir yapi gider.
-      //
-      // Bu kontrol, o sessiz yolu kapatir: yapi ANLASILIR bir mesajla duser.
-      // Fikir Grid Crisis oturumundan (2026-09-02) — orada gercek bir yayin
-      // engeli olarak bulunmustu.
-      val releaseAdmobAppId = "ca-app-pub-8582550349019790~1660929933"
-      check(!releaseAdmobAppId.startsWith("ca-app-pub-3940256099942544")) {
-        "RELEASE derlemesi Google'in ORNEK AdMob App ID'siyle yapilandirilmis. " +
-          "Gercek App ID'yi gir (AdIds.PRODUCTION_APP_ID ile ayni olmali) " +
-          "ya da bu yapiyi yayinlama."
-      }
-      manifestPlaceholders["admobAppId"] = releaseAdmobAppId
       isCrunchPngs = false
       // ⚠ R8 KAPALI — BILINCLI DEGIL, OLCULMEMIS.
       //
@@ -130,7 +99,7 @@ android {
       //  1. Compose + reflection yollari icin proguard kurallari dogrulanmali.
       //  2. Imzali release APK cihazda UCTAN UCA oynanmali — R8 sorunlari
       //     derlemede degil CALISMA ANINDA cikar (eksik kural = crash).
-      //  3. Reklam ve Billing SDK'lari kendi kurallarini tasiyor ama
+      //  3. Billing SDK'si kendi kurallarini tasiyor ama
       //     `StoreCatalog`/`SaveManager` gibi dize tabanli anahtarlar
       //     karistirmadan etkilenmemeli (bugun etkilenmiyor: hepsi sabit).
       // Olcum yapilmadan acmak, "build gecti = urun calisiyor" hatasidir.
@@ -185,12 +154,7 @@ dependencies {
   implementation(libs.androidx.lifecycle.viewmodel.compose)
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.kotlinx.coroutines.core)
-  // Faz 5 — AdMob (Google Mobile Ads SDK) + UMP riza SDK'si.
-  // Ikisinin de AAR'i minSdkVersion 23 bildirir; projenin minSdk 24 hedefiyle
-  // uyumlu (dogrulama: docs/ADMOB_INTEGRATION.md §1).
-  implementation(libs.play.services.ads)
-  implementation(libs.user.messaging.platform)
-  // IAP — coin paketleri + "Reklamlari Kaldir" (2026-09-02). Kopru: billing/BillingManager.kt
+  // IAP — coin paketleri (Play Billing). Reklam SDK/UMP yok (2026-09-30). Kopru: billing/BillingManager.kt
   implementation(libs.billing.ktx)
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)

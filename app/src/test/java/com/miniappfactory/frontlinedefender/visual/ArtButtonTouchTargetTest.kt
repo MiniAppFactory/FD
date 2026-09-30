@@ -2,6 +2,7 @@ package com.miniappfactory.frontlinedefender.visual
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.Modifier
@@ -10,6 +11,8 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.unit.dp
 import com.miniappfactory.frontlinedefender.game.ui.ArtPrimaryButton
+import com.miniappfactory.frontlinedefender.game.ui.PauseModalCellGap
+import com.miniappfactory.frontlinedefender.game.ui.PauseModalInnerWidth
 import com.miniappfactory.frontlinedefender.game.ui.ResultModalInnerWidth
 import com.miniappfactory.frontlinedefender.game.ui.ArtSecondaryButton
 import com.miniappfactory.frontlinedefender.ui.theme.ArtTextPrimary
@@ -88,6 +91,63 @@ class ArtButtonTouchTargetTest {
                 "$tag butonu $heightDp — 44 dp dokunma tabaninin altinda. " +
                     "Modalin widthIn degeri dusuruldu mu, yoksa sanatin en-boy " +
                     "orani mi degisti?",
+                heightDp >= 44.dp
+            )
+        }
+    }
+
+    /**
+     * DURAKLATMA MENUSUNUN 2x2 IZGARASINDA BUTONLAR 44 dp'NIN ALTINA DUSMEZ.
+     *
+     * Ayni aritmetik, iki satir x iki hucre: en dar ic genislik
+     * (`PauseModalInnerWidth` = 432 dp) -> hucre (432 - 12) / 2 = 210 dp ->
+     * birincil 210 / 4,33 = 48,5 dp, ikincil 210 / 3,97 = 52,9 dp.
+     * Olcu GERCEK koddan gelir; gercek modalin kendisi `PauseMenuModalTest`te
+     * uc ekran boyunda ayrica olculur.
+     */
+    @Test
+    fun pauseGridButtonsStayAtOrAboveTheFortyFourDpTouchFloor() {
+        composeRule.setContent {
+            Box(modifier = Modifier.width(PauseModalInnerWidth)) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(PauseModalCellGap)) {
+                        ArtSecondaryButton(
+                            label = "BÖLÜMÜ BAŞTAN AL",
+                            onClick = {},
+                            modifier = Modifier.weight(1f),
+                            testTag = "pause_r1_left"
+                        )
+                        ArtSecondaryButton(
+                            label = "ANA MENÜ",
+                            onClick = {},
+                            modifier = Modifier.weight(1f),
+                            testTag = "pause_r1_right"
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(PauseModalCellGap)) {
+                        ArtSecondaryButton(
+                            label = "AYARLAR",
+                            onClick = {},
+                            modifier = Modifier.weight(1f),
+                            testTag = "pause_r2_left"
+                        )
+                        ArtPrimaryButton(
+                            label = "DEVAM ET",
+                            onClick = {},
+                            modifier = Modifier.weight(1f),
+                            testTag = "pause_r2_right"
+                        )
+                    }
+                }
+            }
+        }
+
+        listOf("pause_r1_left", "pause_r1_right", "pause_r2_left", "pause_r2_right").forEach { tag ->
+            val height = composeRule.onNodeWithTag(tag).fetchSemanticsNode().size.height
+            val heightDp = with(composeRule.density) { height.toDp() }
+            assertTrue(
+                "$tag izgara butonu $heightDp — 44 dp dokunma tabaninin altinda. " +
+                    "PauseModalMaxWidth dusuruldu mu, yoksa sanatin en-boy orani mi degisti?",
                 heightDp >= 44.dp
             )
         }

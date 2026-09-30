@@ -26,14 +26,11 @@
     <!-- Bolum basliklari. Ekran buyuyecegi icin (muzik, haptik) bolumler
          bastan ayrildi; yeni satir eklemek yeni bir baslik gerektirmez. -->
     <string name="settings_section_audio">AUDIO</string>
-    <string name="settings_section_privacy">PRIVACY</string>
     <string name="settings_section_about">ABOUT</string>
 
     <!-- UMP "Gizlilik Secenekleri" girisi. Bu satir yalnizca
          AdHost.privacyOptionsRequired true iken cizilir: AB disindaki bir
          oyuncuya acilmayan bir form vaat etmek, calismayan bir buton koymaktir. -->
-    <string name="settings_ad_settings">Ad Settings</string>
-    <string name="settings_ad_settings_desc">Review or withdraw your advertising consent.</string>
 
     <!-- %1$s versionName, %2$d versionCode -->
     <string name="settings_version">Version %1$s (%2$d)</string>

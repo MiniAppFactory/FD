@@ -763,14 +763,17 @@ class SupplyBudgetTest {
 
     @Test
     fun tighteningTouchesOnlySupplyAndNeverCoinRewards() {
-        // Tedarik ve Coin arasinda donusum YOK (GDD D.4): sikilastirma bolum odullerini,
+        // Sikilastirma (Tedarik butcesi) bolum odullerini,
         // kilit bedellerini ve agac fiyatlarini DEGISTIRMEZ.
         // (Agac 13.900 -> 19.600 oldu ama bunu Tedarik sikilastirmasi degil
         // ECONOMY_AUDIT_2 P0 yapti; bu test yalnizca sikilastirmanin coin'e
         // dokunmadigini kilitler.)
+        // (2026-09-30: GDD D.4 "coin asla Tedarik olmaz" Acil Tedarik icin owner karariyla TERSINE
+        // DONDU — 2 coin = 1 Tedarik, savasta 1 kez. Bu test o donusumun kendisini degil,
+        // yalnizca butce sikilastirmasinin coin gelirine dokunmadigini kilitler.)
         assertEquals(23_105, EconomyConfig.TOTAL_LOCK_COST)
         assertEquals(19_600, EconomyConfig.TREE_TOTAL_COST)
-        assertEquals(450, EconomyConfig.R1_COIN_BUDGET_PER_DAY)
+        // (2026-09-30: R1_COIN_BUDGET_PER_DAY kalkti; serbest gelir kaynagi yok, satir silindi.)
         for (level in 1..EconomyConfig.CAMPAIGN_LEVELS) {
             assertEquals(140 + 30 * (level - 1), baseLevelReward(level))
         }

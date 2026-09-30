@@ -11,11 +11,8 @@
     <string name="settings_close">KAPAT</string>
 
     <string name="settings_section_audio">SES</string>
-    <string name="settings_section_privacy">GİZLİLİK</string>
     <string name="settings_section_about">HAKKINDA</string>
 
-    <string name="settings_ad_settings">Reklam Ayarları</string>
-    <string name="settings_ad_settings_desc">Reklam rızanı gözden geçir veya geri çek.</string>
 
     <string name="settings_version">Sürüm %1$s (%2$d)</string>
 

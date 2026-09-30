@@ -5,7 +5,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.miniappfactory.frontlinedefender.game.audio.AudioManager
 import com.miniappfactory.frontlinedefender.game.data.SaveManager
 import com.miniappfactory.frontlinedefender.game.economy.BoosterActivation
-import com.miniappfactory.frontlinedefender.game.economy.BoosterCurrency
+import com.miniappfactory.frontlinedefender.game.economy.boosterPrice
 import com.miniappfactory.frontlinedefender.game.economy.BoosterDecision
 import com.miniappfactory.frontlinedefender.game.economy.BoosterType
 import com.miniappfactory.frontlinedefender.game.economy.EconomyConfig
@@ -87,11 +87,11 @@ class AirStrikeFeedbackTest {
         BoosterActivation(
             type = BoosterType.AIR_SUPPORT,
             decision = BoosterDecision.Allowed(
-                price = 0,
-                currency = BoosterCurrency.SUPPLY,
-                viaAd = false
+                // Gercek yol: hava destegi coin fiyatli; motor fiyata bakmaz, yalnizca
+                // `applied` + hasar oranina bakar.
+                price = boosterPrice(BoosterType.AIR_SUPPORT, level = 10),
+                currency = BoosterType.AIR_SUPPORT.currency
             ),
-            viaAd = false,
             airSupportDamageFraction = fraction
         )
 
@@ -690,7 +690,6 @@ class AirStrikeFeedbackTest {
         val denied = BoosterActivation(
             type = BoosterType.AIR_SUPPORT,
             decision = BoosterDecision.NoEffect,
-            viaAd = false,
             airSupportDamageFraction = EconomyConfig.AIR_SUPPORT_DAMAGE_FRACTION
         )
 

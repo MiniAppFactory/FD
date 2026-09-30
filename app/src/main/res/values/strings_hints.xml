@@ -130,14 +130,11 @@
     -->
     <string name="hint_booster_effect_supply">+%1$d supply</string>
     <string name="hint_booster_effect_damage">%1$d%% to all enemies</string>
-    <string name="hint_booster_effect_repair">+%1$d%% base health</string>
+    <string name="hint_booster_effect_repair">+%1$d base lives</string>
 
     <!--
-      Bedel parcalari. Reklam yolunun AYRI bir satiri var: "0 supply" demek
-      teknik olarak dogru ama oyuncuya hicbir sey soylemez [eksi] ogrenmesi
-      gereken sey butona basinca kisa bir reklam acilacagidir.
+      Bedel parcalari (fiyat eylemden ONCE ipucunda soylenir). Her guclendirici coinle alinir.
     -->
-    <string name="hint_booster_cost_ad">free with an ad</string>
     <string name="hint_booster_cost_supply">%1$d supply</string>
     <string name="hint_booster_cost_coin">%1$d coin</string>
 

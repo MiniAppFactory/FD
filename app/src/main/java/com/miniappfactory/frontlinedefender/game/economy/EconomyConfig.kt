@@ -187,14 +187,6 @@ object EconomyConfig {
     const val REPLAY_FLOOR: Int = 25
 
     /**
-     * BAYRAK F-5 (ECONOMY_SPEC 5.1) — "boost'lu" tekrar hakki GUNLUK ve GLOBAL'dir,
-     * bolum basina degil. GDD "gunde ilk 3 tekrar" diyor ama kapsamini soylemiyor;
-     * bolum basina yorumlanirsa 22 bolum x 3 = 66 boost'lu tekrar/gun olur ve
-     * farming ilerlemeyi geride birakir.
-     */
-    const val BOOSTED_REPLAYS_PER_DAY: Int = 3
-
-    /**
      * BAYRAK F-3 (ECONOMY_SPEC 7) — yildiz iyilestirme farki.
      *
      * GDD D.2 kaynak tablosunda YOK. Eklenmesinin gerekcesi: bir bolumu erken 1
@@ -594,102 +586,34 @@ object EconomyConfig {
     const val ACHIEVEMENT_TOTAL: Int = 5_200
 
     // =================================================================================
-    // Rewarded reklam ekonomisi (GDD G.3 / G.4)
+    // Yenilgiden sonra DEVAM (eski R2 "Takviye"; 2026-09-30'dan beri COIN fiyatli)
     // =================================================================================
 
-    /** R1 "Tedarik Talebi" — dolu reklam odulu. */
-    const val R1_REWARD_FILLED: Int = 150
+    /** Devam ozelligi kill switch'i. */
+    const val CONTINUE_ENABLED: Boolean = true
 
-    /** R1 no-fill / kapatma / hata / 5 sn timeout odulu. Gunluk *hak* tuketilmez. */
-    const val R1_REWARD_FALLBACK: Int = 50
-
-    /** GDD G.3 — gunde 3 dolu gosterim hakki. */
-    const val R1_VIEWS_PER_DAY: Int = 3
+    /** Devam ile us cani bu degere gelir, savas kaldigi dalgadan surer (eski R2 degeri). */
+    const val CONTINUE_LIVES: Int = 5
 
     /**
-     * BAYRAK F-6 (ECONOMY_SPEC 5.4) — **R1 GUNLUK COIN BUTCESI.**
-     *
-     * GDD G.4 "no-fill'de hak tuketilmez, cooldown yok" diyor. Bu haliyle ucak
-     * modunda **sonsuz +50 dongusu** demektir (bolum 7 kilidi 100 coin; iki dokunus
-     * kilidi acar ve butun coin duvari matematigi anlamsizlasir).
-     *
-     * Butce, doktrini BOZMADAN dongüyu sonlandirir: hak tuketilmez, cooldown yok,
-     * buton her zaman tiklanabilir, hicbir ilerleme yolu kapanmaz — yalnizca gunluk
-     * coin tavani var. 3 x 150 = 450, yani R1'in GDD'de zaten hedeflenen gunluk
-     * degeri. Yan etki OLUMLU: sansli ve sanssiz oyuncu ayni gunluk toplami alir.
-     *
-     * `AdPolicyConfig.SUPPLY_DROP_FALLBACK_DAILY_CAP` (reklam katmani, 3 adet)
-     * bunun sayi tarafindaki tamamlayicisidir: 3 x 50 = 150 <= 450, yani iki kural
-     * hicbir zaman celismez. Coin miktarlarinda yetkili katman BU dosyadir.
+     * Savas basina en fazla devam sayisi. Bu tavan eskiden reklam katmaninin bellek-ici
+     * sayacindaydi; reklam kalkinca ekonomiye tasindi (aksi halde sessizce sinirsiz olurdu).
+     * Sayac savasa kapsamlidir: "TEKRAR DENE" yeni savastir ve sifirlar, devam sifirlamaz.
      */
-    const val R1_COIN_BUDGET_PER_DAY: Int = R1_REWARD_FILLED * R1_VIEWS_PER_DAY
+    const val CONTINUE_USES_PER_BATTLE: Int = 1
 
     /**
-     * BAYRAK F-11 (ECONOMY_SPEC C.4) — **R1 ODULUNUN SIRADAKI RANK'A GORE
-     * OLCEKLENMESI. VARSAYILAN KAPALI.**
+     * Devam fiyati = bolumun ILK temizleme (1 yildiz) odulunun bu yuzdesi, 10'a asagi
+     * yuvarlanmis. %50 = elit bilet formulu ([eliteTicketPrice]).
      *
-     * Soru: "150 coin, 13.900'luk agacta gec oyunda hicbir sey ifade etmez."
-     * Analiz (ECONOMY_SPEC C.4) bunun **olcum hatasi** oldugunu gosteriyor: dogru
-     * kiyas 13.900 (tum agac) degil, o anki SIRADAKI rank'in fiyatidir. 450 coin/gun,
-     * en pahali rank'in (850) %53'udur — anlamsiz degil.
-     *
-     * Yine de olceklenme tanimlanmistir: dolu odul =
-     * `clamp(round10(siradakiRank x R1_SCALE_OF_NEXT_RANK), MIN, MAX)`.
-     *
-     * **Neden varsayilan KAPALI:** [R1_COIN_BUDGET_PER_DAY] sabit (enflasyon yasagi).
-     * Odul/gosterim buyudugunde gunluk gosterim sayisi kacinilmaz olarak duser
-     * (850 rank -> 210+210+30), yani ucuncu gosterim 30 coin oder. Bu, hem oyuncu icin
-     * kotu bir his hem de reklam gosterim sayisinda dusustur. Gec oyunda rewarded'i
-     * degerli tutan dogru araclar R3 "Cift Odeme" (L22'de 1.230 coin, kendiliginden
-     * olcekleniyor) ve guclendirici reklamlaridir (coin odemez, enflasyon 0).
-     *
-     * Acmak icin tek satir: `= true`; davranis zaten testli.
+     * Neden %50: (a) soft-lock guvenli — R(L,1) >= 2,0 x D(L+1) oldugundan R/2 bedeli,
+     * siradaki kilidi odemeyi bozmaz (yine de rezerv kontrolu uygulanir); (b) her bolumde
+     * R(L,1)'in altinda, yani devamla kazanilan ilk temizlik NET ZARAR degildir; (c) devam
+     * yildiz satin almaz (tek yildiz tavani, [effectiveStarHealth]). Us Tamiri'nden ucuz
+     * olmasi bilincli bir karardir: zamanlama, kullanim tavani (1) ve sonuc farkli, ayni
+     * kalem degil. L2 80 · L4 110 · L7 160 · L22 380 · L55 880.
      */
-    const val R1_ADAPTIVE_REWARD_ENABLED: Boolean = false
-
-    /** Adaptif odulun siradaki rank fiyatina orani. */
-    const val R1_SCALE_OF_NEXT_RANK: Double = 0.25
-
-    /** Adaptif odul taban ve tavani. Taban = sabit odul, yani olceklenme ASLA azaltmaz. */
-    const val R1_REWARD_FILLED_MIN: Int = R1_REWARD_FILLED
-    const val R1_REWARD_FILLED_MAX: Int = 250
-
-    /** R2 "Takviye" — yenilgide us canini bu degere getirir, savas devam eder. */
-    const val R2_REVIVE_HEALTH: Int = 5
-    const val R2_USES_PER_BATTLE: Int = 1
-
-    /** R3 "Cift Odeme" — o temizligin coin odulu x2. Savas basina 1. */
-    const val R3_MULTIPLIER: Int = 2
-
-    /**
-     * BAYRAK F-7 (ECONOMY_SPEC 5.2) — R3, **taban tekrar oduluna (25) uygulanmaz.**
-     * Uygulanirsa "L1'i 2x hizda tekrar oyna + reklam izle" dongusu dakika basina
-     * ilerlemekten daha karli hale gelir ve reklam spam'ini tesvik eder.
-     */
-    const val R3_APPLIES_TO_REPLAY_FLOOR: Boolean = false
-
-    /**
-     * "Reklamlari Kaldir" IAP hediyesi (GDD D.2).
-     *
-     * 2026-09-02 — IAP GELDI AMA BU HEDIYE BAGLANMADI. Sabitin eski yorumu
-     * "v1.0'da IAP YOK; sabit hazir bekler" diyordu; IAP artik yayinda
-     * ([StoreCatalog.PRODUCT_REMOVE_ADS]) ve bu deger hala HICBIR YERDEN
-     * cagrilmiyor — yani "hazir bekleyen sabit" gerekcesi tukendi.
-     *
-     * BILINCLI OLARAK BAGLANMADI. Reklamsiz modun satis vaadi tek cumledir:
-     * "gecis reklamlari kalkar". Uzerine coin eklemek iki sorun uretirdi:
-     *  1. Coin PAKETLERI ayri urun; reklamsiz moda coin gomtmek iki urunu
-     *     birbirinin ikamesi yapar ve fiyatlamayi bulaniklastirir.
-     *  2. 500 coin, en kucuk paketin ([StoreCatalog.PACK_RECRUIT], 1.200)
-     *     %42'si — yani bedava bir "yarim paket" olurdu.
-     *
-     * Sabit SILINMEDI cunku GDD D.2 hala bu kalemi tanimliyor ve karar urun
-     * tarafinda yeniden acilabilir. Baglanacaksa yeri
-     * `BillingManager.handlePurchase`in `remove_ads` dalidir ve idempotenlik
-     * `SaveManager.grantPurchasedCoins` gibi ayri bir jetona baglanmalidir —
-     * aksi halde her `restorePurchases` cagrisinda 500 coin basar.
-     */
-    const val REMOVE_ADS_GIFT: Int = 500
+    const val CONTINUE_PRICE_PERCENT_OF_FIRST_CLEAR: Int = 50
 
     // =================================================================================
     // Faz 10 — GUCLENDIRICILER (savas ici tek kullanimlik)
@@ -699,16 +623,12 @@ object EconomyConfig {
     // (her bolum sifir guclendiriciyle gecilebilir olmali).
     // =================================================================================
 
-    /** BAYRAK F-8 — Acil Tedarik (yalnizca rewarded). Kapatmak icin `= false`. */
+    /** BAYRAK F-8 — Acil Tedarik (coin fiyatli, [EMERGENCY_SUPPLY_COIN_PER_SUPPLY]). Kapatmak icin `= false`. */
     const val EMERGENCY_SUPPLY_ENABLED: Boolean = true
 
     /**
-     * BAYRAK F-9 — Hava Destegi.
-     *
-     * ⚠ Etiketi "Tedarik fiyatli" idi ve 2026-08-21'de kalem tamamen reklam
-     * yoluna cevrilince BAYATLADI, 2026-09-02'de coin yolu eklenince iyice
-     * yanlis oldu. Bugunku hali: **reklam birincil, coin uzanti** — Tedarik
-     * HARCAMAZ. Fiyat [AIR_SUPPORT_COIN_BASE] / [AIR_SUPPORT_COIN_STEP].
+     * BAYRAK F-9 — Hava Destegi. Coin fiyatli, Tedarik HARCAMAZ; fiyat
+     * [AIR_SUPPORT_COIN_BASE] / [AIR_SUPPORT_COIN_STEP].
      */
     const val AIR_SUPPORT_ENABLED: Boolean = true
 
@@ -723,8 +643,9 @@ object EconomyConfig {
 
     // ---- Acilma bolumleri --------------------------------------------------------
     //
-    // Acil Tedarik en once acilir CUNKU ilk 6 bolumde oyuncunun hic coini yoktur ve
-    // rewarded'in tek anlamli degeri odur (ECONOMY_SPEC C.1). Us Tamiri ilk UCRETLI
+    // Acil Tedarik en once acilir: ilk bolumlerde tek yeni kaynak odur. Reklam kalkti;
+    // fiyat (2 coin = 1 Tedarik) L2'de 140'tir ve acilis bakiyesiyle (L2'de ~140) uzun
+    // sure erisilemez olabilir — bu bilincli: yalnizca birikmis coin harcanir. Us Tamiri ilk UCRETLI
     // bolumle (7) eslenir: oradan once us kaybi zaten nadir ve oyuncunun coini yok.
 
     const val EMERGENCY_SUPPLY_UNLOCK_LEVEL: Int = 2
@@ -765,50 +686,28 @@ object EconomyConfig {
     const val AIR_SUPPORT_SUPPLY_BASE: Int = 101
     const val AIR_SUPPORT_SUPPLY_STEP: Int = 8
 
-    // ---- Hava Destegi COIN YOLU (2026-09-02, IAP ile birlikte) -------------------
+    // ---- Hava Destegi (coin) -----------------------------------------------------
     //
-    // Kullanici karari: *"hava destegini falan coinle satabiliriz."* Coin
-    // paketleri satisa cikinca coin'in HARCANACAK yeri olmali; hava destegi bu
-    // isin adiyla istenen kalemi.
-    //
-    // 2026-08-21 karari ("ad izlemeye tesvik etmeliyiz") GERI ALINMADI:
-    //  * Reklam yolu BIRINCIL kalir — savas basina 2 reklam hakki aynen durur.
-    //  * Coin yolu UZANTIDIR: BoosterRail reklam yolu aciksa onu, kapaliysa
-    //    (gunluk 12 gosterim bitti / savas ici 2 hak bitti / no-fill) coin
-    //    fiyatini gosterir. Sirayi [AIR_SUPPORT_PREFER_AD_PATH] cevirir.
-    //  * Toplam vurus SAVAS BASINA 2'DE SABIT ([AIR_SUPPORT_SHARED_USE_CAP]):
-    //    reklam+reklam, reklam+coin veya coin+reklam — ama asla 3. Boylece
-    //    `2 x AIR_SUPPORT_DAMAGE_FRACTION < 1,0` kisiti (asagida) bozulmaz ve
-    //    reklam izleyen oyuncu icin HICBIR SEY degismez (sifir regresyon).
-    //  * Arbitraj kalkani ("once ucretli, sonra reklam") bu tipe UYGULANMAZ:
-    //    kalkan reklamin bir para birimi sink'ini ikame etmesini engeller;
-    //    burada ise reklam zaten birincil yol, coin ikame degil ek.
-    //
-    // FIYAT: coin, bolumle dogrusal. Us Tamiri (120 + 20(L-1)) ile ayni
-    // egim ailesi, biraz daha pahali cunku etki daha guclu (ekrandaki HER
-    // dusmandan %45 vs +4 can). Kisitlar (`BoosterEconomyTest`):
+    // Fiyat coin, bolumle dogrusal. Us Tamiri (120 + 20(L-1)) ile ayni egim ailesi,
+    // biraz daha pahali cunku etki daha guclu (ekrandaki HER dusmandan %45 vs +4 can).
+    // Kisitlar (`BoosterEconomyTest`):
     //  * fiyat >= en ucuz meta rank-1 — "cheap farming" yok,
     //  * fiyat < 1-yildiz odulu R(L) — kullanmak NET ZARAR olmaz,
     //  * fiyat > Us Tamiri ayni bolumde — guclu olan pahali.
     //
-    // TABAN 134 ELLE SECILMEDI: acilista (L4) fiyat 134 + 22x3 = **200**, yani
-    // TAM olarak en ucuz kalici meta yukseltmesi (Baslangic Tedariki / Hurda
-    // Degeri rank 1). Ilk deger 130 idi ve L4'te 196 veriyordu — 200'un ALTINDA.
-    // `airSupportNeverCostsLessThanAFullyUpgradedTower` bunu yakaladi ve haklyydi:
-    // guclendirici kalici yukseltmeden ucuz olursa en iyi strateji agaci
-    // birakip her savasta dugmeye basmak olur.
+    // TABAN 134 ELLE SECILMEDI: acilista (L4) fiyat 134 + 22x3 = **200**, yani TAM olarak
+    // en ucuz kalici meta yukseltmesi (Baslangic Tedariki / Hurda Degeri rank 1);
+    // guclendirici kalici yukseltmeden ucuz olursa en iyi strateji agaci birakip her
+    // savasta dugmeye basmak olur. L4 200 · L22 596 · L55 1.322 (R(55,1) = 1.760'in %75'i).
     //
-    // Ankraj, 2026-08-21 oncesindeki "acilista fiyat TAM olarak bir kademe-2
-    // Gatling (125 Tedarik)" ankrajinin coin dilindeki karsiligidir: kalem
-    // hangi para biriminde odeniyorsa, o para biriminin en ucuz kalici
-    // alternatifiyle esitlenir.
-    //
-    // L4 (acilis) 200 · L22 596 · L55 1.322 (R(55,1) = 1.760'in %75'i).
-    const val AIR_SUPPORT_COIN_PATH_ENABLED: Boolean = true
-    const val AIR_SUPPORT_PREFER_AD_PATH: Boolean = true
+    // Iki kullanim ayni fiyat; toplam vurus SAVAS BASINA 2'dir, bu tavan
+    // `AIR_SUPPORT.maxUsesPerBattle x AIR_SUPPORT_DAMAGE_FRACTION < 1,0` kisitiyla
+    // (asagida) birlikte testte enum'dan turetilir.
     const val AIR_SUPPORT_COIN_BASE: Int = 134
     const val AIR_SUPPORT_COIN_STEP: Int = 22
-    const val AIR_SUPPORT_SHARED_USE_CAP: Int = 2
+
+    /** Savas basina en fazla hava destegi sayisi. */
+    const val AIR_SUPPORT_USES_PER_BATTLE: Int = 2
 
     /**
      * Ekrandaki her dusmandan silinen MAKS CAN orani.
@@ -819,7 +718,7 @@ object EconomyConfig {
      * FAZ 10.1 — 0,60 -> 0,45. Duzeltilen sey bir mantik hatasi, bir tuning
      * karari degil: kisit "tek kullanim tam canli dusmani oldurmez" diye
      * yazilmisti, ama Hava Destegi'nin savas basina **iki** kullanimi var
-     * (1 ucretli + 1 rewarded) ve bekleme suresi 45 sn, yani ikisi ayni uzun
+     * ([AIR_SUPPORT_USES_PER_BATTLE]) ve bekleme suresi 45 sn, yani ikisi ayni uzun
      * dalgada kullanilabiliyor. 2 x 0,60 = 1,20 > 1,0 -> iki kullanim ekrandaki
      * HER dusmani, boss dahil, **dogrudan oldurur**. Yani kalkanin korumasi
      * gereken sey (pay-to-win / dalga temizleme butonu) aslinda aciktı.
@@ -841,7 +740,8 @@ object EconomyConfig {
     // ---- Acil Tedarik ------------------------------------------------------------
 
     /**
-     * Verilen Tedarik = round10(BASE + STEP x (L - 1)). L1 = 60, L6 = 80, L22 = 140.
+     * Verilen Tedarik = round10(BASE + STEP x (L - 1)). L1 = 60, L2 = 70, L6 = 90, L22 = 190,
+     * L55 = 380.
      *
      * Kalibrasyon: her zaman **yaklasik bir temel kule** kadar. Daha fazlasi
      * ECONOMY_SPEC A sikilastirmasini geri alir; daha azi butona basmaya deger olmaz.
@@ -849,12 +749,28 @@ object EconomyConfig {
     const val EMERGENCY_SUPPLY_BASE: Int = 60
     const val EMERGENCY_SUPPLY_STEP: Int = 6
 
+    /** Savas basina en fazla Acil Tedarik sayisi. */
+    const val EMERGENCY_SUPPLY_USES_PER_BATTLE: Int = 1
+
+    /**
+     * Acil Tedarik'in coin fiyati = verdigi Tedarik x bu carpan (2026-09-30).
+     *
+     * Eskiden yalnizca reklamla alinirdi (GDD D.4: coin -> Tedarik donusumu yasak). Reklam
+     * kalkinca kalem coine cevrildi ve D.4 bu kalem icin BILINCLI olarak geri alindi
+     * (kullanici karari). Donusum sabit ve seffaftir: 2 coin = 1 Tedarik. Bu, bolum ici
+     * kazanimdan (bolum butcesinin ~%5,7-11'i kadar Tedarik icin bolum odulunun %50-80'i)
+     * cok daha pahali oldugu icin "coinle kule farming'i" degil, acil durum secenegidir;
+     * savas basina 1 kullanim ve rezerv korumasi ayrica bunu sinirlar. Fiyat her bolumde
+     * R(L,1)'in altindadir (L2: 140 < 170, L55: 760 < 1.760).
+     */
+    const val EMERGENCY_SUPPLY_COIN_PER_SUPPLY: Int = 2
+
     const val EMERGENCY_SUPPLY_COOLDOWN_MS: Long = 0L
 
     // ---- Us Tamiri ---------------------------------------------------------------
 
     /**
-     * Coin fiyati = BASE + STEP x (L - 1). L7 = 240, L22 = 540.
+     * Coin fiyati (1. kullanim) = BASE + STEP x (L - 1). L7 = 240, L22 = 540.
      *
      * UC KISIT BIRDEN (hepsi testli):
      * 1. `> 150` (en ucuz meta rank) — yoksa agac yerine tamir farming'i cazip olur.
@@ -864,58 +780,27 @@ object EconomyConfig {
      *    notrlugu ([effectiveStarHealth]) bir gun kaldirilsa BILE tamirle yildiz
      *    satin almak karli olmasin. STEP 15 yerine 20 secilmesinin nedeni budur:
      *    yildiz farki 18/bolum buyudugu icin 15 adimla L14'ten sonra kisit kirilir.
+     *
+     * 2. kullanimin fiyati bu tabloda DEGIL, [boosterPrice] icinde: 1. fiyat x
+     * [BASE_REPAIR_LIVES_SECOND_USE] / [BASE_REPAIR_LIVES_FIRST_USE] (can basina ayni bedel).
      */
     const val BASE_REPAIR_COIN_BASE: Int = 120
     const val BASE_REPAIR_COIN_STEP: Int = 20
 
-    /** Geri verilen can = ceil(maksCan x oran), kaybedilen candan fazla degil. 20 -> 8. */
     /**
-     * ⚠ 2026-08-21: ORAN yerine DUZ CAN (kullanici karari).
-     *
-     * Eskiden maks canin %40'i geri verilirdi — 20 canlik bir usste 8 can, ve
-     * meta Tahkimat ile maks can buyudukce sessizce daha da buyuyordu. Oyuncu
-     * ne alacagini ONCEDEN bilemiyordu.
-     *
-     * Artik iki YOL, IKI FARKLI sayi: coinle 4 can, reklamla 7. Reklam yolunun
-     * daha comert olmasi bilincli — oyuncu parayi degil ZAMANI odedigi icin
-     * karsiligini gormeli, yoksa reklam yolu olu kalir.
+     * Geri verilen can DUZ SAYIDIR (oran degil): oyuncu ne alacagini ONCEDEN bilir ve meta
+     * Tahkimat maks cani buyutse de sessizce degismez. Iki kullanim, iki sayi: 1. kullanim 4,
+     * 2. kullanim 7. 7 can eskiden reklamla bedava veriliyordu; reklam kalkinca hak
+     * KORUNDU ama acikca fiyatli bir 2. kullanim oldu (2026-09-30).
      */
-    const val BASE_REPAIR_LIVES_PAID: Int = 4
-    const val BASE_REPAIR_LIVES_AD: Int = 7
+    const val BASE_REPAIR_LIVES_FIRST_USE: Int = 4
+    const val BASE_REPAIR_LIVES_SECOND_USE: Int = 7
+
+    /** Savas basina en fazla tamir sayisi (1. ve 2. kullanim). */
+    const val BASE_REPAIR_USES_PER_BATTLE: Int = 2
 
     const val BASE_REPAIR_COOLDOWN_MS: Long = 60_000L
 
-    // ---- Guclendirici rewarded butcesi -------------------------------------------
-
-    /**
-     * Gunluk guclendirici-reklam hakki (tum tipler ORTAK havuz), savas basina en fazla
-     * her tipten [BoosterType.adUsesPerBattle].
-     *
-     * **Coin butcesi YOK ve gerekmiyor:** guclendirici reklami hicbir coin odemez,
-     * yalnizca savas ici etki verir. Bu yuzden R1'in [R1_COIN_BUDGET_PER_DAY]
-     * enflasyon korumasi burada gereksizdir — enflasyona katkisi tam olarak 0'dir.
-     * Sinirlayan sey oynanis (savas basina 1 kullanim), para degil.
-     */
-    /**
-     * ⚠ 4 -> 12 (2026-08-21). SAYI DEGISMEDI, DAYANAGI DEGISTI.
-     *
-     * Yukaridaki gerekce zaten "enflasyon korumasi gereksiz, sinirlayan sey
-     * OYNANIS: savas basina 1 kullanim" diyordu. O dayanak kirildi — hava
-     * destegi artik savas basina IKI reklam kullanimi tasiyor.
-     *
-     * 4 ile birlikte ortaya cikan celiski su olurdu: hava destegi tek basina
-     * gunluk hakkin YARISINI yiyor, yani gunde en fazla IKI bolumde
-     * cagrilabilirdi. Ucuncu bolumden itibaren — diger iki guclendiricinin
-     * reklami hic izlenmese bile — cevap DailyAdLimitReached olurdu. Reklam-only
-     * bir guclendiricinin gunun buyuk kisminda tamamen erisilemez olmasi,
-     * degisikligin gerekcesiyle ("reklam izlemeye tesvik") DOGRUDAN celisir.
-     *
-     * 12 = uc dolu savas (2 hava + 1 tedarik + 1 tamir = savas basina 4).
-     * Sinir KALDIRILMADI ve kaldirilmamali: sinirin isi artik enflasyon degil
-     * REKLAM YORGUNLUGU — gunde 12'yi asan bir istek, oyunu oynamak degil
-     * reklam izlemek olur.
-     */
-    const val BOOSTER_AD_VIEWS_PER_DAY: Int = 12
 
     // =================================================================================
     // Saat manipulasyonu (GDD E.4)

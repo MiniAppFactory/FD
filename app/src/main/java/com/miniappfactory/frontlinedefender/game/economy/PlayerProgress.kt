@@ -264,36 +264,14 @@ fun starImprovementBonus(level: Int, oldStars: Int, newStars: Int): Int {
 /**
  * Tekrar oynama odulu (GDD C.2 / C.4 katman 2).
  *
- * Gunun ilk [EconomyConfig.BOOSTED_REPLAYS_PER_DAY] tekrarinda en iyi yildiza gore
- * `R(L) x 0,20`; sonrasinda sabit taban 25. Taban **asla 0 olmaz**, gunluk ust sinir
- * yoktur — sinirlama *verimsizlik* ile yapilir (ECONOMY_SPEC 5.1).
+ * ⚠ TEKRAR OYNAMA COIN KAZANDIRMIYOR (kullanici karari, 2026-08-21): ogutulebilir gelir
+ * ve coin degerli hale geldigi an gercek bir sonsuz-ciftlik acigi. Reklam kalkti
+ * (2026-09-30), bu yol geri GELMEDI; oyunun tekrarlayan geliri yalnizca gorevlerdir.
  *
- * @param boostedReplaysUsedToday GLOBAL gunluk sayac (bolum basina DEGIL).
+ * Fonksiyon SILINMEDI, sifir donuyor — kararin NEREDE verildigi gorunur kalsin.
  */
-fun replayReward(level: Int, bestStars: Int, boostedReplaysUsedToday: Int): Int {
-    require(boostedReplaysUsedToday >= 0) { "negatif tekrar sayaci" }
-    // ⚠ 2026-08-21 — TEKRAR OYNAMA ARTIK COIN KAZANDIRMIYOR (kullanici karari).
-    //
-    // Eski model: gunun ilk tekrarlarinda R(L) x 0,20, sonrasinda sabit taban
-    // 25 ve GUNLUK TAVAN YOKTU. Iki sorun uretiyordu:
-    //   1. Ogutulebilir gelir — oyuncu en kolay bolumu tekrar tekrar oynayarak
-    //      sinirsiz coin biriktirebiliyordu. Tek fren "verimsizlik"ti, ki bu
-    //      bir tasarim degil bir umuttur.
-    //   2. Coin degerli hale geldigi AN gercek bir sonsuz-ciftlik acigi;
-    //      ECONOMY_AUDIT_2 bunu zaten isaretlemisti.
-    //
-    // Yerine ACIK ve TAVANLI bir reklam yolu geliyor (coin cipi -> odullu
-    // reklam): gelir gizli bir ogutme dongusunden cikip gorunur hale gelir.
-    //
-    // Fonksiyon SILINMEDI, sifir donuyor — cagiranlarin hepsini degistirmek
-    // yerine tek kaynagi sifirlamak kararin NEREDE verildigini gorunur birakir.
-    return 0
-}
-
-/** Bu tekrar odulu R3 "Cift Odeme" ile katlanabilir mi? Taban 25 katlanmaz. */
-fun replayRewardIsDoublable(boostedReplaysUsedToday: Int): Boolean =
-    EconomyConfig.R3_APPLIES_TO_REPLAY_FLOOR ||
-        boostedReplaysUsedToday < EconomyConfig.BOOSTED_REPLAYS_PER_DAY
+@Suppress("UNUSED_PARAMETER")
+fun replayReward(level: Int, bestStars: Int): Int = 0
 
 /**
  * GDD B.3 — yildiz YALNIZCA kalan us cani yuzdesine bakar.
@@ -560,10 +538,7 @@ fun autoGrantShortfall(wallet: PlayerWallet): Int {
 
 /**
  * Bir zaferin coin dokumu. UI zafer ekraninda kalem kalem gosterebilir; toplam
- * [total]'dir ve **reklam gosterilmeden ONCE** yazilir (GDD G.4 R3 kurali).
- *
- * @param doublableAmount R3 "Cift Odeme" ile katlanabilecek kisim. Taban tekrar
- *   odulu (25) buraya girmez (BAYRAK F-7).
+ * [total]'dir ve zafer aninda yazilir.
  */
 data class LevelClearResult(
     val level: Int,
@@ -573,8 +548,6 @@ data class LevelClearResult(
     val starImprovement: Int,
     val perfectBonus: Int,
     val replayReward: Int,
-    val consumesBoostedReplay: Boolean,
-    val doublableAmount: Int,
 ) {
     val total: Int get() = firstClearReward + starImprovement + perfectBonus + replayReward
 }
@@ -588,7 +561,6 @@ fun resolveLevelClear(
     level: Int,
     livesLeft: Int,
     maxLives: Int,
-    boostedReplaysUsedToday: Int = 0,
 ): LevelClearResult {
     val stars = starsFor(livesLeft, maxLives)
     require(stars > 0) { "zafer icin en az 1 yildiz gerekir (livesLeft=$livesLeft)" }
@@ -601,19 +573,7 @@ fun resolveLevelClear(
     val perfect = isPerfectDefense(livesLeft, maxLives) && level !in wallet.perfectDefenseLevels
     val perfectBonus = if (perfect) EconomyConfig.PERFECT_DEFENSE_BONUS else 0
 
-    val replay = if (firstClear) {
-        0
-    } else {
-        replayReward(level, maxOf(oldStars, stars), boostedReplaysUsedToday)
-    }
-    val consumesBoosted = !firstClear &&
-        boostedReplaysUsedToday < EconomyConfig.BOOSTED_REPLAYS_PER_DAY
-
-    // R3 yalnizca "bu temizligin odulunu" katlar: ilk temizlik odulu veya
-    // katlanabilir tekrar odulu. Kusursuz Savunma madalyasi ve yildiz farki
-    // tek seferlik kalemlerdir, reklamla katlanmaz.
-    val doublable = firstClearReward +
-        if (!firstClear && replayRewardIsDoublable(boostedReplaysUsedToday)) replay else 0
+    val replay = if (firstClear) 0 else replayReward(level, maxOf(oldStars, stars))
 
     return LevelClearResult(
         level = level,
@@ -623,8 +583,6 @@ fun resolveLevelClear(
         starImprovement = starImprovement,
         perfectBonus = perfectBonus,
         replayReward = replay,
-        consumesBoostedReplay = consumesBoosted,
-        doublableAmount = doublable,
     )
 }
 
@@ -643,29 +601,6 @@ fun applyLevelClear(wallet: PlayerWallet, result: LevelClearResult): PlayerWalle
     )
 }
 
-// =====================================================================================
-// Rewarded reklam ekonomisi (GDD G.3 / G.4)
-// =====================================================================================
-
-/** Rewarded gosterim sonucu — GDD G.4'un DORT dali. */
-enum class AdOutcome {
-    /** `onUserEarnedReward` */
-    REWARD_EARNED,
-
-    /** `onAdDismissedWithoutReward` */
-    DISMISSED,
-
-    /** `onAdFailedToLoad` / `onAdFailedToShow` — no-fill dahil */
-    NO_FILL,
-
-    /** 5 sn yukleme timeout'u */
-    TIMEOUT,
-    ;
-
-    val isFilled: Boolean get() = this == REWARD_EARNED
-}
-
-/** R1 "Tedarik Talebi" gunluk durumu. Gun donusunde sifirlanir. */
 // =============================================================================
 // ELIT SEVK — saf muhasebe (ECONOMY_ANALYSIS S1 emicisi)
 // =============================================================================
@@ -746,118 +681,4 @@ fun applyPrestige(wallet: PlayerWallet, currentRank: Int): Pair<PlayerWallet, In
     val d = prestigeAllowed(wallet, currentRank)
     require(d is PrestigeDecision.Allowed) { "prestij alinamaz: $d" }
     return wallet.debited(d.price) to (currentRank + 1)
-}
-
-data class RequisitionState(
-    val filledViewsToday: Int = 0,
-    val coinsPaidToday: Int = 0,
-) {
-    init {
-        require(filledViewsToday >= 0 && coinsPaidToday >= 0) { "negatif R1 sayaci" }
-    }
-}
-
-data class RequisitionGrant(
-    val coins: Int,
-    val consumedFilledView: Boolean,
-    val newState: RequisitionState,
-    val fallback: Boolean,
-    /** Butce tukendiyse UI notr mesaj gosterir; **hicbir ilerleme yolu kapanmaz**. */
-    val budgetExhausted: Boolean,
-)
-
-/**
- * R1 dolu-reklam odulu (BAYRAK F-11, [EconomyConfig.R1_ADAPTIVE_REWARD_ENABLED]).
- *
- * Bayrak kapaliyken **her zaman** sabit [EconomyConfig.R1_REWARD_FILLED] doner —
- * yani varsayilan davranis Faz 9 ile birebir aynidir.
- *
- * Bayrak acikken odul oyuncunun **siradaki meta rank'inin** fiyatina gore olceklenir:
- * `clamp(round10(fiyat x 0,25), 150, 250)`. Taban sabit odule esittir, dolayisiyla
- * olceklenme oyuncuyu ASLA bugunkunden kotu duruma dusurmez.
- *
- * **Enflasyon YOK:** gunluk toplam her iki durumda da [EconomyConfig.R1_COIN_BUDGET_PER_DAY]
- * ile sinirli; olceklenme yalnizca ayni butceyi yeniden dagitir.
- *
- * @param nextRankPrice oyuncunun en ucuz satin alabilir rank'inin fiyati; bilinmiyorsa 0.
- */
-fun requisitionFilledReward(nextRankPrice: Int = 0): Int {
-    if (!EconomyConfig.R1_ADAPTIVE_REWARD_ENABLED || nextRankPrice <= 0) {
-        return EconomyConfig.R1_REWARD_FILLED
-    }
-    val scaled = roundToTen(nextRankPrice * EconomyConfig.R1_SCALE_OF_NEXT_RANK)
-    return scaled.coerceIn(EconomyConfig.R1_REWARD_FILLED_MIN, EconomyConfig.R1_REWARD_FILLED_MAX)
-}
-
-/**
- * Oyuncunun **en ucuz** siradaki rank fiyati; agac maksta `null`.
- * [requisitionFilledReward] icin girdi; UI "1 reklam = siradaki yukseltmenin %X'i"
- * mesajini da bundan uretir.
- */
-fun cheapestNextRankPrice(upgrades: MetaUpgrades): Int? =
-    UpgradeLine.entries.mapNotNull { nextRankPrice(it, upgrades) }.minOrNull()
-
-/**
- * R1 odul dagitimi.
- *
- * - Dolu reklam: +[requisitionFilledReward] (varsayilan 150), gunluk dolu-gosterim
- *   hakkini tuketir.
- * - No-fill / kapatma / hata / timeout: +50, **gunluk hakki TUKETMEZ**, cooldown yok.
- * - Her iki dal da gunluk **coin butcesine** (450) tabidir — sonsuz +50 dongusunu
- *   kapatan tek kisit budur (BAYRAK F-6). Butce bittiginde buton hala tiklanabilir,
- *   hicbir ilerleme engellenmez; rezerv kilidi bolum kilidini zaten garanti eder.
- *
- * @param nextRankPrice yalnizca BAYRAK F-11 acikken kullanilir; 0 = sabit odul.
- */
-fun grantRequisition(
-    state: RequisitionState,
-    outcome: AdOutcome,
-    nextRankPrice: Int = 0,
-): RequisitionGrant {
-    val remainingBudget = maxOf(0, EconomyConfig.R1_COIN_BUDGET_PER_DAY - state.coinsPaidToday)
-    if (remainingBudget == 0) {
-        return RequisitionGrant(
-            coins = 0,
-            consumedFilledView = false,
-            newState = state,
-            fallback = !outcome.isFilled,
-            budgetExhausted = true,
-        )
-    }
-
-    val rightsLeft = state.filledViewsToday < EconomyConfig.R1_VIEWS_PER_DAY
-    return if (outcome.isFilled && rightsLeft) {
-        val amount = minOf(requisitionFilledReward(nextRankPrice), remainingBudget)
-        RequisitionGrant(
-            coins = amount,
-            consumedFilledView = true,
-            newState = state.copy(
-                filledViewsToday = state.filledViewsToday + 1,
-                coinsPaidToday = state.coinsPaidToday + amount,
-            ),
-            fallback = false,
-            budgetExhausted = false,
-        )
-    } else {
-        val amount = minOf(EconomyConfig.R1_REWARD_FALLBACK, remainingBudget)
-        RequisitionGrant(
-            coins = amount,
-            consumedFilledView = false,
-            newState = state.copy(coinsPaidToday = state.coinsPaidToday + amount),
-            fallback = true,
-            budgetExhausted = false,
-        )
-    }
-}
-
-/**
- * R3 "Cift Odeme". **Taban odul reklam GOSTERILMEDEN ONCE yazilir** (GDD G.4);
- * bu fonksiyon yalnizca **ek katmani** dondurur.
- *
- * @param doublableAmount [LevelClearResult.doublableAmount].
- */
-fun doublePayoutBonus(doublableAmount: Int, outcome: AdOutcome): Int {
-    require(doublableAmount >= 0) { "negatif odul" }
-    if (!outcome.isFilled) return 0
-    return doublableAmount * (EconomyConfig.R3_MULTIPLIER - 1)
 }

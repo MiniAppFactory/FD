@@ -50,7 +50,6 @@ import com.miniappfactory.frontlinedefender.game.audio.rememberHaptics
 import com.miniappfactory.frontlinedefender.game.economy.BoosterCurrency
 import com.miniappfactory.frontlinedefender.game.economy.BoosterDecision
 import com.miniappfactory.frontlinedefender.game.economy.BoosterType
-import com.miniappfactory.frontlinedefender.game.economy.EconomyConfig
 import com.miniappfactory.frontlinedefender.game.economy.CampaignProgressImpl
 import com.miniappfactory.frontlinedefender.game.economy.boosterCooldownMs
 import com.miniappfactory.frontlinedefender.game.economy.boostersAvailableAt
@@ -152,18 +151,12 @@ fun boosterNameRes(type: BoosterType): Int = when (type) {
 private fun boosterName(type: BoosterType): String = stringResource(boosterNameRes(type))
 
 /** Butonun gorsel durumu — [BoosterDecision] ve silahlanma birlikte belirler. */
-private enum class RailVisual { READY_PAID, READY_AD, ARMED, BLOCKED, SPENT, COOLDOWN }
+private enum class RailVisual { READY, ARMED, BLOCKED, SPENT, COOLDOWN }
 
 @Composable
 fun BoosterRail(
     gameEngine: GameEngine,
     progress: CampaignProgressImpl,
-    /**
-     * Reklam yolu istendi. Sheet'i ve odul akisini [com.miniappfactory.frontlinedefender.game.ui.GameScreen]
-     * yurutur — reklam acilinca oyun PAUSED'a duser ve aktivasyonun SIRASI
-     * kritiktir (bkz. GameScreen'deki `activateBoosterViaAd`).
-     */
-    onAdBoosterRequested: (BoosterType) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val gameState by gameEngine.gameState.collectAsState()
@@ -216,27 +209,8 @@ fun BoosterRail(
     // Kararlar. `tick` burada OKUNUR ki bekleme sayaci aksin.
     @Suppress("UNUSED_EXPRESSION") tick
     val decisions = types.associateWith { type ->
-        // Ucretli hak duruyorsa ucretli yol, tukendiyse reklam yolu denenir.
-        // Bu kural PaidPathNotExhausted / PaidPathUnavailable dallarini
-        // YAPISAL OLARAK imkansiz kilar: UI onlari hic gormez.
-        //
-        // ISTISNA — adPathIsPrimary (Hava Destegi, 2026-09-02): sira TERS.
-        // Reklam yolu acikken (savas ici hak + gunluk gosterim var) REKLAM;
-        // reklam kapaninca coin fiyati. `EconomyConfig.AIR_SUPPORT_PREFER_AD_PATH`
-        // false ise coin one gecer (odeyen oyuncu reklam beklemez).
-        val state = progress.boosterState
-        val viaAd = if (state == null) {
-            true
-        } else if (type.adPathIsPrimary && type.hasPaidPath) {
-            val adOpen = state.adUsesOf(type) < type.adUsesPerBattle && state.adViewsLeftToday > 0
-            val paidOpen = state.paidUsesOf(type) < type.paidUsesPerBattle
-            if (EconomyConfig.AIR_SUPPORT_PREFER_AD_PATH) adOpen || !paidOpen else !paidOpen && adOpen
-        } else {
-            !(type.hasPaidPath && state.paidUsesOf(type) < type.paidUsesPerBattle)
-        }
-        viaAd to progress.boosterDecision(
+        progress.boosterDecision(
             type = type,
-            viaAd = viaAd,
             supplyOnHand = supply,
             baseHealth = lives,
             maxBaseHealth = gameEngine.maxLives,
@@ -244,7 +218,7 @@ fun BoosterRail(
         )
     }
 
-    val needsTicker = armed != null || decisions.values.any { it.second is BoosterDecision.Cooldown }
+    val needsTicker = armed != null || decisions.values.any { it is BoosterDecision.Cooldown }
     LaunchedEffect(needsTicker) {
         while (needsTicker) {
             delay(TICK_MS)
@@ -279,13 +253,15 @@ fun BoosterRail(
         // dolayisiyla ucret kesilmez, kullanim hakki yanmaz, bekleme baslamaz.
         val activation = progress.activateBooster(
             type = type,
-            viaAd = false,
             supplyOnHand = gameEngine.gold.value,
             baseHealth = gameEngine.lives.value,
             maxBaseHealth = gameEngine.maxLives,
             enemiesOnField = gameEngine.enemies.size
         )
         val applied = gameEngine.applyBoosterActivation(activation)
+        // Motor uygulamayi reddettiyse (savas durumu arada degisti) odeme geri alinir:
+        // bedel ve etki TAM BIR KEZ ya da hic.
+        if (!applied && activation.applied) progress.undoBooster(activation)
 
         // Onay ile ret AYRI dokunsal desenlerdir: onay tek agir darbe, ret
         // cift darbe. Oyuncu ekrana bakmadan da odemenin gecip gecmedigini
@@ -352,7 +328,7 @@ fun BoosterRail(
         ) {
             // Alttan yukari artan unlockLevel -> Column'da tersten cizilir.
             types.sortedByDescending { it.unlockLevel }.forEach { type ->
-                val (viaAd, decision) = decisions.getValue(type)
+                val decision = decisions.getValue(type)
                 // Ret mesaji KOMPOZISYON sirasinda cozulur: `blockedMessage`
                 // bir @Composable'dir (stringResource kullanir) ve tiklama
                 // lambda'sindan cagrilamaz.
@@ -364,7 +340,6 @@ fun BoosterRail(
                 BoosterButton(
                     type = type,
                     decision = decision,
-                    viaAd = viaAd,
                     isArmed = armed == type,
                     buttonSize = btn,
                     iconSize = iconSize,
@@ -376,13 +351,6 @@ fun BoosterRail(
                                 haptics.onActionRejected()
                                 armed = null
                                 message = blockedMsg
-                            }
-                            // Bedava yol silahlanmaz: yanlis basmanin maliyeti yok,
-                            // sheet zaten onay adimidir.
-                            viaAd -> {
-                                haptics.onUiTap()
-                                armed = null
-                                onAdBoosterRequested(type)
                             }
                             armed != type -> {
                                 // SILAHLANMA onaydan FARKLI hissetmeli: bu bir
@@ -423,10 +391,7 @@ private fun blockedMessage(decision: BoosterDecision, type: BoosterType): String
         BoosterType.AIR_SUPPORT -> stringResource(R.string.booster_msg_no_targets)
         else -> stringResource(R.string.booster_msg_no_repair)
     }
-    is BoosterDecision.DailyAdLimitReached -> stringResource(R.string.booster_msg_daily_ad)
-    is BoosterDecision.AdLimitReached, is BoosterDecision.PaidLimitReached ->
-        stringResource(R.string.booster_msg_spent)
-    is BoosterDecision.PaidPathNotExhausted -> stringResource(R.string.booster_msg_paid_first)
+    is BoosterDecision.PaidLimitReached -> stringResource(R.string.booster_msg_spent)
     else -> stringResource(R.string.booster_msg_spent)
 }
 
@@ -434,7 +399,6 @@ private fun blockedMessage(decision: BoosterDecision, type: BoosterType): String
 private fun BoosterButton(
     type: BoosterType,
     decision: BoosterDecision,
-    viaAd: Boolean,
     isArmed: Boolean,
     buttonSize: Dp,
     iconSize: Dp,
@@ -444,23 +408,20 @@ private fun BoosterButton(
 ) {
     val visual = when {
         isArmed -> RailVisual.ARMED
-        decision is BoosterDecision.Allowed && viaAd -> RailVisual.READY_AD
-        decision is BoosterDecision.Allowed -> RailVisual.READY_PAID
+        decision is BoosterDecision.Allowed -> RailVisual.READY
         decision is BoosterDecision.Cooldown -> RailVisual.COOLDOWN
-        decision is BoosterDecision.AdLimitReached ||
-            decision is BoosterDecision.DailyAdLimitReached ||
-            decision is BoosterDecision.PaidLimitReached -> RailVisual.SPENT
+        decision is BoosterDecision.PaidLimitReached -> RailVisual.SPENT
         else -> RailVisual.BLOCKED
     }
 
     val fill = when (visual) {
-        RailVisual.READY_PAID, RailVisual.READY_AD, RailVisual.ARMED -> SleekPrimaryGreen
+        RailVisual.READY, RailVisual.ARMED -> SleekPrimaryGreen
         RailVisual.SPENT -> SleekSurfaceCard.copy(alpha = 0.45f)
         else -> SleekSurfaceCard
     }
     val borderColor = when (visual) {
         RailVisual.ARMED -> SleekGold
-        RailVisual.READY_PAID, RailVisual.READY_AD -> SleekTextAccent
+        RailVisual.READY -> SleekTextAccent
         RailVisual.SPENT -> SleekBorderDark
         else -> SleekTextAccent.copy(alpha = 0.5f)
     }
@@ -470,7 +431,7 @@ private fun BoosterButton(
         else -> 1.5.dp
     }
     val iconAlpha = when (visual) {
-        RailVisual.READY_PAID, RailVisual.READY_AD, RailVisual.ARMED -> 1.0f
+        RailVisual.READY, RailVisual.ARMED -> 1.0f
         RailVisual.COOLDOWN -> 0.55f
         RailVisual.SPENT -> 0.25f
         else -> 0.40f
@@ -481,10 +442,9 @@ private fun BoosterButton(
     )
 
     val name = boosterName(type)
-    val chip = chipText(type, decision, viaAd, isArmed)
+    val chip = chipText(type, decision, isArmed)
     val description = when {
         isArmed -> stringResource(R.string.booster_desc_armed, name)
-        decision is BoosterDecision.Allowed && viaAd -> stringResource(R.string.booster_desc_ad, name)
         decision is BoosterDecision.Allowed -> stringResource(R.string.booster_desc_ready, name, chip)
         decision is BoosterDecision.Cooldown -> stringResource(
             R.string.booster_desc_cooldown, name, ((decision.remainingMs + 999) / 1000).toInt()
@@ -524,20 +484,16 @@ private fun BoosterButton(
         if (chip.isNotEmpty()) {
             val chipBg = when {
                 isArmed -> SleekGold
-                decision is BoosterDecision.Allowed && viaAd -> SleekSurfaceCard
                 decision is BoosterDecision.Allowed -> SleekGoldBg
                 decision is BoosterDecision.Cooldown -> SleekSurfaceCard
                 else -> SleekRedBg
             }
             val chipFg = when {
                 isArmed -> SleekDarkBg
-                decision is BoosterDecision.Allowed && viaAd -> SleekTextAccent
                 decision is BoosterDecision.Allowed -> SleekGold
                 // BEKLEME CIPI ALTIN: butonun uzerindeki bekleme YAYI da altin.
                 // Ayni renk ikisini TEK gosterge yapar — bosalan yay ile azalan
-                // sayi birbirini aciklar. Onceden cip acik yesildi ve REKLAM
-                // cipiyle birebir ayni gorunuyordu, yani iki farkli durum ayni
-                // rozetle temsil ediliyordu.
+                // sayi birbirini aciklar.
                 decision is BoosterDecision.Cooldown -> SleekGold
                 else -> SleekRedText
             }
@@ -567,16 +523,14 @@ private fun BoosterButton(
     }
 }
 
-/** Alt serit TEK elemanlidir: ayni anda fiyat + reklam + sayac gosterilmez. */
+/** Alt serit TEK elemanlidir: ayni anda fiyat + sayac gosterilmez. Fiyat eylemden ONCE gorunur. */
 @Composable
 private fun chipText(
     type: BoosterType,
     decision: BoosterDecision,
-    viaAd: Boolean,
     isArmed: Boolean
 ): String = when {
     isArmed -> stringResource(R.string.booster_chip_confirm)
-    decision is BoosterDecision.Allowed && viaAd -> stringResource(R.string.booster_chip_ad)
     decision is BoosterDecision.Allowed && decision.currency == BoosterCurrency.COIN ->
         // Coin cipte KELIME olarak yazilir ("540 COIN"), ikonla degil.
         //

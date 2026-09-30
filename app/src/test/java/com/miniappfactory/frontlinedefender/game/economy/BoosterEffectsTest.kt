@@ -28,7 +28,6 @@ class BoosterEffectsTest {
     /** Izinli bir aktivasyon uretir; alanlar cagiranin verdigi degerlerdir. */
     private fun allowed(
         type: BoosterType,
-        viaAd: Boolean = false,
         supplyGranted: Int = 0,
         supplyCharged: Int = 0,
         healthRestored: Int = 0,
@@ -38,9 +37,7 @@ class BoosterEffectsTest {
         decision = BoosterDecision.Allowed(
             price = supplyCharged,
             currency = type.currency,
-            viaAd = viaAd,
         ),
-        viaAd = viaAd,
         supplyGranted = supplyGranted,
         supplyCharged = supplyCharged,
         healthRestored = healthRestored,
@@ -57,9 +54,41 @@ class BoosterEffectsTest {
             val rejected = BoosterActivation(
                 type = type,
                 decision = BoosterDecision.PaidLimitReached,
-                viaAd = false,
             )
             assertEquals("$type", res, applyBoosterToResources(res, rejected, maxLives))
+        }
+    }
+
+    /**
+     * Reddin HER turu (yeni reklamsiz karar kumesi dahil: InsufficientCoins,
+     * ReserveLocked, PaidLimitReached, Cooldown, NoEffect, Locked, Disabled,
+     * InsufficientSupply) kaynagi AYNEN birakir; etki alanlari dolu olsa bile.
+     */
+    @Test
+    fun everyKindOfRefusalLeavesResourcesUntouched() {
+        val refusals = listOf(
+            BoosterDecision.Disabled,
+            BoosterDecision.Locked(requiredLevel = 4),
+            BoosterDecision.PaidLimitReached,
+            BoosterDecision.InsufficientSupply(price = 50, shortfall = 10),
+            BoosterDecision.InsufficientCoins(price = 200, shortfall = 1),
+            BoosterDecision.ReserveLocked(price = 200, reserve = 100, shortfall = 5),
+            BoosterDecision.Cooldown(remainingMs = 1_000L),
+            BoosterDecision.NoEffect,
+        )
+        BoosterType.entries.forEach { type ->
+            refusals.forEach { decision ->
+                val act = BoosterActivation(
+                    type = type,
+                    decision = decision,
+                    supplyGranted = 500,
+                    supplyCharged = 500,
+                    healthRestored = 7,
+                    airSupportDamageFraction = 0.9,
+                )
+                assertTrue("$type/$decision uygulanmis sayildi", !act.applied)
+                assertSame("$type/$decision", res, applyBoosterToResources(res, act, maxLives))
+            }
         }
     }
 
@@ -69,8 +98,7 @@ class BoosterEffectsTest {
         // Ileride bilgi amacli dolu bir alan tasinirsa oynanis sessizce bozulmasin.
         val bogus = BoosterActivation(
             type = BoosterType.EMERGENCY_SUPPLY,
-            decision = BoosterDecision.DailyAdLimitReached(EconomyConfig.BOOSTER_AD_VIEWS_PER_DAY),
-            viaAd = true,
+            decision = BoosterDecision.InsufficientCoins(price = 10, shortfall = 5),
             supplyGranted = 9_999,
             healthRestored = 9_999,
             airSupportDamageFraction = 1.0,
@@ -79,7 +107,7 @@ class BoosterEffectsTest {
     }
 
     // =================================================================================
-    // 2. Tedarik yonu — Acil Tedarik ekler, Hava Destegi harcar
+    // 2. Tedarik yonu — Acil Tedarik ekler (coin oder); Hava Destegi Tedariki degistirmez
     // =================================================================================
 
     @Test
@@ -87,7 +115,7 @@ class BoosterEffectsTest {
         val granted = emergencySupplyAmount(level = 10)
         val out = applyBoosterToResources(
             res,
-            allowed(BoosterType.EMERGENCY_SUPPLY, viaAd = true, supplyGranted = granted),
+            allowed(BoosterType.EMERGENCY_SUPPLY, supplyGranted = granted),
             maxLives,
         )
         assertEquals(res.supply + granted, out.supply)

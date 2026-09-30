@@ -1,31 +1,92 @@
 package com.miniappfactory.frontlinedefender.game.economy
 
+import com.miniappfactory.frontlinedefender.game.data.InMemoryKeyValueStore
+import com.miniappfactory.frontlinedefender.game.data.SaveManager
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
+import java.lang.reflect.Modifier
 
 /**
- * Faz 10 — GUCLENDIRICI EKONOMISI.
+ * Faz 10 — GUCLENDIRICI EKONOMISI (REKLAMSIZ, TEK ODEME YOLU = COIN).
  *
- * Bu sinif uc seyi kanitlar ve hicbiri "test yazdim" formalitesi degil; ucu de
- * ECONOMY_SPEC'te soz verilen SERT KURALLARIN kodla yazilmis halidir:
+ * 2026-09-30: oyundan tum reklamlar kalkti; eskiden reklamla alinan haklar coinle
+ * fiyatlandi. Bu sinif eski "reklam yolu / arbitraj kalkani / gunluk reklam butcesi"
+ * testlerinin YERINE gecen yeni kurallari kilitler; eski dallara ait testler
+ * gevsetilmedi, SILINDI (dal artik yok) ve kurallari yeni dunyaya gore YENIDEN YAZILDI.
  *
- * 1. **Arbitraj yok** — reklam yolu ucretli yolun yerine gecemez (bolum 3).
- * 2. **Pay-to-win yok** — guclendirici KULLANMAYAN oyuncu kampanyayi bitirir,
- *    guclendirici HICBIR odul kaleminde gorunmez, tamir yildiz satin almaz (bolum 5-6).
- * 3. **Sikilastirma geri alinmaz** — Acil Tedarik reklamini izleyen oyuncu bile
- *    bugunku fazla bol ekonomiden daha rahat olmaz (bolum 7).
+ * KILITLENEN SERT KURALLAR
+ *  1. Her guclendirici COIN fiyatli; bedel dokunustan ONCE bilinir (`Allowed(price)`).
+ *  2. Acil Tedarik: 2 coin = 1 Tedarik, savas basina 1 kez, L2'de acilir, fiyat < R(L,1),
+ *     Konuslanma Rezervi'ne tabi. (GDD D.4 "coin Tedarik olmaz" BILINCLI GERI ALINDI.)
+ *  3. Hava Destegi: iki kullanim ayni fiyat; toplam hasar `kullanim x oran < 1,0`.
+ *  4. Us Tamiri: 1. kullanim 4 can, 2. kullanim 7 can ve CAN BASINA AYNI FIYAT; yildiz notr.
+ *  5. Rezerv coini guclendiriciye harcanamaz; reddedilen kullanim hicbir seyi degistirmez.
+ *  6. Guclendirici harcamasi kampanyayi soft-lock'a sokamaz.
+ *
+ * Test SAYI EZBERLEMEZ: kural enum'dan/formulden turetilir; elle yazilan sayilar ya
+ * sahibinin kararidir (islerine "sahip karari" yazilidir) ya da aritmetigi yorumda gosterilir.
  */
 class BoosterEconomyTest {
 
-    private val fresh = BoosterState.startBattle(level = 10)
-    private val richWallet = PlayerWallet(coins = 5_000, unlockedLevels = (1..22).toSet())
+    // =================================================================================
+    // Test altyapisi
+    // =================================================================================
 
-    private fun state(level: Int, adViewsToday: Int = 0) =
-        BoosterState.startBattle(level, adViewsToday)
+    private val lastLevel = EconomyConfig.CAMPAIGN_LEVELS
+
+    private fun state(level: Int) = BoosterState.startBattle(level)
+
+    /** Tum bolumler acik -> Konuslanma Rezervi 0. Fiyat sinirlari saf haliyle olculur. */
+    private fun openWallet(coins: Int) =
+        PlayerWallet(coins = coins, unlockedLevels = (1..lastLevel).toSet())
+
+    /** 1-6 temizlenmis, 7 kilitli -> rezerv TAM 100 (`lockCost(7)`). */
+    private fun gateWallet(coins: Int) = PlayerWallet(
+        coins = coins,
+        unlockedLevels = (1..6).toSet(),
+        clearedLevels = (1..6).toSet(),
+        bestStars = (1..6).associateWith { 2 },
+    )
+
+    private val richWallet = openWallet(1_000_000)
+
+    /** [type]'in [useNumber]. kullanimina hazir savas durumu (onceki kullanim + bitmis bekleme). */
+    private fun stateBeforeUse(type: BoosterType, level: Int, useNumber: Int): BoosterState =
+        if (useNumber <= 1) {
+            state(level)
+        } else {
+            BoosterState(
+                level = level,
+                paidUses = mapOf(type to useNumber - 1),
+                lastUseMs = mapOf(type to 0L),
+            )
+        }
+
+    /** Ortak sahne: us cani 5/20 (tamir icin 15 kayip), sahada 5 dusman. */
+    private fun decide(
+        type: BoosterType,
+        level: Int,
+        useNumber: Int,
+        wallet: PlayerWallet,
+        supplyOnHand: Int = 0,
+        baseHealth: Int = 5,
+        enemiesOnField: Int = 5,
+    ): BoosterDecision = boosterAllowed(
+        stateBeforeUse(type, level, useNumber), type, wallet,
+        supplyOnHand = supplyOnHand, baseHealth = baseHealth, enemiesOnField = enemiesOnField,
+    )
+
+    /** (tip, bolum, kullanim) uclulerinin TAMAMI: acildigi bolumden kampanya sonuna. */
+    private fun everyPricedUse(): List<Triple<BoosterType, Int, Int>> =
+        BoosterType.entries.flatMap { type ->
+            (type.unlockLevel..lastLevel).flatMap { level ->
+                (1..type.paidUsesPerBattle).map { use -> Triple(type, level, use) }
+            }
+        }
 
     // =================================================================================
     // 1. Acilma bolumleri
@@ -38,19 +99,15 @@ class BoosterEconomyTest {
         assertEquals(7, BoosterType.BASE_REPAIR.unlockLevel)
 
         BoosterType.entries.forEach { type ->
-            for (level in 1..EconomyConfig.CAMPAIGN_LEVELS) {
-                assertEquals(
-                    "$type L$level",
-                    level >= type.unlockLevel,
-                    boosterUnlocked(type, level),
-                )
+            for (level in 1..lastLevel) {
+                assertEquals("$type L$level", level >= type.unlockLevel, boosterUnlocked(type, level))
             }
         }
     }
 
     @Test
     fun firstLevelHasNoBoostersAtAll() {
-        // Bolum 1 saf ogretme alani: hicbir guclendirici, hicbir reklam kancasi.
+        // Bolum 1 saf ogretme alani: hicbir guclendirici, hicbir coin dugmesi.
         assertTrue(boostersAvailableAt(1).isEmpty())
         assertEquals(listOf(BoosterType.EMERGENCY_SUPPLY), boostersAvailableAt(2))
         assertEquals(
@@ -61,16 +118,20 @@ class BoosterEconomyTest {
     }
 
     @Test
-    fun lockedBoosterCannotBeUsedByAnyPath() {
-        val early = state(level = 3) // Hava Destegi L4'te acilir
-        assertEquals(
-            BoosterDecision.Locked(4),
-            boosterAllowed(early, BoosterType.AIR_SUPPORT, viaAd = false, richWallet, supplyOnHand = 9_999),
-        )
-        assertEquals(
-            BoosterDecision.Locked(4),
-            boosterAllowed(early, BoosterType.AIR_SUPPORT, viaAd = true, richWallet),
-        )
+    fun lockedBoosterIsRefusedWhateverTheWalletHolds() {
+        // Bolum kilidi cuzdandan ONCE gelir: sinirsiz coin bile kilitli tipi acmaz.
+        BoosterType.entries.forEach { type ->
+            for (level in 1 until type.unlockLevel) {
+                assertEquals(
+                    "$type L$level",
+                    BoosterDecision.Locked(type.unlockLevel),
+                    boosterAllowed(
+                        state(level), type, richWallet,
+                        supplyOnHand = 9_999, baseHealth = 5, enemiesOnField = 5,
+                    ),
+                )
+            }
+        }
     }
 
     // =================================================================================
@@ -78,139 +139,124 @@ class BoosterEconomyTest {
     // =================================================================================
 
     @Test
-    fun priceTableMatchesEconomySpec() {
-        // ECONOMY_SPEC B fiyat tablosu.
-        // Hava Destegi tabani 96 -> 101: fiyat acilista (L4) TAM olarak bir
-        // kademe-2 Gatling (125) olsun diye. Ankraj artik "acilis Tedarikinin
-        // %85'i" degil "bir kule" — bkz. EconomyConfig.AIR_SUPPORT_SUPPLY_BASE.
-        // 2026-09-02 — HAVA DESTEGI COIN'E CEVRILDI (IAP ile birlikte; kullanici:
-        // "hava destegini falan coinle satabiliriz"). Eski Tedarik tablosu
-        // (101 + 8(L-1) -> L4 125, L7 149, L22 269) artik okunmuyor; yeni fiyat
-        // 134 + 22(L-1) COIN. Kalibrasyon kisitlari asagidaki testlerde.
-        assertEquals(BoosterCurrency.COIN, BoosterType.AIR_SUPPORT.currency)
-        assertEquals(200, boosterPrice(BoosterType.AIR_SUPPORT, 4))
-        assertEquals(266, boosterPrice(BoosterType.AIR_SUPPORT, 7))
-        assertEquals(596, boosterPrice(BoosterType.AIR_SUPPORT, 22))
+    fun everyBoosterIsPricedInCoinOnly() {
+        // SAHIP KARARI 2026-09-30: tek odeme yolu coin. Tedarik fiyatli guclendirici yok.
+        BoosterType.entries.forEach { type ->
+            assertEquals("$type", BoosterCurrency.COIN, type.currency)
+        }
+        // Bedel dokunustan once bilinir: karar kendi fiyatini ve para birimini tasir.
+        everyPricedUse().forEach { (type, level, use) ->
+            assertEquals(
+                "$type L$level #$use",
+                BoosterDecision.Allowed(boosterPrice(type, level, use), BoosterCurrency.COIN),
+                decide(type, level, use, richWallet),
+            )
+        }
+    }
 
-        assertEquals(240, boosterPrice(BoosterType.BASE_REPAIR, 7))
-        assertEquals(540, boosterPrice(BoosterType.BASE_REPAIR, 22))
+    @Test
+    fun ownerDecisionUsesPerBattle() {
+        // SAHIP KARARI (FOLLOW-UP 006): Acil Tedarik 1, Hava Destegi 2, Us Tamiri 2 kullanim.
+        assertEquals(1, BoosterType.EMERGENCY_SUPPLY.paidUsesPerBattle)
+        assertEquals(2, BoosterType.AIR_SUPPORT.paidUsesPerBattle)
+        assertEquals(2, BoosterType.BASE_REPAIR.paidUsesPerBattle)
+        BoosterType.entries.forEach { assertEquals(it.paidUsesPerBattle, it.maxUsesPerBattle) }
+    }
 
-        assertEquals(0, boosterPrice(BoosterType.EMERGENCY_SUPPLY, 2))
+    @Test
+    fun priceTableMatchesTheFormulas() {
+        // Hava Destegi 134 + 22(L-1), IKI kullanim ayni fiyat.
+        assertEquals(200, boosterPrice(BoosterType.AIR_SUPPORT, 4))       // 134 + 66
+        assertEquals(266, boosterPrice(BoosterType.AIR_SUPPORT, 7))       // 134 + 132
+        assertEquals(596, boosterPrice(BoosterType.AIR_SUPPORT, 22))      // 134 + 462
+        assertEquals(266, boosterPrice(BoosterType.AIR_SUPPORT, 7, useNumber = 2))
 
-        assertEquals(70, emergencySupplyAmount(2))
-        assertEquals(90, emergencySupplyAmount(6))
-        assertEquals(190, emergencySupplyAmount(22))
+        // Us Tamiri 120 + 20(L-1); 2. kullanim = roundToTen(1. x 7 / 4).
+        assertEquals(240, boosterPrice(BoosterType.BASE_REPAIR, 7))       // 120 + 120
+        assertEquals(540, boosterPrice(BoosterType.BASE_REPAIR, 22))      // 120 + 420
+        assertEquals(420, boosterPrice(BoosterType.BASE_REPAIR, 7, 2))    // 240 x 7/4 = 420
+        assertEquals(950, boosterPrice(BoosterType.BASE_REPAIR, 22, 2))   // 540 x 7/4 = 945 -> 950
+
+        // Acil Tedarik = 2 x verdigi Tedarik (amount = roundToTen(60 + 6(L-1))).
+        assertEquals(70, emergencySupplyAmount(2))                        // 66 -> 70
+        assertEquals(90, emergencySupplyAmount(6))                        // 90
+        assertEquals(190, emergencySupplyAmount(22))                      // 186 -> 190
+        assertEquals(140, boosterPrice(BoosterType.EMERGENCY_SUPPLY, 2))
+        assertEquals(180, boosterPrice(BoosterType.EMERGENCY_SUPPLY, 6))
+        assertEquals(380, boosterPrice(BoosterType.EMERGENCY_SUPPLY, 22))
+    }
+
+    @Test
+    fun useNumberOutsideTheDeclaredUsesIsRejected() {
+        BoosterType.entries.forEach { type ->
+            listOf(0, type.paidUsesPerBattle + 1).forEach { bad ->
+                try {
+                    boosterPrice(type, 10, bad)
+                    fail("$type useNumber=$bad kabul edildi")
+                } catch (expected: IllegalArgumentException) {
+                    // beklenen
+                }
+            }
+        }
     }
 
     @Test
     fun pricesNeverDecreaseWithLevel() {
         BoosterType.entries.forEach { type ->
-            for (level in 2..EconomyConfig.CAMPAIGN_LEVELS) {
-                assertTrue(
-                    "$type L$level fiyati L${level - 1}'den dusuk",
-                    boosterPrice(type, level) >= boosterPrice(type, level - 1),
-                )
+            for (use in 1..type.paidUsesPerBattle) {
+                for (level in (type.unlockLevel + 1)..lastLevel) {
+                    assertTrue(
+                        "$type #$use L$level fiyati L${level - 1}'den dusuk",
+                        boosterPrice(type, level, use) >= boosterPrice(type, level - 1, use),
+                    )
+                }
             }
         }
     }
 
     /**
-     * ⚠⚠ 2026-08-21 — BU TEST ARTIK OLU BIR SAYIYI KORUYOR. GECIYOR AMA HICBIR
-     * OYUNCU DAVRANISINI KILITLEMIYOR.
-     *
-     * Hava Destegi AD_ONLY'ye cevrildi: `boosterAllowed` ucretli yolu
-     * [BoosterDecision.PaidPathUnavailable] ile daha ilk dalda kapatiyor, yani
-     * `boosterPrice(AIR_SUPPORT, level)` ARTIK HICBIR KOD YOLUNDAN OKUNMUYOR
-     * (tek uretim cagirani `TutorialOverlay` ve o da yalnizca SUPPLY/COIN
-     * currency dallarinda okuyor). Fiyat fonksiyonu kendi KDoc'uyla da celisiyor:
-     * "AD_ONLY tipler ... icin 0" diyor ama L4'te 125, L22'de 269 donuyor.
-     *
-     * TEST SILINMEDI, cunku silmek bayat sayiyi sessizce birakirdi. Ulasilamaz
-     * oldugu [adOnlyBoostersCanNeverChargeAnyCurrency] ile kilitlendi; asil karar
-     * (fiyati 0'a cekmek mi, ucretli yolu geri getirmek mi) urun tarafinda ve
-     * ajan kapsaminin disinda — RAPOR EDILDI.
-     *
-     * Asagidaki gerekce yalnizca ucretli yol geri gelirse tekrar anlam kazanir:
-     *
-     * SERT KURAL: hava destegi **bir kule kurmaktan vazgecmek** demek.
-     *
-     * OLCUT DEGISTI — "acilis Tedarikinin %70'i" -> "tam yukseltilmis en ucuz
-     * kule". Eski olcut, acilis Tedariki bir-iki kule alirken dogru vekildi.
-     * Sermaye kadrodan turetilir olunca (3-7 kulelik purse) ayni yuzde artik
-     * "bir kule" demiyor; ustelik yuzde, guclendirici fiyatiyla hicbir ilgisi
-     * olmayan bir sebeple (kadro buyudu) kayiyor. Yeni olcut dogrudan kule
-     * fiyatina bakiyor, yani kalibrasyonun NIYETI ile ayni birimde.
+     * Hava Destegi, en ucuz kalici meta yukseltmesinden UCUZ olamaz (altina duserse en iyi
+     * strateji yukseltme almak yerine her savasta dugmeye basmak olurdu); acilista fiyat TAM
+     * o taban. Bu taban Acil Tedarik'e UYGULANMAZ, bkz. [emergencySupplyFloorCannotApply].
      */
     @Test
-    fun airSupportNeverCostsLessThanAFullyUpgradedTower() {
-        // ⚠ 2026-09-02 — OLCUT PARA BIRIMI DEGISTIRDI.
-        //
-        // Ustteki uzun gerekce hava destegi TEDARIK harcarken yazildi: "bir kule
-        // kurmaktan vazgecmek" karsilastirmasi ancak iki secenek AYNI keseden
-        // odendiginde anlamli. Hava destegi coin'e cevrilince kule maliyetiyle
-        // karsilastirmak CAPRAZ PARA BIRIMI olur ve hicbir sey soylemez —
-        // GDD D.4 coin <-> Tedarik donusumunu zaten yasakliyor.
-        //
-        // Coin dilindeki karsiligi: guclendirici, meta agacin EN UCUZ rankindan
-        // ucuz olamaz (150). Altina duserse en iyi strateji kalici yukseltme
-        // almak yerine her savasta dugmeye basmak olurdu — orijinal niyetin
-        // ta kendisi, dogru birimde ifade edilmis hali.
+    fun airSupportNeverCostsLessThanTheCheapestPermanentRank() {
         val cheapestRank = UpgradeLine.entries.minOf { it.costOfRank(1) }
-        // ANKRAJ: acilista fiyat TAM olarak en ucuz kalici yukseltme. Bu testin
-        // ilk halinde taban 130 secilmisti ve L4'te 196 veriyordu — 200'un
-        // ALTINDA; test bunu yakaladi ve FIYAT duzeltildi, test gevsetilmedi.
         assertEquals(
             "acilista fiyat TAM olarak en ucuz kalici meta yukseltmesi olmali",
             cheapestRank,
             boosterPrice(BoosterType.AIR_SUPPORT, BoosterType.AIR_SUPPORT.unlockLevel),
         )
-        for (level in BoosterType.AIR_SUPPORT.unlockLevel..EconomyConfig.CAMPAIGN_LEVELS) {
+        for (level in BoosterType.AIR_SUPPORT.unlockLevel..lastLevel) {
             val price = boosterPrice(BoosterType.AIR_SUPPORT, level)
-            assertTrue(
-                "L$level: hava destegi $price coin, en ucuz meta rank $cheapestRank — " +
-                    "guclendirici kalici yukseltmeden ucuz olamaz",
-                price >= cheapestRank,
-            )
+            assertTrue("L$level: hava destegi $price < en ucuz rank $cheapestRank", price >= cheapestRank)
         }
     }
 
-    /**
-     * ⚠ 2026-09-02 — COIN YOLUNUN UST SINIRI.
-     *
-     * Us Tamiri ile ayni GDD kisiti: guclendiricinin fiyati bolumun 1-yildiz
-     * odulunun ALTINDA kalmali. Ustune cikarsa kullanmak NET ZARAR olur ve
-     * kalem olu yatirima doner. Ayrica hava destegi Us Tamiri'nden PAHALI
-     * olmali — etkisi daha guclu (ekrandaki HER dusmandan %45 vs +4 can).
-     */
+    /** Hava Destegi Us Tamiri'nden (1. kullanim) PAHALI ve 1-yildiz odulunun ALTINDA olmali. */
     @Test
-    fun airSupportCoinPriceSitsBetweenBaseRepairAndTheOneStarReward() {
-        for (level in BoosterType.AIR_SUPPORT.unlockLevel..EconomyConfig.CAMPAIGN_LEVELS) {
+    fun airSupportPriceSitsBetweenBaseRepairAndTheOneStarReward() {
+        for (level in BoosterType.AIR_SUPPORT.unlockLevel..lastLevel) {
             val air = boosterPrice(BoosterType.AIR_SUPPORT, level)
             val oneStar = levelReward(level, 1)
             assertTrue("L$level: hava destegi $air >= 1 yildiz odulu $oneStar", air < oneStar)
+            // Butce tavani: guclendirici tek basina bir bolum odulunun %90'ini yiyemez.
+            assertTrue(
+                "L$level: hava destegi 1-yildiz odulunun %.1f%%'i".format(100.0 * air / oneStar),
+                100.0 * air / oneStar <= 90.0,
+            )
             if (level >= BoosterType.BASE_REPAIR.unlockLevel) {
                 val repair = boosterPrice(BoosterType.BASE_REPAIR, level)
-                assertTrue(
-                    "L$level: hava destegi $air, us tamiri $repair — guclu olan pahali olmali",
-                    air > repair,
-                )
+                assertTrue("L$level: hava destegi $air, us tamiri $repair", air > repair)
             }
         }
     }
 
     @Test
-    fun baseRepairIsPricedBetweenTheCheapestRankAndOneStarReward() {
-        // Alt sinir: en ucuz meta rank (150). Altina duserse oyuncu agac yerine
-        // tamir farming'i yapar.
-        // Ust sinir: R(L) 1 yildiz odulu. Ustune cikarsa yenilgiyi zafere cevirmek
-        // NET ZARAR olur ve guclendirici olu yatirim haline gelir.
-        // Dukkan tabani: granularite duzeltmesinden sonra en ucuz rank-1
-        // Baslangic Tedariki / Hurda Degeri (200). Ates Gucu rank 1 150 -> 400
-        // cikti cunku artik +%3 degil +%6 veriyor.
+    fun baseRepairFirstUseIsPricedBetweenTheCheapestRankAndOneStarReward() {
         val cheapestRank = UpgradeLine.entries.minOf { it.costOfRank(1) }
         assertEquals(200, cheapestRank)
-
-        for (level in BoosterType.BASE_REPAIR.unlockLevel..EconomyConfig.CAMPAIGN_LEVELS) {
+        for (level in BoosterType.BASE_REPAIR.unlockLevel..lastLevel) {
             val price = boosterPrice(BoosterType.BASE_REPAIR, level)
             assertTrue("L$level tamir $price <= en ucuz rank $cheapestRank", price > cheapestRank)
             assertTrue(
@@ -220,965 +266,586 @@ class BoosterEconomyTest {
         }
     }
 
+    /**
+     * YENI KURAL — Us Tamiri 2. kullanim (+7 can): CAN BASINA fiyat 1. kullanimdan ASLA dusuk
+     * degil (eski reklam hakki bedavaydi; indirimli satis arbitraj acardi). `roundToTen` yalnizca
+     * en fazla 5 coin'lik (toplamda 4 x 5 = 20) yukari/asagi kayma yaratabilir.
+     */
+    @Test
+    fun repairSecondUsePerLifePriceIsNeverLowerThanTheFirstUse() {
+        val lives1 = EconomyConfig.BASE_REPAIR_LIVES_FIRST_USE
+        val lives2 = EconomyConfig.BASE_REPAIR_LIVES_SECOND_USE
+        assertEquals(4, lives1)
+        assertEquals(7, lives2)
+        for (level in BoosterType.BASE_REPAIR.unlockLevel..lastLevel) {
+            val p1 = boosterPrice(BoosterType.BASE_REPAIR, level, 1)
+            val p2 = boosterPrice(BoosterType.BASE_REPAIR, level, 2)
+            // p2 / 7 >= p1 / 4   <=>   p2 x 4 >= p1 x 7   (tamsayi, yuvarlama hatasiz)
+            assertTrue("L$level: 2. kullanim $p2 ($lives2 can) 1. kullanimdan ($p1, $lives1 can) ucuz", p2 * lives1 >= p1 * lives2)
+            assertTrue("L$level: 2. kullanim yuvarlamadan fazla pahali: $p2 vs $p1", p2 * lives1 - p1 * lives2 <= 20)
+            assertTrue("L$level: 2. kullanim 1.'den pahali olmali", p2 > p1)
+        }
+    }
+
+    @Test
+    fun repairAmountsPerUseAndCappedByWhatWasLost() {
+        // Duz can, orandan bagimsiz: 1. kullanim min(4, kayip), 2. kullanim min(7, kayip).
+        assertEquals(0, baseRepairAmount(20, 20))
+        assertEquals(0, baseRepairAmount(20, 20, useNumber = 2))
+        assertEquals(3, baseRepairAmount(17, 20))                 // kayip 3 < 4
+        assertEquals(3, baseRepairAmount(17, 20, useNumber = 2))  // kayip 3 < 7
+        assertEquals(4, baseRepairAmount(4, 20))
+        assertEquals(7, baseRepairAmount(4, 20, useNumber = 2))
+        assertEquals(6, baseRepairAmount(14, 20, useNumber = 2))  // kayip 6 < 7
+        assertEquals(7, baseRepairAmount(13, 20, useNumber = 2))  // kayip 7 = 7
+        assertEquals(4, baseRepairAmount(1, 30))                  // maks candan BAGIMSIZ
+        assertEquals(7, baseRepairAmount(1, 30, useNumber = 2))
+    }
+
+    // ---- Acil Tedarik: coin -> Tedarik (SAHIP KARARI, GDD D.4 geri alindi) -----------
+
+    /** SAHIP KARARI: 2 coin = 1 Tedarik. Sabit ve seffaf; sabit degisirse burasi kirilir. */
+    @Test
+    fun emergencySupplyCostsTwoCoinPerSupplyAtEveryLevel() {
+        assertEquals(2, EconomyConfig.EMERGENCY_SUPPLY_COIN_PER_SUPPLY)
+        for (level in BoosterType.EMERGENCY_SUPPLY.unlockLevel..lastLevel) {
+            assertEquals(
+                "L$level",
+                2 * emergencySupplyAmount(level),
+                boosterPrice(BoosterType.EMERGENCY_SUPPLY, level),
+            )
+        }
+    }
+
+    /**
+     * Fiyat < R(L,1): satin almak, bolumun 1-yildiz odulundan fazlasina mal olamaz (yoksa
+     * dugme olu yatirim). Tum 2..55 bolumde.
+     */
+    @Test
+    fun emergencySupplyPriceStaysBelowTheOneStarRewardAtEveryLevel() {
+        for (level in BoosterType.EMERGENCY_SUPPLY.unlockLevel..lastLevel) {
+            val price = boosterPrice(BoosterType.EMERGENCY_SUPPLY, level)
+            val oneStar = levelReward(level, 1)
+            assertTrue("L$level: acil tedarik $price >= 1-yildiz odulu $oneStar", price < oneStar)
+        }
+    }
+
+    /**
+     * Neden Acil Tedarik "fiyat >= en ucuz kalici rank (200)" tabanindan MUAF: L2'de R(2,1)=170,
+     * yani `200 <= fiyat < R(L,1)` araligi BOS. Bu, muafiyetin keyfi degil YAPISAL oldugunun kaniti.
+     */
+    @Test
+    fun emergencySupplyFloorCannotApply() {
+        val cheapestRank = UpgradeLine.entries.minOf { it.costOfRank(1) }
+        val unlock = BoosterType.EMERGENCY_SUPPLY.unlockLevel
+        assertTrue(
+            "L$unlock: R=${levelReward(unlock, 1)} > taban $cheapestRank — muafiyet gerekmiyor, taban uygulanmali",
+            levelReward(unlock, 1) <= cheapestRank,
+        )
+        // ... ve bu yuzden Acil Tedarik'in erken bolumlerde fiyati tabanin altinda.
+        assertTrue(boosterPrice(BoosterType.EMERGENCY_SUPPLY, unlock) < cheapestRank)
+    }
+
     @Test
     fun emergencySupplyIsRoughlyOneBasicTowerAndNeverAnOpeningReplacement() {
-        // Acil Tedarik "bir temel kule" kadar olmali: daha azi butona basmaya degmez,
-        // daha fazlasi bolum butcesini yeniden sisirir.
-        for (level in BoosterType.EMERGENCY_SUPPLY.unlockLevel..EconomyConfig.CAMPAIGN_LEVELS) {
+        // Daha azi butona basmaya degmez, daha fazlasi bolum butcesini yeniden sisirir.
+        for (level in BoosterType.EMERGENCY_SUPPLY.unlockLevel..lastLevel) {
             val amount = emergencySupplyAmount(level)
             val opening = startingSupplyFor(level)
             assertTrue("L$level acil tedarik $amount cok kucuk", amount >= 60)
-            assertTrue(
-                "L$level acil tedarik $amount, acilis Tedariki $opening'i asiyor — " +
-                    "reklam tum acilisi ikame ediyor",
-                amount <= opening,
-            )
+            assertTrue("L$level acil tedarik $amount, acilis Tedariki $opening'i asiyor", amount <= opening)
         }
     }
 
     // =================================================================================
-    // 3. ARBITRAJ TESTI — reklamsiz yol reklamli yolu (ve tersini) degersizlestirmiyor
+    // 3. Kaldirilan reklam katmani GERCEKTEN yok (derleme + yansima)
     // =================================================================================
 
     /**
-     * GERCEK KISIT. Arbitraj kalkani hâlâ [boosterAllowed] icinde yasayan sert bir
-     * kuraldir; degisen tek sey onu tasiyan ORNEK.
-     *
-     * ⚠ 2026-08-21 — ORNEK DEGISTI, KURAL DEGISMEDI. Bu test eskiden hem
-     * [BoosterType.AIR_SUPPORT]'u hem [BoosterType.BASE_REPAIR]'i ornek aliyordu.
-     * Hava Destegi AD_ONLY'ye cevrilince ucretli yolu kalmadi, dolayisiyla
-     * "once ucretli yolu tuket" kuralinin uzerinde calisabilecegi bir yol da
-     * kalmadi (bkz. [airSupportHasNoPaidPathSoItStartsEveryBattleDeactivated]).
-     * Kurali tasiyan TEK guclendirici artik Us Tamiri; ornek oraya tasindi.
-     *
-     * Testi "gecsin diye" gevsetmedim: kalkanin ISLEDIGI dogrulaniyor (reddin
-     * turu, kalan hak sayisi, ucretli kullanim sonrasi acilma). Ayrica kuralin
-     * KAPSAMI enum uzerinden ayrica kilitlendi ki ornegin tekrar bayatlamasi
-     * sessiz kalmasin.
+     * Ustteki `when` DERLEME kapisidir: `else` yok, dolayisiyla karar tipi eklenirse/cikarilirsa
+     * bu dosya derlenmez ve biri bu testi bilerek gunceller. Kaldirilan tiplere (AdLimitReached,
+     * DailyAdLimitReached, PaidPathNotExhausted, PaidPathUnavailable) burada ATIF YAPILAMAZ.
      */
-    @Test
-    fun adPathIsLockedUntilThePaidPathIsExhausted() {
-        // TASARIM AKSIYOMU: reklam ikame DEGIL, uzantidir. Ucretli kullanim
-        // tuketilmeden reklam teklifi acilmaz — yoksa oyuncu 300 coin yerine daima
-        // bedava reklami secer ve coin fiyatlamasi olu harf olur.
-        val s = state(level = 10)
-
-        assertEquals(
-            BoosterDecision.PaidPathNotExhausted(1),
-            boosterAllowed(s, BoosterType.BASE_REPAIR, viaAd = true, richWallet, baseHealth = 5),
-        )
-
-        // Ucretli kullanim yapildiktan SONRA reklam yolu acilir.
-        val paid = boosterAllowed(
-            s, BoosterType.BASE_REPAIR, viaAd = false, richWallet, baseHealth = 5, nowMs = 0L,
-        )
-        assertTrue(paid.isAllowed)
-        val after = useBooster(s, BoosterType.BASE_REPAIR, viaAd = false, decision = paid, nowMs = 0L)
-        assertTrue(
-            boosterAllowed(
-                after, BoosterType.BASE_REPAIR, viaAd = true, richWallet,
-                baseHealth = 5, nowMs = 10_000_000L,
-            ).isAllowed
-        )
-
-        // KAPSAM KILIDI: kalkan "ucretli yolu olan HER guclendirici" icin gecerli
-        // — **reklam yolu birincil olanlar haric**.
-        //
-        // ⚠ 2026-09-02: Hava Destegi'ne coin yolu eklendi, yani `hasPaidPath`
-        // olan tip sayisi 1'den 2'ye cikti. Kalkani ona da uygulamak, oyuncuyu
-        // "reklam izleyebilmek icin once coin harca" durumuna sokardi — 21
-        // Agustos'taki "reklam izlemeye tesvik" kararinin tam tersi. Bu yuzden
-        // `adPathIsPrimary` tipleri kalkanin DISINDA ve bu dongu onlari eler.
-        //
-        // Sayac testi KALDI (bos dongu tuzagina karsi), yalnizca beklenen deger
-        // yeni gercege gore yazildi: kalkan altindaki tek tip Us Tamiri.
-        val withPaidPath = BoosterType.entries.filter { it.hasPaidPath && !it.adPathIsPrimary }
-        assertEquals("kalkan altindaki guclendirici sayisi degisti", 1, withPaidPath.size)
-        assertEquals(
-            "kalkan altindaki tip Us Tamiri olmali",
-            listOf(BoosterType.BASE_REPAIR), withPaidPath,
-        )
-        // Hava Destegi kalkanin DISINDA olmali — ve bu bir gozetimsizlik degil,
-        // acik bir karar. Bayrak sessizce false'a donerse burasi patlar.
-        assertTrue(
-            "hava destegi kalkanin altina girmis — reklam icin coin harcamak gerekirdi",
-            BoosterType.AIR_SUPPORT.adPathIsPrimary,
-        )
-        withPaidPath.forEach { type ->
-            val d = boosterAllowed(
-                state(level = EconomyConfig.CAMPAIGN_LEVELS), type, viaAd = true, richWallet,
-                baseHealth = 5, supplyOnHand = 9_999,
-            )
-            assertEquals(
-                "$type: ucretli yol tukenmeden reklam yolu acilmis",
-                BoosterDecision.PaidPathNotExhausted(type.paidUsesPerBattle), d,
-            )
-        }
+    private fun label(d: BoosterDecision): String = when (d) {
+        is BoosterDecision.Allowed -> "Allowed"
+        is BoosterDecision.Disabled -> "Disabled"
+        is BoosterDecision.Locked -> "Locked"
+        is BoosterDecision.PaidLimitReached -> "PaidLimitReached"
+        is BoosterDecision.InsufficientSupply -> "InsufficientSupply"
+        is BoosterDecision.InsufficientCoins -> "InsufficientCoins"
+        is BoosterDecision.ReserveLocked -> "ReserveLocked"
+        is BoosterDecision.Cooldown -> "Cooldown"
+        is BoosterDecision.NoEffect -> "NoEffect"
     }
 
-    @Test
-    fun adOnlyBoosterHasNoPaidSubstituteSoArbitrageIsStructurallyImpossible() {
-        val s = state(level = 5)
-        // Ucretli yol yok -> reklam hicbir seyin ikamesi degil.
-        assertEquals(
-            BoosterDecision.PaidPathUnavailable,
-            boosterAllowed(s, BoosterType.EMERGENCY_SUPPLY, viaAd = false, richWallet, supplyOnHand = 9_999),
-        )
-        assertTrue(boosterAllowed(s, BoosterType.EMERGENCY_SUPPLY, viaAd = true, richWallet).isAllowed)
-        assertEquals(BoosterCurrency.AD_ONLY, BoosterType.EMERGENCY_SUPPLY.currency)
-        assertFalse(BoosterType.EMERGENCY_SUPPLY.hasPaidPath)
-        assertEquals(0, BoosterType.EMERGENCY_SUPPLY.paidUsesPerBattle)
-    }
+    private val adSurface = Regex("""(?i)viaAd|AD_ONLY|adUses|adViews|^ad[A-Z_]|Daily.*Ad|PaidPath|AdLimit|sharedUseCap|adPathIsPrimary|hasPaidPath""")
+
+    private fun instanceFields(c: Class<*>): List<String> =
+        c.declaredFields.filter { !Modifier.isStatic(it.modifiers) }.map { it.name }
 
     @Test
-    fun everyBoosterOffersStrictlyMoreThroughAdsThanMoneyCanBuy() {
-        // Arbitraj kalkaninin yapisal ifadesi: reklamin acabildigi kullanim sayisi,
-        // ucretli yolun ulasabildigi sayinin DAIMA otesindedir. Esit olsaydi iki yol
-        // ikame olurdu ve biri olurdu.
-        BoosterType.entries.forEach { type ->
-            assertTrue("$type reklam yolu yok", type.adUsesPerBattle > 0)
-            assertTrue(
-                "$type: ucretli ${type.paidUsesPerBattle} vs toplam ${type.maxUsesPerBattle}",
-                type.paidUsesPerBattle < type.maxUsesPerBattle,
-            )
-        }
-    }
-
-    /**
-     * GERCEK KISIT — "parayla her seyi al" yolu yok. Ornek Hava Destegi'nden Us
-     * Tamiri'ne tasindi (2026-08-21): ucretli+reklam ikilisini tasiyan tek
-     * guclendirici Us Tamiri kaldi.
-     *
-     * "Herhangi bir fiyata" iddiasi milyonluk bakiyeyle olculuyor: reddin sebebi
-     * odeme gucu DEGIL, tukenmis hak. Bakiye ne olursa olsun cevap ayni.
-     */
-    @Test
-    fun payingCannotBuyTheAdUseAtAnyPrice() {
-        // Ucretli kullanim tukendikten sonra ucretli yol KAPANIR; ikinci kullanim
-        // yalnizca reklamla alinir.
-        val loaded = PlayerWallet(coins = 1_000_000, unlockedLevels = (1..22).toSet())
-        val s = state(level = 10)
-        val d = boosterAllowed(s, BoosterType.BASE_REPAIR, viaAd = false, loaded, baseHealth = 5, nowMs = 0L)
-        assertTrue(d.isAllowed)
-        val after = useBooster(s, BoosterType.BASE_REPAIR, viaAd = false, decision = d, nowMs = 0L)
+    fun removedAdDecisionTypesAndFieldsNoLongerExist() {
+        val decisionNames = BoosterDecision::class.java.declaredClasses.map { it.simpleName }.toSet()
         assertEquals(
-            BoosterDecision.PaidLimitReached,
-            boosterAllowed(
-                after, BoosterType.BASE_REPAIR, viaAd = false, loaded,
-                baseHealth = 5, nowMs = 10_000_000L,
+            setOf(
+                "Allowed", "Disabled", "Locked", "PaidLimitReached", "InsufficientSupply",
+                "InsufficientCoins", "ReserveLocked", "Cooldown", "NoEffect",
             ),
+            decisionNames,
         )
+        assertEquals(setOf("SUPPLY", "COIN"), BoosterCurrency.entries.map { it.name }.toSet())
+
+        val surface = listOf(
+            BoosterState::class.java, BoosterType::class.java, BoosterActivation::class.java,
+            BoosterDecision.Allowed::class.java,
+        ).flatMap { c -> instanceFields(c).map { "${c.simpleName}.$it" } } +
+            BoosterDecision::class.java.declaredClasses.map { it.simpleName }
+        val leaks = surface.filter { adSurface.containsMatchIn(it.substringAfter('.')) }
+        assertTrue("reklam yuzeyi kalmis: $leaks", leaks.isEmpty())
+
+        // Allowed yalnizca (price, currency) tasir; label() cagrisi tam eslemeyi de calistirir.
+        assertEquals(setOf("price", "currency"), instanceFields(BoosterDecision.Allowed::class.java).toSet())
+        assertEquals("Allowed", label(BoosterDecision.Allowed(1, BoosterCurrency.COIN)))
     }
 
     // =================================================================================
-    // 4. Limitler ve exploit kapaklari
+    // 4. Limitler, siralama ve exploit kapaklari
     // =================================================================================
 
     /**
-     * GERCEK KISIT — savas basina kullanim tavani var ve HER IKI yol da tam
-     * doyduktan sonra kesin olarak kapaniyor.
-     *
-     * ⚠ 2026-08-21 — AD BAYATLAMISTI. Eski adi
-     * `eachBoosterIsCappedAtOnePaidPlusOneAdUsePerBattle` idi ve "1 ucretli + 1
-     * reklam" sayilarini isminde tasiyordu. O sayilar artik hicbir guclendirici
-     * icin dogru degil (Acil Tedarik 0+1, Hava Destegi 0+2, Us Tamiri 1+1) —
-     * yani ad, okuyana YANLIS bir genel kural ogretiyordu.
-     *
-     * Test ayni sebeple tek bir ORNEK guclendirici uzerinden yazilmisti ve
-     * o ornek degisince kirildi. Yeni hali sayilari ezberlemek yerine her
-     * guclendiricinin KENDI beyan ettigi tavani ([BoosterType.paidUsesPerBattle],
-     * [BoosterType.adUsesPerBattle]) sonuna kadar tuketip sonrasini reddettirir.
-     * Boylece tavan degerleri bir daha degistiginde test kirilmaz ama tavanin
-     * UYGULANDIGI kanitlanmaya devam eder.
+     * Her guclendirici KENDI beyan ettigi tavani sonuna kadar tuketir (her adimda fiyat =
+     * `boosterPrice(tip, bolum, kullanim)`, para birimi COIN) ve sonrasini, bakiye milyon
+     * olsa bile, `PaidLimitReached` ile reddeder. Toplam harcama = kullanim fiyatlari toplami.
      */
     @Test
-    fun everyBoosterSaturatesItsDeclaredPathsAndThenRefusesBoth() {
+    fun everyBoosterSaturatesItsPaidUsesAndThenRefuses() {
         BoosterType.entries.forEach { type ->
-            var s = state(level = EconomyConfig.CAMPAIGN_LEVELS)
+            var s = state(lastLevel)
+            var wallet = openWallet(1_000_000)
+            val start = wallet.coins
             var now = 0L
             val step = boosterCooldownMs(type) + 1L
+            var expectedSpend = 0
 
-            // ⚠ 2026-09-02 — PAYLASIMLI TAVAN. Hava Destegi'nde ucretli(1) +
-            // reklam(2) = 3 ama `sharedUseCap` = 2, yani iki yol AYNI iki
-            // vurusu paylasir. Dongu bu yuzden beyan edilen haklari degil
-            // GERCEKTEN acik olan kadarini tuketir.
-            val cap = type.maxUsesPerBattle
-            val paidQuota = minOf(type.paidUsesPerBattle, cap)
-            val adQuota = minOf(type.adUsesPerBattle, cap - paidQuota)
-
-            // Once ucretli yol: kalkan reklam yolunu zaten bu sirayi dayatiyor.
-            repeat(paidQuota) {
+            for (use in 1..type.paidUsesPerBattle) {
                 val d = boosterAllowed(
-                    s, type, viaAd = false, richWallet,
-                    supplyOnHand = 9_999, baseHealth = 5, enemiesOnField = 5, nowMs = now,
+                    s, type, wallet, supplyOnHand = 9_999, baseHealth = 5, enemiesOnField = 5, nowMs = now,
                 )
-                assertTrue("$type ucretli kullanim #${it + 1} reddedildi: $d", d.isAllowed)
-                s = useBooster(s, type, viaAd = false, decision = d, nowMs = now)
-                now += step
-            }
-            repeat(adQuota) {
-                val d = boosterAllowed(
-                    s, type, viaAd = true, richWallet,
-                    baseHealth = 5, enemiesOnField = 5, nowMs = now,
-                )
-                assertTrue("$type reklam kullanimi #${it + 1} reddedildi: $d", d.isAllowed)
-                s = useBooster(s, type, viaAd = true, decision = d, nowMs = now)
+                val price = boosterPrice(type, lastLevel, use)
+                assertEquals("$type kullanim #$use", BoosterDecision.Allowed(price, BoosterCurrency.COIN), d)
+                wallet = payForBooster(wallet, d)
+                s = useBooster(s, type, d, nowMs = now)
+                expectedSpend += price
                 now += step
             }
 
-            assertEquals("$type toplam kullanim", cap, s.usesOf(type))
-            assertEquals(paidQuota, s.paidUsesOf(type))
-            assertEquals(adQuota, s.adUsesOf(type))
-
-            // Doyduktan sonra iki yol da kapali. Ucretli yolu OLMAYAN tipte
-            // reddin sebebi tavan degil "boyle bir yol yok" — ikisi ayri
-            // mesajlar ve analytics acisindan da ayri kalmali.
-            val paidAgain = boosterAllowed(
-                s, type, viaAd = false, richWallet,
-                supplyOnHand = 1_000_000, baseHealth = 5, enemiesOnField = 5, nowMs = now,
-            )
+            assertEquals("$type toplam kullanim", type.maxUsesPerBattle, s.usesOf(type))
+            assertEquals(start - expectedSpend, wallet.coins)
+            assertEquals(expectedSpend, wallet.lifetimeSpent)
             assertEquals(
-                "$type ucretli yol doyduktan sonra hâlâ acik",
-                if (type.hasPaidPath) BoosterDecision.PaidLimitReached
-                else BoosterDecision.PaidPathUnavailable,
-                paidAgain,
-            )
-            // Paylasimli tavanli tipte reklam hakki KAGIT UZERINDE dolmamis
-            // olabilir (adQuota < adUsesPerBattle) ama tavan onu de kapatir.
-            assertEquals(
-                "$type reklam yolu doyduktan sonra hâlâ acik",
-                BoosterDecision.AdLimitReached,
+                "$type doyduktan sonra hala acik",
+                BoosterDecision.PaidLimitReached,
                 boosterAllowed(
-                    s, type, viaAd = true, richWallet,
-                    baseHealth = 5, enemiesOnField = 5, nowMs = now,
+                    s, type, wallet, supplyOnHand = 1_000_000, baseHealth = 5, enemiesOnField = 5, nowMs = now,
                 ),
             )
         }
     }
 
-    @Test
-    fun dailyBoosterAdRightIsBoundedAndCannotBeFarmed() {
-        // EXPLOIT: "bolume gir, reklam izle, cik, tekrar gir" dongusu. Gunluk hak
-        // savaslar arasi tasindigi icin dongü kapali.
-        var adViews = 0
-        var granted = 0
-        repeat(50) {
-            var s = state(level = 5, adViewsToday = adViews)
-            val d = boosterAllowed(s, BoosterType.EMERGENCY_SUPPLY, viaAd = true, richWallet)
-            if (d.isAllowed) {
-                s = useBooster(s, BoosterType.EMERGENCY_SUPPLY, viaAd = true, decision = d, nowMs = 0L)
-                granted++
-                adViews = s.adViewsToday
-            }
-        }
-        assertEquals(EconomyConfig.BOOSTER_AD_VIEWS_PER_DAY, granted)
-        assertEquals(
-            BoosterDecision.DailyAdLimitReached(EconomyConfig.BOOSTER_AD_VIEWS_PER_DAY),
-            boosterAllowed(
-                state(level = 5, adViewsToday = adViews),
-                BoosterType.EMERGENCY_SUPPLY, viaAd = true, richWallet,
-            ),
-        )
-    }
-
-    /**
-     * GERCEK KISIT — savasa kapsamli model. Ornek Hava Destegi'nin ucretli
-     * yolundan Us Tamiri'nin ucretli yoluna tasindi (2026-08-21) ve ayni anda
-     * REKLAM sayacinin sifirlanmasi da olcume alindi.
-     *
-     * Eski hali yalnizca `paidUses` sifirlanmasini olcuyordu. Hava Destegi
-     * reklam-only olunca savas ici hakkinin TAMAMI `adUses`'ta tutuluyor; o alan
-     * savaslar arasi sifirlanmasa "bolumden cik-gir, iki hakki tekrar al" degil
-     * TERSI bir hata olurdu (hak hic yenilenmezdi). Iki sayac da artik olculuyor.
-     */
+    /** Hak sayaci ve kayitli tamir, savasla birlikte yok olur: envanter/stoklama yok. */
     @Test
     fun boostersAreNotInventoryAndDoNotSurviveTheBattle() {
-        // Savasa kapsamli model: yeni savas sayaclari sifirlar, yalnizca gunluk reklam
-        // sayaci tasinir. Stoklama olsaydi "20 tane biriktir, son bolumu ez" acilirdi.
         var s = state(level = 10)
-
-        val paid = boosterAllowed(s, BoosterType.BASE_REPAIR, viaAd = false, richWallet, baseHealth = 5, nowMs = 0L)
-        assertTrue(paid.isAllowed)
-        s = useBooster(s, BoosterType.BASE_REPAIR, viaAd = false, decision = paid, nowMs = 0L, repairedHealth = 4)
+        val repair = boosterAllowed(s, BoosterType.BASE_REPAIR, richWallet, baseHealth = 5, nowMs = 0L)
+        assertTrue(repair.isAllowed)
+        s = useBooster(s, BoosterType.BASE_REPAIR, repair, nowMs = 0L, repairedHealth = 4)
         assertEquals(1, s.paidUsesOf(BoosterType.BASE_REPAIR))
         assertEquals(4, s.repairedHealth)
 
-        val viaAd = boosterAllowed(s, BoosterType.AIR_SUPPORT, viaAd = true, richWallet, enemiesOnField = 3, nowMs = 0L)
-        assertTrue(viaAd.isAllowed)
-        s = useBooster(s, BoosterType.AIR_SUPPORT, viaAd = true, decision = viaAd, nowMs = 0L)
-        assertEquals(1, s.adUsesOf(BoosterType.AIR_SUPPORT))
-        assertEquals(1, s.adViewsToday)
+        val air = boosterAllowed(s, BoosterType.AIR_SUPPORT, richWallet, enemiesOnField = 3, nowMs = 0L)
+        assertTrue(air.isAllowed)
+        s = useBooster(s, BoosterType.AIR_SUPPORT, air, nowMs = 0L)
+        assertEquals(1, s.usesOf(BoosterType.AIR_SUPPORT))
 
-        val next = BoosterState.startBattle(11, s.adViewsToday)
-        assertEquals(0, next.paidUsesOf(BoosterType.BASE_REPAIR))
-        assertEquals(0, next.adUsesOf(BoosterType.AIR_SUPPORT))
+        val next = BoosterState.startBattle(11)
+        BoosterType.entries.forEach { assertEquals("$it", 0, next.usesOf(it)) }
         assertEquals(0, next.repairedHealth)
         assertTrue("bekleme sayaci da savasla birlikte olmeli", next.lastUseMs.isEmpty())
-        // Tasinan TEK sey gunluk reklam sayaci — farming kapisi bu.
-        assertEquals(s.adViewsToday, next.adViewsToday)
-    }
-
-    @Test
-    fun rejectedActivationChangesNothing() {
-        val s = state(level = 3) // Hava Destegi kilitli
-        val denied = boosterAllowed(s, BoosterType.AIR_SUPPORT, viaAd = false, richWallet, supplyOnHand = 9_999)
-        assertFalse(denied.isAllowed)
-        assertSame(s, useBooster(s, BoosterType.AIR_SUPPORT, viaAd = false, decision = denied))
-        assertSame(richWallet, payForBooster(richWallet, denied))
     }
 
     /**
-     * GERCEK KISIT — ve hava destegi AD_ONLY olduktan sonra ONCEKINDEN DAHA
-     * onemli hale geldi.
-     *
-     * Eskiden hava destegini frenleyen iki sey vardi: 45 sn bekleme VE Tedarik
-     * fiyati. Tedarik yolu kalkinca geriye TEK fren kaldi — bu bekleme. Iki
-     * kullanimin ust uste binmesini engelleyen baska hicbir sey yok
-     * (bkz. [allAirSupportUsesInOneBattleStillCannotKillAnything]: 2 x 0,45
-     * ekrandaki her seyi %90 siler; ayni saniyede olurlarsa dalga fiilen biter).
-     * Bu yuzden test ucretli yoldan reklam yoluna tasindi ve IKI reklam
-     * kullanimi arasini olcuyor.
+     * Reddin HER turunde durum, cuzdan ve bekleme AYNEN kalir.
+     * (Locked, Cooldown, NoEffect, InsufficientCoins, ReserveLocked, PaidLimitReached, Disabled.)
      */
     @Test
-    fun cooldownBlocksBackToBackAirSupport() {
-        var s = state(level = 10)
-        val d = boosterAllowed(
-            s, BoosterType.AIR_SUPPORT, viaAd = true, richWallet, enemiesOnField = 5, nowMs = 1_000L,
-        )
-        assertTrue(d.isAllowed)
-        s = useBooster(s, BoosterType.AIR_SUPPORT, viaAd = true, decision = d, nowMs = 1_000L)
+    fun rejectedActivationChangesNothing() {
+        class Case(val name: String, val s: BoosterState, val wallet: PlayerWallet, val decision: BoosterDecision)
 
-        // Ikinci reklam hakki DURUYOR (savas basina 2) ama bekleme onu tutuyor.
-        assertEquals(1, s.adUsesOf(BoosterType.AIR_SUPPORT))
-        val tooSoon = boosterAllowed(
-            s, BoosterType.AIR_SUPPORT, viaAd = true, richWallet, enemiesOnField = 5, nowMs = 2_000L,
+        val bought = BoosterState(
+            level = 10,
+            paidUses = mapOf(BoosterType.EMERGENCY_SUPPLY to 1),
+            lastUseMs = mapOf(BoosterType.EMERGENCY_SUPPLY to 0L),
         )
-        assertTrue("bekleme suresi uygulanmali", tooSoon is BoosterDecision.Cooldown)
-        assertEquals(
-            EconomyConfig.AIR_SUPPORT_COOLDOWN_MS - 1_000L,
-            (tooSoon as BoosterDecision.Cooldown).remainingMs,
+        val airOnce = stateBeforeUse(BoosterType.AIR_SUPPORT, 10, 2)
+            .copy(lastUseMs = mapOf(BoosterType.AIR_SUPPORT to 1_000L))
+        val airPrice = boosterPrice(BoosterType.AIR_SUPPORT, 10)
+        val poor = openWallet(1)
+        val reserved = gateWallet(airPrice + 8) // bakiye yetiyor, rezerv (100) yetmiyor
+
+        val cases = listOf(
+            Case("Locked", state(3), richWallet,
+                boosterAllowed(state(3), BoosterType.AIR_SUPPORT, richWallet)),
+            Case("PaidLimitReached", bought, richWallet,
+                boosterAllowed(bought, BoosterType.EMERGENCY_SUPPLY, richWallet)),
+            Case("Cooldown", airOnce, richWallet,
+                boosterAllowed(airOnce, BoosterType.AIR_SUPPORT, richWallet, enemiesOnField = 4, nowMs = 2_000L)),
+            Case("NoEffect", state(10), richWallet,
+                boosterAllowed(state(10), BoosterType.BASE_REPAIR, richWallet, baseHealth = 20)),
+            Case("InsufficientCoins", state(10), poor,
+                boosterAllowed(state(10), BoosterType.AIR_SUPPORT, poor, enemiesOnField = 3)),
+            Case("ReserveLocked", state(10), reserved,
+                boosterAllowed(state(10), BoosterType.AIR_SUPPORT, reserved, enemiesOnField = 3)),
+            Case("Disabled", state(10), richWallet, BoosterDecision.Disabled),
         )
-        assertTrue(
-            boosterAllowed(
-                s, BoosterType.AIR_SUPPORT, viaAd = true, richWallet, enemiesOnField = 5,
-                nowMs = 1_000L + EconomyConfig.AIR_SUPPORT_COOLDOWN_MS,
-            ).isAllowed
-        )
+        cases.forEach { c ->
+            assertFalse("${c.name} karari izin vermemeli: ${c.decision}", c.decision.isAllowed)
+            assertEquals("karar turu", c.name, label(c.decision))
+            assertSame("${c.name}: durum degisti", c.s,
+                useBooster(c.s, BoosterType.AIR_SUPPORT, c.decision, nowMs = 9_999L, repairedHealth = 4))
+            assertSame("${c.name}: cuzdan degisti", c.wallet, payForBooster(c.wallet, c.decision))
+        }
+    }
+
+    /** Bekleme SAVAS ICI iki kullanim arasindadir: Hava Destegi 45 sn, Us Tamiri 60 sn. */
+    @Test
+    fun cooldownBlocksBackToBackUsesOfTheSameBooster() {
+        listOf(BoosterType.AIR_SUPPORT, BoosterType.BASE_REPAIR).forEach { type ->
+            val cooldown = boosterCooldownMs(type)
+            assertTrue("$type bekleme tanimli olmali", cooldown > 0L)
+            var s = state(10)
+            val first = boosterAllowed(s, type, richWallet, baseHealth = 5, enemiesOnField = 5, nowMs = 1_000L)
+            assertTrue(first.isAllowed)
+            s = useBooster(s, type, first, nowMs = 1_000L)
+            assertEquals(1, s.usesOf(type))
+
+            // Ikinci hak DURUYOR ama bekleme tutuyor.
+            val tooSoon = boosterAllowed(s, type, richWallet, baseHealth = 5, enemiesOnField = 5, nowMs = 2_000L)
+            assertEquals("$type", BoosterDecision.Cooldown(cooldown - 1_000L), tooSoon)
+            assertEquals(
+                "$type bekleme bittiginde tam aninda acilmali",
+                BoosterDecision.Allowed(boosterPrice(type, 10, 2), BoosterCurrency.COIN),
+                boosterAllowed(s, type, richWallet, baseHealth = 5, enemiesOnField = 5, nowMs = 1_000L + cooldown),
+            )
+        }
+        // Acil Tedarik'te bekleme yok ama tek hak var; ikinci deneme tavana carpar.
+        assertEquals(0L, boosterCooldownMs(BoosterType.EMERGENCY_SUPPLY))
     }
 
     @Test
-    fun repairIsRefusedWhenThereIsNothingToRepair() {
-        val s = state(level = 10)
-        assertEquals(
-            BoosterDecision.NoEffect,
-            boosterAllowed(
-                s, BoosterType.BASE_REPAIR, viaAd = false, richWallet,
-                baseHealth = 20, maxBaseHealth = 20,
-            ),
-        )
-        // ⚠ 2026-08-21: us tamiri ORAN degil DUZ CAN veriyor (coin 4 / reklam 7).
-        // Eski beklentiler %40'a gore yazilmisti (20 canda 8).
-        assertEquals(0, baseRepairAmount(20, 20))
-        // Kaybedilenden fazlasini vermez.
-        assertEquals(3, baseRepairAmount(17, 20))   // kayip 3 < 4, kayip kadar
-        assertEquals(4, baseRepairAmount(4, 20))    // duz 4
-        assertEquals(7, baseRepairAmount(4, 20, viaAd = true))  // reklam yolu 7
-        assertEquals(4, baseRepairAmount(1, 30))    // maks candan BAGIMSIZ
+    fun repairIsRefusedWhenThereIsNothingToRepairForEitherUse() {
+        listOf(1, 2).forEach { use ->
+            assertEquals(
+                "kullanim #$use",
+                BoosterDecision.NoEffect,
+                boosterAllowed(
+                    stateBeforeUse(BoosterType.BASE_REPAIR, 10, use), BoosterType.BASE_REPAIR, richWallet,
+                    baseHealth = 20, maxBaseHealth = 20,
+                ),
+            )
+        }
     }
 
-    // ---------------------------------------------------------------------------------
-    // 4b. HEDEFSIZ HAVA DESTEGI — geri alinamaz bos harcamanin ekonomi katmani kapisi
-    // ---------------------------------------------------------------------------------
-    // Hava Destegi ekrandaki dusmanlara vurur. Saha bosken (hazirlik fazi, dalgalar
-    // arasi) kullanim savas basina IKI reklam hakkindan birini ve gunluk reklam
-    // butcesinden bir gosterimi HICBIR SEYE yakar, ustune 45 sn bekleme baslatir;
-    // geri alma yok. Kapi bu yuzden UI'da degil, tek dogruluk kaynagi olan ekonomi
-    // katmanindadir.
-    //
-    // ⚠ 2026-08-21 — bu bolumun testleri ucretli yoldan reklam yoluna tasindi.
-    // KAPININ SEBEBI GUCLENDI, ZAYIFLAMADI: eskiden bosa giden sey Tedarik'ti
-    // (savas ici, yenilenebilir); simdi bosa giden sey oyuncunun IZLEDIGI BIR
-    // REKLAM. Yanlis basma bedeli artik 30 saniyelik izleme.
+    // ---- 4b. Hedefsiz Hava Destegi: geri alinamaz bos harcamanin ekonomi katmani kapisi -----
 
     @Test
     fun airSupportIsRefusedWhenThereAreNoTargets() {
-        val s = state(level = 10)
         assertEquals(
             BoosterDecision.NoEffect,
-            boosterAllowed(
-                s, BoosterType.AIR_SUPPORT, viaAd = true, richWallet, enemiesOnField = 0,
-            ),
+            boosterAllowed(state(10), BoosterType.AIR_SUPPORT, richWallet, enemiesOnField = 0),
         )
     }
 
     @Test
     fun refusedAirSupportCostsNothingBurnsNoUseAndStartsNoCooldown() {
-        // Ret ucretsiz OLMALI: aksi halde oyuncu yanlis basmanin bedelini savasin
-        // geri kalaninda oder (savas ici hak + gunluk reklam hakki + bekleme).
         val s = state(level = 10)
-        val decision = boosterAllowed(
-            s, BoosterType.AIR_SUPPORT, viaAd = true, richWallet,
-            enemiesOnField = 0, nowMs = 5_000L,
-        )
+        val decision = boosterAllowed(s, BoosterType.AIR_SUPPORT, richWallet, enemiesOnField = 0, nowMs = 5_000L)
         assertEquals(BoosterDecision.NoEffect, decision)
         assertFalse(decision.isAllowed)
 
-        val after = useBooster(s, BoosterType.AIR_SUPPORT, viaAd = true, decision = decision, nowMs = 5_000L)
+        val after = useBooster(s, BoosterType.AIR_SUPPORT, decision, nowMs = 5_000L)
         assertSame("reddedilen kullanim durumu degistirmemeli", s, after)
-        assertEquals(0, after.paidUsesOf(BoosterType.AIR_SUPPORT))
-        assertEquals(0, after.adUsesOf(BoosterType.AIR_SUPPORT))
-        // GUNLUK REKLAM HAKKI DA YANMAMALI. Reklam-only modelde bu, savas ici
-        // haktan daha degerli sayac: gunde 4, savasta 2.
-        assertEquals("gunluk reklam sayaci yanmamali", 0, after.adViewsToday)
+        assertEquals(0, after.usesOf(BoosterType.AIR_SUPPORT))
         assertTrue("bekleme baslamamali", after.lastUseMs.isEmpty())
         assertSame("coin dusulmemeli", richWallet, payForBooster(richWallet, decision))
 
-        // Bekleme gercekten islememis olmali: hedef gelince ayni anda izin cikar.
+        // Hedef gelince AYNI ANDA izin cikar: bekleme gercekten islememis.
         assertTrue(
-            boosterAllowed(
-                after, BoosterType.AIR_SUPPORT, viaAd = true, richWallet,
-                enemiesOnField = 1, nowMs = 5_000L,
-            ).isAllowed
+            boosterAllowed(after, BoosterType.AIR_SUPPORT, richWallet, enemiesOnField = 1, nowMs = 5_000L).isAllowed
         )
     }
 
     @Test
     fun airSupportIsAllowedAsSoonAsOneEnemyIsOnTheField() {
-        val s = state(level = 10)
-        val d = boosterAllowed(
-            s, BoosterType.AIR_SUPPORT, viaAd = true, richWallet, enemiesOnField = 1,
-        )
-        // Fiyat 0 / viaAd true: reklam yolu HICBIR sey tahsil etmez. Para birimi
-        // artik tipin kendi para birimi (2026-09-02'den beri COIN) — reklam
-        // dalinda tasidigi tek anlam "fiyat 0 olan bu para biriminde"dir.
-        // Fiyat 0 olmaktan cikarsa (ornegin reklam yolu yanlislikla ucretlenirse)
-        // burasi patlar.
-        assertEquals(BoosterDecision.Allowed(0, BoosterType.AIR_SUPPORT.currency, true), d)
+        val d = boosterAllowed(state(10), BoosterType.AIR_SUPPORT, richWallet, enemiesOnField = 1)
+        assertEquals(BoosterDecision.Allowed(boosterPrice(BoosterType.AIR_SUPPORT, 10), BoosterCurrency.COIN), d)
     }
 
-    /**
-     * GERCEK KISIT — ve ad bayatlamisti. Eski adi `noTargetGateAlsoCoversTheAdPath`
-     * idi; "AYRICA reklam yolunu da kapsar" ifadesi ucretli yolun var oldugu ve
-     * asil yol oldugu bir dunyayi anlatiyor. Hava Destegi'nde artik TEK yol
-     * reklam; kilitlenmesi gereken sey kapinin **her iki reklam kullanimini** da
-     * kapsamasi.
-     */
     @Test
     fun noTargetGateCoversEveryAirSupportUseNotJustTheFirst() {
         var s = state(level = 10)
-        val first = boosterAllowed(
-            s, BoosterType.AIR_SUPPORT, viaAd = true, richWallet, enemiesOnField = 3, nowMs = 0L,
-        )
+        val first = boosterAllowed(s, BoosterType.AIR_SUPPORT, richWallet, enemiesOnField = 3, nowMs = 0L)
         assertTrue(first.isAllowed)
-        s = useBooster(s, BoosterType.AIR_SUPPORT, viaAd = true, decision = first, nowMs = 0L)
+        s = useBooster(s, BoosterType.AIR_SUPPORT, first, nowMs = 0L)
 
-        // Ikinci kullanim: bekleme bitti, hak duruyor — kapiyi tutan tek sey hedef.
+        // 2. kullanim: bekleme bitti, hak duruyor — kapiyi tutan tek sey hedef.
         val late = EconomyConfig.AIR_SUPPORT_COOLDOWN_MS
-        assertEquals(1, s.adUsesOf(BoosterType.AIR_SUPPORT))
+        assertEquals(1, s.usesOf(BoosterType.AIR_SUPPORT))
         assertEquals(
             BoosterDecision.NoEffect,
-            boosterAllowed(s, BoosterType.AIR_SUPPORT, viaAd = true, richWallet, enemiesOnField = 0, nowMs = late),
+            boosterAllowed(s, BoosterType.AIR_SUPPORT, richWallet, enemiesOnField = 0, nowMs = late),
         )
         assertTrue(
-            boosterAllowed(s, BoosterType.AIR_SUPPORT, viaAd = true, richWallet, enemiesOnField = 2, nowMs = late)
-                .isAllowed
+            boosterAllowed(s, BoosterType.AIR_SUPPORT, richWallet, enemiesOnField = 2, nowMs = late).isAllowed
         )
     }
 
     /**
-     * GERCEK KISIT (kontrol sirasi sozlesmesi) — ama ORNEK ZORUNLU OLARAK DEGISTI.
-     *
-     * Eski hali "hedef yok VE Tedarik da yetmiyor -> NoEffect" diyordu. Hava
-     * Destegi AD_ONLY olunca onun icin **odeme gucu kontrolu diye bir sey
-     * kalmadi** (reklam yolu her zaman fiyat 0 ile geciyor), yani o ornek
-     * uzerinde siralamayi ISPATLAMAK artik imkansiz — test gecse bile hicbir sey
-     * olcmuyor olurdu. Odeme gucu kontrolu olan tek guclendirici Us Tamiri
-     * kaldi, ornek oraya tasindi: cani TAM olan ve coini HIC olmayan oyuncuya
-     * InsufficientCoins degil NoEffect donmeli, yoksa oyuncuya "tek eksigin
-     * para" YANLIS bilgisi verilir.
-     *
-     * Ikinci yari sirali kontrolun hava destegi tarafini korumaya devam ediyor:
-     * kullanim tavani NoEffect'ten ONCE geliyor.
+     * KONTROL SIRASI SOZLESMESI (analytics + UI mesaji buna baglidir):
+     * bolum kilidi -> kullanim tavani -> bekleme -> etki (NoEffect) -> odeme gucu -> rezerv.
+     * Her halka bir sonrakini GOLGELER; sirayi bozan bir degisiklik burada kirilir.
      */
     @Test
-    fun noEffectIsDecidedBeforeAffordability() {
-        val broke = PlayerWallet(coins = 0, unlockedLevels = (1..22).toSet())
+    fun decisionOrderIsUnlockLimitCooldownEffectAffordabilityReserve() {
+        val broke = openWallet(0)
+
+        // 1. Kilit, her seyden once (cuzdan bos, saha bos olsa da).
         assertEquals(
-            BoosterDecision.NoEffect,
-            boosterAllowed(
-                state(level = 10), BoosterType.BASE_REPAIR, viaAd = false, broke,
-                baseHealth = 20, maxBaseHealth = 20,
-            ),
+            BoosterDecision.Locked(4),
+            boosterAllowed(state(3), BoosterType.AIR_SUPPORT, broke, enemiesOnField = 0),
         )
 
-        // KONTROL SIRASININ HAVA DESTEGI TARAFI: hak tukendiginde cevap, sahada
-        // hedef olup olmamasindan BAGIMSIZ olarak AdLimitReached olmali. Ters
-        // sirada olsaydi hakki bitmis oyuncuya "hedef yok" denirdi ve oyuncu
-        // dusman bekleyerek zaman kaybederdi.
-        var s = state(level = 10)
+        // 2. Kullanim tavani, beklemeden ONCE: hakki bitmis oyuncuya "bekle" denmez.
+        var spent = state(10)
         var now = 0L
-        repeat(BoosterType.AIR_SUPPORT.adUsesPerBattle) {
-            val d = boosterAllowed(s, BoosterType.AIR_SUPPORT, viaAd = true, richWallet, enemiesOnField = 4, nowMs = now)
+        repeat(BoosterType.AIR_SUPPORT.paidUsesPerBattle) {
+            val d = boosterAllowed(spent, BoosterType.AIR_SUPPORT, richWallet, enemiesOnField = 4, nowMs = now)
             assertTrue(d.isAllowed)
-            s = useBooster(s, BoosterType.AIR_SUPPORT, viaAd = true, decision = d, nowMs = now)
+            spent = useBooster(spent, BoosterType.AIR_SUPPORT, d, nowMs = now)
             now += EconomyConfig.AIR_SUPPORT_COOLDOWN_MS
         }
         assertEquals(
-            BoosterDecision.AdLimitReached,
-            boosterAllowed(s, BoosterType.AIR_SUPPORT, viaAd = true, richWallet, enemiesOnField = 0, nowMs = now),
+            "tavan bekleme ve hedef durumundan bagimsiz",
+            BoosterDecision.PaidLimitReached,
+            boosterAllowed(spent, BoosterType.AIR_SUPPORT, broke, enemiesOnField = 0, nowMs = now - 1L),
+        )
+
+        // 3. Bekleme, etkiden ONCE.
+        val onceUsed = stateBeforeUse(BoosterType.AIR_SUPPORT, 10, 2).copy(lastUseMs = mapOf(BoosterType.AIR_SUPPORT to 1_000L))
+        assertTrue(
+            boosterAllowed(onceUsed, BoosterType.AIR_SUPPORT, broke, enemiesOnField = 0, nowMs = 2_000L)
+                is BoosterDecision.Cooldown
+        )
+
+        // 4. Etki, odeme gucunden ONCE: tam canli us + bos cuzdan -> NoEffect (InsufficientCoins DEGIL),
+        //    yoksa oyuncuya "tek eksigin para" YANLIS bilgisi verilir.
+        assertEquals(
+            BoosterDecision.NoEffect,
+            boosterAllowed(state(10), BoosterType.BASE_REPAIR, broke, baseHealth = 20, maxBaseHealth = 20),
+        )
+        assertEquals(
+            BoosterDecision.NoEffect,
+            boosterAllowed(state(10), BoosterType.AIR_SUPPORT, broke, enemiesOnField = 0),
+        )
+
+        // 5. Odeme gucu, rezervden ONCE: bakiye hic yetmiyorsa ReserveLocked degil InsufficientCoins.
+        val price = boosterPrice(BoosterType.AIR_SUPPORT, 10)
+        assertEquals(
+            BoosterDecision.InsufficientCoins(price, shortfall = 1),
+            boosterAllowed(state(10), BoosterType.AIR_SUPPORT, gateWallet(price - 1), enemiesOnField = 3),
         )
     }
 
     @Test
     fun enemyCountDoesNotAffectTheOtherBoosters() {
-        // Regresyon: yeni parametre yalnizca AIR_SUPPORT icin anlamli.
-        // Us Tamiri hala YALNIZCA "can zaten tam" durumunda NoEffect doner.
         assertEquals(
             BoosterDecision.NoEffect,
-            boosterAllowed(
-                state(level = 10), BoosterType.BASE_REPAIR, viaAd = false, richWallet,
-                baseHealth = 20, maxBaseHealth = 20, enemiesOnField = 0,
-            ),
+            boosterAllowed(state(10), BoosterType.BASE_REPAIR, richWallet, baseHealth = 20, maxBaseHealth = 20, enemiesOnField = 0),
         )
         assertTrue(
-            "bos saha tamiri engellememeli — tamirin hedefle ilgisi yok",
-            boosterAllowed(
-                state(level = 10), BoosterType.BASE_REPAIR, viaAd = false, richWallet,
-                baseHealth = 5, maxBaseHealth = 20, enemiesOnField = 0,
-            ).isAllowed
+            "bos saha tamiri engellememeli",
+            boosterAllowed(state(10), BoosterType.BASE_REPAIR, richWallet, baseHealth = 5, maxBaseHealth = 20, enemiesOnField = 0).isAllowed
         )
         assertTrue(
-            boosterAllowed(state(level = 10), BoosterType.EMERGENCY_SUPPLY, viaAd = true, richWallet, enemiesOnField = 0)
-                .isAllowed
+            "bos saha acil tedariki engellememeli",
+            boosterAllowed(state(10), BoosterType.EMERGENCY_SUPPLY, richWallet, enemiesOnField = 0).isAllowed
         )
     }
 
     @Test
     fun unknownEnemyCountPreservesLegacyBehaviourExactly() {
-        // Varsayilan deger NEDEN -1: 0 gecerli ve anlamli bir sayidir ("saha bos").
-        // Varsayilan 0 olsaydi, sahayi bildirmeyen her cagiran (simulasyon, birim
-        // testleri, ileride tutorial/otomatik oynatma) sessizce reddedilirdi.
+        // Varsayilan -1: 0 gecerli ve anlamli ("saha bos"); varsayilan 0 olsaydi sahayi
+        // bildirmeyen her cagiran sessizce reddedilirdi.
         assertEquals(-1, ENEMY_COUNT_UNKNOWN)
         val s = state(level = 10)
-        val withTargets = boosterAllowed(
-            s, BoosterType.AIR_SUPPORT, viaAd = true, richWallet, enemiesOnField = 7,
-        )
-        val explicitUnknown = boosterAllowed(
-            s, BoosterType.AIR_SUPPORT, viaAd = true, richWallet,
-            enemiesOnField = ENEMY_COUNT_UNKNOWN,
-        )
-        val defaulted = boosterAllowed(
-            s, BoosterType.AIR_SUPPORT, viaAd = true, richWallet,
-        )
+        val withTargets = boosterAllowed(s, BoosterType.AIR_SUPPORT, richWallet, enemiesOnField = 7)
+        val explicitUnknown = boosterAllowed(s, BoosterType.AIR_SUPPORT, richWallet, enemiesOnField = ENEMY_COUNT_UNKNOWN)
+        val defaulted = boosterAllowed(s, BoosterType.AIR_SUPPORT, richWallet)
         assertEquals(withTargets, explicitUnknown)
         assertEquals(withTargets, defaulted)
         assertTrue(defaulted.isAllowed)
     }
 
     // =================================================================================
-    // 4c. HAVA DESTEGI REKLAM-ONLY (2026-08-21 kullanici karari) — YENI TESTLER
+    // 5. Coin yolu — yetmeyen bakiye, Konuslanma Rezervi, tek sefer tahsilat
     // =================================================================================
-    // Istenen davranis iki cumle: (1) her bolume DEAKTIF baslar, yalnizca rewarded
-    // reklamla aktiflesir; (2) bir bolumde IKI kez izlenip IKI kez cagrilabilir.
-    //
-    // Bu iki cumleyi degistiren bir kod degisikligi bugune kadar HICBIR testi
-    // kirmiyordu: `paidUsesPerBattle`/`adUsesPerBattle` degerleri yalnizca dolayli
-    // olarak (baska kurallarin ornegi olarak) goruluyordu. Asagidaki testler
-    // davranisin KENDISINI hedef aliyor.
 
     /**
-     * ISTENEN DAVRANIS 1 — hava destegi her bolume DEAKTIF baslar.
-     *
-     * ⚠ 2026-09-02 — SOZLESME GUNCELLENDI (kullanici: "hava destegini falan
-     * coinle satabiliriz"). Artik bir COIN yolu var, ama 2026-08-21'in NIYETI
-     * korundu ve test o niyeti kilitliyor:
-     *
-     *  1. **Reklam yolu BIRINCIL**: savasin ilk saniyesinde, hicbir coin
-     *     harcamadan acik ([BoosterType.adPathIsPrimary] -> arbitraj kalkani
-     *     bu tipe uygulanmaz). Oyuncu reklam izleyebilmek icin ONCE para
-     *     harcamak zorunda DEGIL — kalkan uygulansaydi tam tersi olurdu.
-     *  2. **Coin yolu UZANTI**: reklam hakki bittiginde (savas ici 2 hak ya da
-     *     gunluk gosterim butcesi) devreye girer.
-     *  3. **Toplam vurus hâlâ IKI**: `sharedUseCap` = 2, yani coin yolu ucuncu
-     *     bir vurus ACMAZ ve `2 x DAMAGE_FRACTION < 1,0` pay-to-win kalkani
-     *     bozulmaz (bkz. [allAirSupportUsesInOneBattleStillCannotKillAnything]).
+     * Bakiye fiyattan TAM 1 coin eksikse: `InsufficientCoins(price, shortfall = 1)` ve cuzdan/durum
+     * DEGISMEZ. Uc guclendirici, tum bolumler, tum kullanimlar. Tam fiyatta izin cikar.
      */
     @Test
-    fun airSupportKeepsTheAdPathPrimaryEvenAfterTheCoinPathWasAdded() {
-        assertEquals(BoosterCurrency.COIN, BoosterType.AIR_SUPPORT.currency)
-        assertTrue(BoosterType.AIR_SUPPORT.hasPaidPath)
-        assertTrue("reklam yolu birincil olmali", BoosterType.AIR_SUPPORT.adPathIsPrimary)
-        assertEquals(1, BoosterType.AIR_SUPPORT.paidUsesPerBattle)
-        assertEquals(2, BoosterType.AIR_SUPPORT.adUsesPerBattle)
-        assertEquals("coin yolu ucuncu vurus acmamali", 2, BoosterType.AIR_SUPPORT.maxUsesPerBattle)
+    fun oneCoinShortIsInsufficientCoinsAndExactPriceIsAllowed() {
+        var checked = 0
+        everyPricedUse().forEach { (type, level, use) ->
+            val price = boosterPrice(type, level, use)
+            val short = openWallet(price - 1)
+            val d = decide(type, level, use, short)
+            assertEquals("$type L$level #$use", BoosterDecision.InsufficientCoins(price, 1), d)
+            assertSame(short, payForBooster(short, d))
+            val s = stateBeforeUse(type, level, use)
+            assertSame(s, useBooster(s, type, d, nowMs = 1L))
 
-        val loaded = PlayerWallet(coins = 1_000_000, unlockedLevels = (1..22).toSet())
-        val bos = PlayerWallet(coins = 0, unlockedLevels = (1..22).toSet())
-        for (level in BoosterType.AIR_SUPPORT.unlockLevel..EconomyConfig.CAMPAIGN_LEVELS) {
-            // 1. Reklam yolu ILK SANIYEDE acik — hem zengin hem BOS cuzdanda.
-            //    Bos cuzdan sart: "coin yoksa reklam da yok" durumu, kalkanin
-            //    yanlislikla geri gelmesinin en net belirtisi olurdu.
-            listOf(loaded, bos).forEach { w ->
-                assertTrue(
-                    "L$level: reklam yolu kapali (bakiye ${w.coins})",
-                    boosterAllowed(
-                        state(level), BoosterType.AIR_SUPPORT, viaAd = true, w, enemiesOnField = 5,
-                    ).isAllowed,
-                )
-            }
-            // 2. Coin yolu da acik ama SATIN ALINABILIR olmali; parasiz oyuncu
-            //    icin kapali kalmasi normaldir ve reklam yolunu ETKILEMEZ.
-            val coinYolu = boosterAllowed(
-                state(level), BoosterType.AIR_SUPPORT, viaAd = false, loaded, enemiesOnField = 5,
-            )
             assertEquals(
-                "L$level: coin yolu acilmamis",
-                BoosterDecision.Allowed(
-                    boosterPrice(BoosterType.AIR_SUPPORT, level), BoosterCurrency.COIN, false,
-                ),
-                coinYolu,
+                "$type L$level #$use tam fiyatla",
+                BoosterDecision.Allowed(price, BoosterCurrency.COIN),
+                decide(type, level, use, openWallet(price)),
             )
+            checked++
         }
+        assertTrue("tarama bos: $checked", checked >= 3 * 40)
     }
 
     /**
-     * PAYLASIMLI TAVAN — coin + reklam UCUNCU vurusu acmaz.
-     *
-     * Bu, coin yolunu eklerken kirilmasi en kolay sey: `paidUsesPerBattle` 1 ve
-     * `adUsesPerBattle` 2 toplandiginda 3 eder ve `2 x 0,45 = 0,90 < 1,0`
-     * garantisi `3 x 0,45 = 1,35`e cikip pay-to-win kalkanini yikar.
+     * Bakiye fiyati karsiliyor ama REZERV karsilamiyorsa `ReserveLocked(price, reserve, shortfall)`;
+     * rezerv kadar fazlasi varsa izin. Uc guclendirici, tum bolumler, tum kullanimlar.
      */
     @Test
-    fun airSupportCoinPlusAdStillCannotExceedTwoStrikesInOneBattle() {
-        var s = state(level = 10)
-        var now = 0L
-        val step = EconomyConfig.AIR_SUPPORT_COOLDOWN_MS + 1L
+    fun reserveLockedWhenBalanceSufficesButReserveDoesNot() {
+        val reserve = reserveFor(gateWallet(0))
+        assertEquals("gate cuzdani rezervi 100 olmali (lockCost(7))", 100, reserve)
+        everyPricedUse().forEach { (type, level, use) ->
+            val price = boosterPrice(type, level, use)
 
-        // 1. vurus: coin.
-        val coin = boosterAllowed(s, BoosterType.AIR_SUPPORT, viaAd = false, richWallet, enemiesOnField = 5, nowMs = now)
-        assertTrue("coin vurusu reddedildi: $coin", coin.isAllowed)
-        s = useBooster(s, BoosterType.AIR_SUPPORT, viaAd = false, decision = coin, nowMs = now)
-        now += step
+            // Yalniz fiyat kadar coin: bakiye yetiyor, rezerv tamamen ihlal.
+            val exact = gateWallet(price)
+            val locked = decide(type, level, use, exact)
+            assertEquals("$type L$level #$use", BoosterDecision.ReserveLocked(price, reserve, reserve), locked)
+            assertSame("rezerv reddi cuzdani degistirdi", exact, payForBooster(exact, locked))
 
-        // 2. vurus: reklam.
-        val reklam = boosterAllowed(s, BoosterType.AIR_SUPPORT, viaAd = true, richWallet, enemiesOnField = 5, nowMs = now)
-        assertTrue("reklam vurusu reddedildi: $reklam", reklam.isAllowed)
-        s = useBooster(s, BoosterType.AIR_SUPPORT, viaAd = true, decision = reklam, nowMs = now)
-        now += step
-
-        assertEquals("savasta toplam iki vurus olmali", 2, s.usesOf(BoosterType.AIR_SUPPORT))
-
-        // 3. vurus YOK — ne parayla, ne reklamla. Reklam hakki KAGIT UZERINDE
-        // dolmadi (2'den 1'i kullanildi) ama paylasimli tavan onu de kapatir.
-        assertEquals(
-            BoosterDecision.AdLimitReached,
-            boosterAllowed(s, BoosterType.AIR_SUPPORT, viaAd = true, richWallet, enemiesOnField = 5, nowMs = now),
-        )
-        assertEquals(
-            BoosterDecision.PaidLimitReached,
-            boosterAllowed(s, BoosterType.AIR_SUPPORT, viaAd = false, richWallet, enemiesOnField = 5, nowMs = now),
-        )
-    }
-
-    /**
-     * ISTENEN DAVRANIS 2 — bir bolumde IKI kez izlenip IKI kez cagrilabilir.
-     *
-     * Sayi burada ozellikle ELLE yaziliyor (`2`) cunku kullanicinin istedigi sey
-     * "enum'da ne yaziyorsa o" degil, tam olarak iki. `adUsesPerBattle`'i biri 1
-     * veya 3 yaparsa bu test kirilmali ve karar yeniden konusulmali.
-     */
-    @Test
-    fun airSupportCanBeWatchedAndCalledTwiceInTheSameBattle() {
-        assertEquals("hava destegi savas basina 2 reklam cagrisi olmali", 2, BoosterType.AIR_SUPPORT.adUsesPerBattle)
-        assertEquals(2, BoosterType.AIR_SUPPORT.maxUsesPerBattle)
-        // 2026-09-02: coin yolu eklendi ama BU davranis degismedi — reklam
-        // izleyen oyuncu icin sifir regresyon. `Allowed`in tasidigi para birimi
-        // artik tipin para birimi (COIN); reklam yolunda FIYAT hep 0'dir ve
-        // asagida ayrica cuzdana dokunulmadigi kanitlaniyor.
-
-        var s = state(level = 10)
-        var now = 0L
-        repeat(2) { i ->
-            val d = boosterAllowed(
-                s, BoosterType.AIR_SUPPORT, viaAd = true, richWallet, enemiesOnField = 5, nowMs = now,
-            )
+            // Rezervden TAM 1 coin eksik kalan alim.
             assertEquals(
-                "cagri #${i + 1} bedava reklam yolu olmali",
-                BoosterDecision.Allowed(0, BoosterType.AIR_SUPPORT.currency, true), d,
+                "$type L$level #$use",
+                BoosterDecision.ReserveLocked(price, reserve, 1),
+                decide(type, level, use, gateWallet(price + reserve - 1)),
             )
-            s = useBooster(s, BoosterType.AIR_SUPPORT, viaAd = true, decision = d, nowMs = now)
-            now += EconomyConfig.AIR_SUPPORT_COOLDOWN_MS
-        }
-
-        assertEquals("iki cagri islenmis olmali", 2, s.adUsesOf(BoosterType.AIR_SUPPORT))
-        assertEquals("ucretli sayac hic artmamali", 0, s.paidUsesOf(BoosterType.AIR_SUPPORT))
-        assertEquals("iki reklam izlenmis sayilmali", 2, s.adViewsToday)
-        // Reklam yolu HICBIR para birimi harcamiyor: fiyat 0 oldugu icin
-        // `payForBooster` cuzdani AYNEN geri verir (COIN dalinda bile).
-        assertSame(
-            richWallet,
-            payForBooster(richWallet, BoosterDecision.Allowed(0, BoosterType.AIR_SUPPORT.currency, true)),
-        )
-
-        // UCUNCU cagri yok. "Reklam izledigim surece sinirsiz" DEGIL.
-        assertEquals(
-            BoosterDecision.AdLimitReached,
-            boosterAllowed(s, BoosterType.AIR_SUPPORT, viaAd = true, richWallet, enemiesOnField = 5, nowMs = now),
-        )
-    }
-
-    /**
-     * TUTARLILIK — AD_ONLY bir guclendirici hicbir para biriminden hicbir sey
-     * tahsil edemez.
-     *
-     * ⚠ BILINEN BAYAT VERI (rapor edildi): [boosterPrice] hâlâ
-     * `AIR_SUPPORT` icin sifir OLMAYAN bir Tedarik fiyati donduruyor
-     * (L4 = 125 ... L22 = 269) ve kendi KDoc'u "AD_ONLY tipler ... icin 0" diyor,
-     * yani fonksiyon kendi sozlesmesiyle celisiyor. Bugun bu zararsiz, cunku
-     * ucretli yol [BoosterDecision.PaidPathUnavailable] ile daha ilk dalda
-     * kapaniyor ve sayiya HIC ulasilmiyor.
-     *
-     * Bu test o "ulasilamazligi" kilitler. Sayiyi burada dogru kabul etmiyorum;
-     * kimsenin ona ulasamayacagini kanitliyorum. Biri yarin ucretli yolu geri
-     * acarsa bayat fiyat sessizce yururluge girmez, once burasi patlar.
-     */
-    @Test
-    fun adOnlyBoostersCanNeverChargeAnyCurrency() {
-        val loaded = PlayerWallet(coins = 1_000_000, unlockedLevels = (1..22).toSet())
-        BoosterType.entries.filter { it.currency == BoosterCurrency.AD_ONLY }.forEach { type ->
-            assertFalse("$type hasPaidPath true", type.hasPaidPath)
-            assertEquals("$type ucretli kullanim hakki acilmis", 0, type.paidUsesPerBattle)
-
-            for (level in type.unlockLevel..EconomyConfig.CAMPAIGN_LEVELS) {
-                assertEquals(
-                    "$type L$level: ucretli yol acilmis — bayat fiyat yururluge girdi",
-                    BoosterDecision.PaidPathUnavailable,
-                    boosterAllowed(
-                        state(level), type, viaAd = false, loaded,
-                        supplyOnHand = 1_000_000, enemiesOnField = 5,
-                    ),
-                )
-                val viaAd = boosterAllowed(
-                    state(level), type, viaAd = true, loaded, enemiesOnField = 5,
-                )
-                assertTrue("$type L$level reklam yolu kapali", viaAd.isAllowed)
-                assertEquals(
-                    "$type L$level: reklam yolu ucret tahakkuk ettirmis",
-                    BoosterDecision.Allowed(0, BoosterCurrency.AD_ONLY, true),
-                    viaAd,
-                )
-                assertSame("$type L$level cuzdana dokunmus", loaded, payForBooster(loaded, viaAd))
-            }
+            // Rezerv korunuyorsa izin.
+            assertEquals(
+                "$type L$level #$use",
+                BoosterDecision.Allowed(price, BoosterCurrency.COIN),
+                decide(type, level, use, gateWallet(price + reserve)),
+            )
+            // Bakiye fiyatin altindaysa rezerv devreye GIRMEZ (analytics: reserve_lock_blocked).
+            assertEquals(
+                BoosterDecision.InsufficientCoins(price, 1),
+                decide(type, level, use, gateWallet(price - 1)),
+            )
         }
     }
-
-    /**
-     * SINIR — "savas basina iki cagri" bir GARANTI DEGIL, bir TAVAN.
-     *
-     * Gunluk guclendirici-reklam butcesi [EconomyConfig.BOOSTER_AD_VIEWS_PER_DAY]
-     * = 4 ve tek basina hava destegi bunun IKISINI yiyor. Yani hava destegi
-     * "her bolumde iki kez" degil, gunde en fazla iki BOLUM boyunca iki kez.
-     * Ucuncu bolumden itibaren — Acil Tedarik ve Us Tamiri reklamlari hic
-     * izlenmese bile — cevap [BoosterDecision.DailyAdLimitReached] olur.
-     *
-     * Bu test o sinirin VARLIGINI kilitliyor (gunluk butce, savas basi hakkin
-     * ustundedir — farming kalkani budur), sayisini onaylamiyor. Butce/hak
-     * oraninin urun tarafinda yeniden konusulmasi gerekiyor: reklam-only bir
-     * guclendiricinin gunun buyuk kisminda TAMAMEN erisilemez olmasi, karari
-     * veren "ad izlemeye tesvik etmeliyiz" gerekcesiyle celisir. Sayi
-     * degistiginde bu test kirilir ve karar tekrar onune gelir.
-     */
-    @Test
-    fun dailyAdBudgetOutranksTheTwoAirSupportUsesPerBattle() {
-        val perBattle = BoosterType.AIR_SUPPORT.adUsesPerBattle
-        val perDay = EconomyConfig.BOOSTER_AD_VIEWS_PER_DAY
-        // ⚠ 4 -> 12 (2026-08-21). Bu satir KASITLI olarak sayiyi cakiyor ki
-        // butce degisince karar tekrar onumuze gelsin — nitekim geldi.
-        //
-        // 4 ile hava destegi gunde YALNIZCA IKI bolumde cagrilabiliyordu; tek
-        // basina gunluk hakkin yarisini yiyordu. Reklam-only bir guclendiricinin
-        // gunun buyuk kisminda erisilemez olmasi, tasarimin gerekcesiyle
-        // ("reklam izlemeye tesvik") dogrudan celisiyordu.
-        //
-        // 12 = uc dolu savas. Sinir KALKMADI: isi artik enflasyon degil
-        // REKLAM YORGUNLUGU.
-        assertEquals("gunluk guclendirici-reklam butcesi degisti", 12, perDay)
-
-        var adViews = 0
-        var fullBattles = 0
-        repeat(10) {
-            var s = state(level = 10, adViewsToday = adViews)
-            var now = 0L
-            var callsThisBattle = 0
-            repeat(perBattle) {
-                val d = boosterAllowed(
-                    s, BoosterType.AIR_SUPPORT, viaAd = true, richWallet, enemiesOnField = 5, nowMs = now,
-                )
-                if (d.isAllowed) {
-                    s = useBooster(s, BoosterType.AIR_SUPPORT, viaAd = true, decision = d, nowMs = now)
-                    callsThisBattle++
-                    now += EconomyConfig.AIR_SUPPORT_COOLDOWN_MS
-                }
-            }
-            adViews = s.adViewsToday
-            if (callsThisBattle == perBattle) fullBattles++
-        }
-
-        assertEquals("gunluk butce asilmis — farming kalkani delinmis", perDay, adViews)
-        assertEquals("tam iki cagri alinabilen bolum sayisi", perDay / perBattle, fullBattles)
-        assertEquals(
-            BoosterDecision.DailyAdLimitReached(perDay),
-            boosterAllowed(
-                state(level = 10, adViewsToday = adViews),
-                BoosterType.AIR_SUPPORT, viaAd = true, richWallet, enemiesOnField = 5,
-            ),
-        )
-    }
-
-    // =================================================================================
-    // 5. Coin yolu — Konuslanma Rezervi guclendiriciler yuzunden kirilmaz
-    // =================================================================================
 
     @Test
     fun reserveCoinsCanNeverBeSpentOnABooster() {
         // Bolum 7 kapisinin hemen oncesi: 1..6 temizlenmis, rezerv tam bedel (100).
-        val wallet = PlayerWallet(
-            coins = 250,
-            unlockedLevels = (1..6).toSet(),
-            clearedLevels = (1..6).toSet(),
-            bestStars = (1..6).associateWith { 2 },
-        )
+        val wallet = gateWallet(250)
         assertEquals(100, reserveFor(wallet))
-
-        val s = state(level = 6)
-        // L6'da tamir zaten kilitli; L7'de dene.
-        val s7 = state(level = 7)
         val price = boosterPrice(BoosterType.BASE_REPAIR, 7) // 240
-        val decision = boosterAllowed(s7, BoosterType.BASE_REPAIR, viaAd = false, wallet, baseHealth = 5)
-        assertEquals(
-            BoosterDecision.ReserveLocked(price, 100, 100 - (250 - price)),
-            decision,
-        )
+        val decision = boosterAllowed(state(7), BoosterType.BASE_REPAIR, wallet, baseHealth = 5)
+        // 250 - 240 = 10 < 100 -> 90 coin eksik.
+        assertEquals(BoosterDecision.ReserveLocked(price, 100, 100 - (250 - price)), decision)
         assertSame("reddedilen alim cuzdani degistirmemeli", wallet, payForBooster(wallet, decision))
-        assertFalse(boosterUnlocked(BoosterType.BASE_REPAIR, s.level))
+        assertFalse(boosterUnlocked(BoosterType.BASE_REPAIR, 6))
     }
 
     @Test
     fun insufficientCoinsIsDistinctFromReserveLock() {
-        // Analytics sozlesmesi: `reserve_lock_blocked` yalnizca oyuncu parayi
-        // GERCEKTEN karsilayabildigi halde rezerv engelledginde gonderilir.
         val poor = PlayerWallet(coins = 50, unlockedLevels = (1..6).toSet())
-        val d = boosterAllowed(state(7), BoosterType.BASE_REPAIR, viaAd = false, poor, baseHealth = 5)
+        val d = boosterAllowed(state(7), BoosterType.BASE_REPAIR, poor, baseHealth = 5)
         assertTrue("bakiye hic yetmiyor -> InsufficientCoins", d is BoosterDecision.InsufficientCoins)
         assertEquals(240 - 50, (d as BoosterDecision.InsufficientCoins).shortfall)
     }
 
     /**
-     * GERCEK KISIT — coin YALNIZCA COIN fiyatli guclendiricide ve YALNIZCA bir kez
-     * duser. Ornegin "coin dusmeyen guclendirici" yarisi Hava Destegi'nin Tedarik
-     * yolundan onun reklam yoluna tasindi (2026-08-21); dahasi artik tek ornek
-     * yerine TUM guclendiriciler ve TUM yollar taraniyor, cunku bu kural bir
-     * ornegin ozelligi degil enum genelinde gecerli bir degismez.
+     * Coin TAM BIR KEZ, YALNIZCA coin fiyatli guclendiricide duser; `lifetimeSpent` artar,
+     * `lifetimeEarned` ASLA degismez (tahsilat gelir degildir).
      */
     @Test
-    fun coinPathDebitsExactlyOnceAndOnlyForCoinPricedBoosters() {
-        val wallet = PlayerWallet(coins = 1_000, unlockedLevels = (1..22).toSet())
-        val repair = boosterAllowed(state(10), BoosterType.BASE_REPAIR, viaAd = false, wallet, baseHealth = 5)
-        assertTrue(repair.isAllowed)
-        val after = payForBooster(wallet, repair)
-        assertEquals(1_000 - boosterPrice(BoosterType.BASE_REPAIR, 10), after.coins)
-        // "Tam olarak bir kez": ayni karar tekrar odenmez diye bir sey yok, ama
-        // ayni kararin BEDELI sabit ve tek kalemdir — ikinci cagri ikinci kez
-        // duser, ucuncu bir gizli kesinti yoktur.
-        assertEquals(1_000 - 2 * boosterPrice(BoosterType.BASE_REPAIR, 10), payForBooster(after, repair).coins)
-
-        // Coin fiyatli OLMAYAN her yol cuzdana DOKUNMAZ (iki ekonomi arasinda
-        // donusum yok, GDD D.4).
-        BoosterType.entries.forEach { type ->
-            val viaAdDecision = boosterAllowed(
-                state(10), type, viaAd = true, wallet, baseHealth = 5, enemiesOnField = 5,
+    fun coinPathDebitsExactlyOncePerDecisionAndNeverEarns() {
+        everyPricedUse().forEach { (type, level, use) ->
+            val wallet = PlayerWallet(
+                coins = 1_000_000, unlockedLevels = (1..lastLevel).toSet(),
+                lifetimeEarned = 5_000, lifetimeSpent = 300,
             )
-            assertSame("$type reklam yolu coin dusmus", wallet, payForBooster(wallet, viaAdDecision))
-            if (!type.hasPaidPath) {
-                val paidDecision = boosterAllowed(
-                    state(10), type, viaAd = false, wallet, supplyOnHand = 9_999, enemiesOnField = 5,
-                )
-                assertEquals(BoosterDecision.PaidPathUnavailable, paidDecision)
-                assertSame("$type ucretli yolu yokken coin dusmus", wallet, payForBooster(wallet, paidDecision))
-            }
+            val d = decide(type, level, use, wallet)
+            assertTrue("$type L$level #$use", d.isAllowed)
+            val price = (d as BoosterDecision.Allowed).price
+            val after = payForBooster(wallet, d)
+            assertEquals(1_000_000 - price, after.coins)
+            assertEquals(300 + price, after.lifetimeSpent)
+            assertEquals("tahsilat lifetimeEarned'i degistirdi", 5_000, after.lifetimeEarned)
+            assertEquals(wallet.unlockedLevels, after.unlockedLevels)
         }
     }
 
+    // ---- Coin <-> Tedarik: YENI ACIK KURAL --------------------------------------------
+
     /**
-     * GERCEK KISIT — GDD D.4: coin ve Tedarik arasinda DONUSUM YOK.
+     * ESKI KURAL (GDD D.4): "coin hicbir guclendiricide Tedarik'e donusmez". ARTIK GECERSIZ:
+     * Acil Tedarik coin fiyatlidir (2 coin = 1 Tedarik, savas basina 1 kez, L2, rezerv korumali).
      *
-     * ⚠ 2026-08-21 — ORNEK KAYBOLDU, KURAL KALDI. Bu test eskiden Hava
-     * Destegi'ni "Tedarik fiyatli guclendirici" ornegi olarak kullaniyordu.
-     * Hava Destegi AD_ONLY'ye cevrilince depoda **Tedarik fiyatli hicbir
-     * guclendirici kalmadi**, yani eski govdenin yeniden yazilabilecegi bir
-     * ornek yok.
-     *
-     * Bu, testi silmek icin degil GENISLETMEK icin sebep: ornek uzerinden
-     * dogrulanan kural artik ENUM UZERINDEN dogrulaniyor. Iddia sudur ve
-     * eskisinden GUCLUDUR: hicbir guclendirici coini Tedarike, Tedariki de
-     * coine cevirebilecek bir yol acmaz — ne fiyat tarafinda, ne odul
-     * tarafinda. Biri yarin AIR_SUPPORT'u tekrar SUPPLY yaparsa bu test
-     * ayakta kalir ve `supplyOnHand` kontrolunun gercekten calistigini
-     * dogrulamaya devam eder.
+     * YENI KURAL, uc parca:
+     *  a) Tedarik BOLLUGU coin eksigini kapatmaz (hicbir tip Tedarikle satin alinmaz);
+     *  b) Acil Tedarik'in coin bedeli, verdigi Tedarigin TAM 2 kati ve savas basina bir kez;
+     *  c) hicbir guclendirici coin URETMEZ (ters yon kapali).
      */
     @Test
-    fun noBoosterConvertsBetweenCoinsAndSupplyInEitherDirection() {
-        val brokeCoins = PlayerWallet(coins = 0, unlockedLevels = (1..22).toSet())
-        val richCoins = PlayerWallet(coins = 100_000, unlockedLevels = (1..22).toSet())
+    fun coinBuysSupplyOnlyThroughEmergencySupplyAtTheFixedRate() {
+        val brokeCoins = openWallet(0)
 
+        // (a) Tedarik ne kadar bol olursa olsun coin eksigi kapanmaz.
         BoosterType.entries.forEach { type ->
-            when (type.currency) {
-                // COIN fiyatli: Tedarik BOLLUGU coini ikame edemez.
-                BoosterCurrency.COIN -> {
-                    val d = boosterAllowed(
-                        state(10), type, viaAd = false, brokeCoins,
-                        supplyOnHand = 1_000_000, baseHealth = 5, enemiesOnField = 5,
-                    )
-                    assertTrue(
-                        "$type: Tedarik bollugu coin eksigini kapatti — donusum acildi",
-                        d is BoosterDecision.InsufficientCoins,
-                    )
-                }
-                // SUPPLY fiyatli: coin ZENGINLIGI Tedariki ikame edemez.
-                BoosterCurrency.SUPPLY -> {
-                    val d = boosterAllowed(
-                        state(10), type, viaAd = false, richCoins,
-                        supplyOnHand = 0, baseHealth = 5, enemiesOnField = 5,
-                    )
-                    assertTrue(
-                        "$type: coin zenginligi Tedarik eksigini kapatti — donusum acildi",
-                        d is BoosterDecision.InsufficientSupply,
-                    )
-                }
-                // AD_ONLY: satin alinabilir bir yol YOK, dolayisiyla hangi para
-                // biriminden ne kadar olursa olsun kapi acilmaz.
-                BoosterCurrency.AD_ONLY -> {
-                    assertEquals(
-                        "$type: AD_ONLY oldugu halde ucretli bir yol acilmis",
-                        BoosterDecision.PaidPathUnavailable,
-                        boosterAllowed(
-                            state(10), type, viaAd = false, richCoins,
-                            supplyOnHand = 1_000_000, baseHealth = 5, enemiesOnField = 5,
-                        ),
-                    )
-                }
-            }
+            val level = maxOf(10, type.unlockLevel)
+            val d = boosterAllowed(
+                state(level), type, brokeCoins, supplyOnHand = 1_000_000, baseHealth = 5, enemiesOnField = 5,
+            )
+            assertEquals(
+                "$type: Tedarik bollugu coin eksigini kapatti",
+                BoosterDecision.InsufficientCoins(boosterPrice(type, level), boosterPrice(type, level)),
+                d,
+            )
         }
 
-        // Ters yon: hicbir guclendirici coin URETMEZ. Tek coin etkisi Us
-        // Tamiri'nin sink'idir; kaynak yonu yoktur.
-        BoosterType.entries.forEach { type ->
-            val d = boosterAllowed(
-                state(10), type, viaAd = true, richCoins, baseHealth = 5, enemiesOnField = 5,
-            )
+        // (b) Sabit kur: fiyat / verilen Tedarik = 2, her bolumde; tek kullanim.
+        for (level in BoosterType.EMERGENCY_SUPPLY.unlockLevel..lastLevel) {
+            val price = boosterPrice(BoosterType.EMERGENCY_SUPPLY, level)
+            assertEquals("L$level kur", 2.0, price.toDouble() / emergencySupplyAmount(level), 0.0)
+        }
+        assertEquals(1, BoosterType.EMERGENCY_SUPPLY.paidUsesPerBattle)
+
+        // (c) Ters yon: hicbir karar cuzdani buyutmez.
+        everyPricedUse().forEach { (type, level, use) ->
+            val d = decide(type, level, use, richWallet)
             assertTrue(
-                "$type coin bakiyesini ARTIRDI — guclendirici coin kaynagi olmus",
-                payForBooster(richCoins, d).coins <= richCoins.coins,
+                "$type L$level #$use coin bakiyesini ARTIRDI",
+                payForBooster(richWallet, d).coins <= richWallet.coins,
             )
         }
     }
@@ -1189,7 +856,6 @@ class BoosterEconomyTest {
 
     @Test
     fun airSupportCanNeverClearAWaveByItself() {
-        // Tam canli hicbir dusmani tek basina oldurmez -> "dalga temizleme butonu" degil.
         assertTrue(
             "hava destegi hasar orani 1,0'a esit/buyuk olamaz",
             EconomyConfig.AIR_SUPPORT_DAMAGE_FRACTION < 1.0,
@@ -1198,48 +864,42 @@ class BoosterEconomyTest {
     }
 
     /**
-     * FAZ 10.1 — YUKARIDAKI TESTIN ACIK BIRAKTIGI DELIK.
-     *
-     * `airSupportCanNeverClearAWaveByItself` yalnizca TEK kullanimi olcuyordu. Hava
-     * Destegi'nin savas basina **iki** kullanimi var (2026-08-21'den beri: 0 ucretli
-     * + 2 rewarded; oncesinde 1 + 1 — TOPLAM degismedi, bu testin kisiti da
-     * degismedi) ve bekleme 45 sn, yani ikisi ayni uzun dalgada kullanilabilir. 0,60 oraniyla
-     * 2 x 0,60 = 1,20 > 1,0 idi: iki kullanim ekrandaki her dusmani, KOMUTA TANKI
-     * dahil, dogrudan olduruyordu. Yani pay-to-win kalkani kagit uzerinde vardi ama
-     * sayilar onu ihlal ediyordu.
-     *
-     * Dogru kisit **savas basina toplam** uzerinde tanimli olmali.
+     * Pay-to-win kalkani SAVAS BASINA TOPLAM uzerinde: `maxUsesPerBattle x oran < 1,0`.
+     * Kullanim sayisi ENUM'dan okunur (literal degil): biri 3. kullanimi acarsa (3 x 0,45 = 1,35)
+     * bu test, sayi kimin elinden gelirse gelsin, kirilir.
      */
     @Test
     fun allAirSupportUsesInOneBattleStillCannotKillAnything() {
-        val total = BoosterType.AIR_SUPPORT.maxUsesPerBattle *
-            EconomyConfig.AIR_SUPPORT_DAMAGE_FRACTION
-        assertEquals("savas basina kullanim sayisi degisti — orani yeniden hesapla", 2, BoosterType.AIR_SUPPORT.maxUsesPerBattle)
+        val uses = BoosterType.AIR_SUPPORT.maxUsesPerBattle
+        val total = uses * EconomyConfig.AIR_SUPPORT_DAMAGE_FRACTION
         assertTrue(
-            "savas basina toplam hava destegi hasari maks canin %.0f%%'i — %%100'e ulasirsa "
-                .format(total * 100) + "guclendirici tek basina oldurur",
+            "savas basina toplam hava destegi hasari maks canin %.0f%%'i".format(total * 100),
             total < 1.0,
         )
         // Son vurusun kulelerden gelmesi icin anlamli bir pay kalmali (>= %10).
-        // EPSILON KASITLI: 2 x 0,45 ikili tabanda tam 0,9 etmez (0,90000000000000002),
-        // yani kalan pay 0,09999999999999998 cikar ve ciplak `>= 0.10` tasarimin TAM
-        // sinirinda kirilir. Esik %10'un kendisi; epsilon yalnizca kayan nokta
-        // gurultusunu tolere eder, gercek bir ihlali (or. 0,50 -> pay 0,0) hâlâ yakalar.
-        assertTrue(
-            "kalan can payi cok ince: %.4f".format(1.0 - total),
-            1.0 - total >= 0.10 - 1e-9,
-        )
+        // EPSILON KASITLI: 2 x 0,45 ikili tabanda tam 0,9 etmez; esik %10'un kendisi.
+        assertTrue("kalan can payi cok ince: %.4f".format(1.0 - total), 1.0 - total >= 0.10 - 1e-9)
+
+        // Kural gercekten kullanilabilir en fazla kullanimi olcuyor: karar zinciri de ucuncu
+        // kullanima IZIN VERMEZ (parayla bile).
+        var s = state(10)
+        var now = 0L
+        var granted = 0
+        repeat(uses + 3) {
+            val d = boosterAllowed(s, BoosterType.AIR_SUPPORT, richWallet, enemiesOnField = 5, nowMs = now)
+            if (d.isAllowed) {
+                granted++
+                s = useBooster(s, BoosterType.AIR_SUPPORT, d, nowMs = now)
+            }
+            now += EconomyConfig.AIR_SUPPORT_COOLDOWN_MS + 1L
+        }
+        assertEquals("karar zinciri tavandan fazla vurus verdi", uses, granted)
+        assertTrue(granted * EconomyConfig.AIR_SUPPORT_DAMAGE_FRACTION < 1.0)
     }
 
     /**
-     * Hava Destegi HASARININ **oran** olmasi (sabit sayi degil) kalibrasyon-guvenli
-     * olmasini sagliyor: dusman cani x3,5 edildiginde (Faz 10) kurtarma degeri
-     * kendiliginden olcegi tuttu. Bu test o ozelligi kilitler — biri sabit hasara
-     * cevirmeye kalkarsa oran testi olmadan fark edilmez.
-     *
-     * Ayni sebeple zirhtan da bagimsizdir: zirh 0,55 -> 0,78/0,86 cikarken hava
-     * destegi zirhli/tank karsisinda deger kaybetmedi, dolayisiyla "agir sizdi ve
-     * dogru muhimmatim yok" durumunun cevabi olmaya devam ediyor.
+     * Hasar ORAN (sabit sayi degil): dusman cani olceklenince kurtarma degeri kendiliginden
+     * korunur; zirhtan da bagimsiz.
      */
     @Test
     fun airSupportRescueValueScalesWithEnemyHealthInsteadOfDecaying() {
@@ -1247,182 +907,59 @@ class BoosterEconomyTest {
         val infantry = facts.enemyMaxHp.getValue("INFANTRY")
         val tank = facts.enemyMaxHp.getValue("TANK")
         val fraction = EconomyConfig.AIR_SUPPORT_DAMAGE_FRACTION
+        val uses = BoosterType.AIR_SUPPORT.maxUsesPerBattle
 
-        // Faz 12.1: taban carpan x3,5 -> x1,1 olarak yeniden olculdu (bolum 1
-        // gecilemiyordu, bkz. GameConfig.ENEMY_SPECS). Bu testin ISPATLADIGI
-        // SEY ISTE BU: hava destegi ORAN oldugu icin kalibrasyon her iki yone
-        // gittiginde de kendiliginden olcegi tuttu, tek satir kod degismedi.
         assertEquals(82.0, infantry, 0.5)
         assertEquals(638.0, tank, 0.5)
 
-        // Tek kullanim hicbirini oldurmez ama ikisinde de anlamli bir dilim alir.
         assertTrue("piyade tek vurusta olmemeli", fraction * infantry < infantry)
         assertTrue("silinen can hissedilir olmali", fraction >= 0.30)
 
-        // Tank karsisinda: iki kullanim bile tanki bitirmez (yukaridaki kisit),
-        // ama kalan can bir kademe-2 Gatling'in makul surede bitirebilecegi kadar
-        // olmali, yoksa guclendirici "ise yaramaz" hissi verir.
-        val tankLeftAfterBothUses = tank * (1.0 - 2 * fraction)
+        val tankLeftAfterAllUses = tank * (1.0 - uses * fraction)
         assertTrue(
-            "iki hava destegi sonrasi tankta %.0f can kaliyor — kurtarma hissi yok"
-                .format(tankLeftAfterBothUses),
-            tankLeftAfterBothUses in 1.0..(tank * 0.25),
+            "hava destegi sonrasi tankta %.0f can kaliyor — kurtarma hissi yok".format(tankLeftAfterAllUses),
+            tankLeftAfterAllUses in 1.0..(tank * 0.25),
         )
     }
 
-    /**
-     * ⚠⚠ 2026-08-21 — [airSupportNeverCostsLessThanAFullyUpgradedTower] ile AYNI
-     * DURUMDA: bu test de artik ulasilamayan bir fiyati koruyor. Hava Destegi
-     * Tedarik harcamadigi icin "3. kule mi hava destegi mi" TAKTIK KARARI ORTADAN
-     * KALKTI (kullanicinin kendi patch notu da bunu acikca soyluyor). Testin
-     * olctugu sey bugun oyuncuya hicbir sekilde gorunmuyor.
-     *
-     * Fiyat fonksiyonu duzeltilene kadar burada kaliyor; ulasilamazlik kilidi
-     * [adOnlyBoostersCanNeverChargeAnyCurrency].
-     *
-     * Asagidaki gerekce yalnizca ucretli yol geri gelirse tekrar anlam kazanir:
-     *
-     * Hava Destegi fiyati **acilis bolumunde tam olarak bir kademe-2 Gatling** kadar
-     * olmali: "3. kule mi hava destegi mi" karari ancak iki secenek ayni parayi
-     * istiyorsa gercek bir karardir.
-     *
-     * Faz 10.1'de bu oran KONTROL EDILDI ve fiyat DEGISMEDI: 96 + 8(L-1), tasarlanan
-     * kadronun %19-21'i (L4 120/620 ... L8 152/725) — bolumler boyunca sabit "bir
-     * kule kadar". Dolayisiyla Tedarik bollugu degistigi halde fiyat kalibrasyonu
-     * hâlâ dogru.
-     */
-    @Test
-    fun airSupportCostsAboutOneFullyUpgradedGatlingAtUnlock() {
-        // ⚠ 2026-09-02 — ANKRAJ DUSTU, TAVAN KALDI.
-        //
-        // "Acilista fiyat tam olarak bir kademe-2 Gatling (125)" ankraji hava
-        // destegi TEDARIK harcarken anlamliydi: iki secenek ayni keseden
-        // odeniyordu, dolayisiyla "3. kule mi hava destegi mi" gercek bir
-        // karardi. Kalem coin'e cevrilince o karsilastirma capraz para birimi
-        // oldu (GDD D.4 donusumu yasakliyor) ve ankraj ANLAMSIZLASTI — sessizce
-        // korunsaydi bayat bir sayiyi mesrulastirirdi.
-        //
-        // Testin ikinci yarisi — BUTCE TAVANI — coin dilinde de gecerli ve
-        // asagida aynen duruyor: guclendirici bir bolumun ekonomisinin dortte
-        // birinden fazlasini yiyemez. Olcut artik Tedarik butcesi degil, o
-        // bolumun 1-yildiz coin odulu (kalemin kendi para birimi).
-        val tierTwoGatling = GameConfigCampaignFacts.tierTwoCost("MACHINE_GUN")
-        assertEquals("kule fiyat tablosu degisti — ankraj notunu gozden gecir", 125, tierTwoGatling)
-
-        // ---------------------------------------------------------------
-        // FIYAT TAVANI — ARTIK 55 BOLUMUN TAMAMINDA
-        // ---------------------------------------------------------------
-        // Bu dongu bir zamanlar `unlockLevel..SupplyBudgetModel.MODELLED_LEVELS`
-        // idi; MODELLED_LEVELS 8'den 55'e cikarilirken elle `..8`e sabitlendi ve
-        // gerekce olarak "ust bolumlerin rampasi `boosterPriceRisesWithLevel`de
-        // kilitli" yazildi. **Depoda oyle bir test yok** ve var olan
-        // `pricesNeverDecreaseWithLevel` yalnizca monotonlugu kontrol ediyor,
-        // bu testin varlik sebebi olan UST SINIRI degil. Sonuc: fiyat tavani
-        // 55 bolumun 47'sinde denetimsiz kaliyordu.
-        //
-        // KAPSAM 5 BOLUMDEN 55 BOLUME ACILDI ve tavan BUTCEYE baglandi.
-        //
-        // Eski olcut "tasarlanan kadronun %15-25'i" idi ve yalnizca L4..L8'i
-        // kapsiyordu. Iki sorunu vardi: (a) kapsam — 55 bolumun 47'sinde
-        // guclendirici fiyat tavani DENETIMSIZDI (dongu `..8`e elle
-        // sabitlenmisti ve gerekce olarak depoda VAR OLMAYAN bir teste atif
-        // yapiliyordu); (b) olcut kadro BUYUKLUGUNE duyarliydi — ayni fiyat,
-        // alti kulelik bir kadronun %20'si iken dort kulelik bir kadronun
-        // %34'u olur ve bu, guclendiricinin fiyatiyla ilgili hicbir sey
-        // soylemez.
-        //
-        // Tavan artik bolumun TOPLAM Tedarik butcesine gore: guclendirici hicbir
-        // bolumde ekonominin dortte birini yiyemez. Olculen aralik %10,9 (L13)
-        // .. %17,1 (L53). Bandin ALT ucu ayri ve MUTLAK bir testle korunuyor:
-        // [airSupportNeverCostsLessThanAFullyUpgradedTower].
-        for (level in BoosterType.AIR_SUPPORT.unlockLevel..EconomyConfig.CAMPAIGN_LEVELS) {
-            val share = 100.0 * boosterPrice(BoosterType.AIR_SUPPORT, level) /
-                levelReward(level, 1)
-            assertTrue(
-                "L$level: hava destegi 1-yildiz odulunun %%%.1f'i — %%90 tavani asildi"
-                    .format(share),
-                share <= 90.0,
-            )
-        }
-    }
-
-    /**
-     * Us Tamiri'nin coin fiyati yildiz atlamasini ASLA karsilamamali. Faz 10.1'de
-     * yeniden dogrulandi: coin ekonomisi (odul formulu, yildiz carpanlari) Faz 10'dan
-     * beri degismedi, dolayisiyla `repairPriceExceedsEveryStarJumpItCouldEverBuy`
-     * kisiti aynen gecerli. Burada marjin de kilitleniyor ki daralirsa gorulsun.
-     */
+    /** Fiyat marji buyur: odul dogrusal artarken tamir de artar, arbitraj penceresi acilmaz. */
     @Test
     fun repairPriceKeepsAGrowingMarginOverTheBiggestStarJump() {
-        for (level in BoosterType.BASE_REPAIR.unlockLevel..EconomyConfig.CAMPAIGN_LEVELS) {
+        for (level in BoosterType.BASE_REPAIR.unlockLevel..lastLevel) {
             val jump = levelReward(level, 3) - levelReward(level, 1)
             val price = boosterPrice(BoosterType.BASE_REPAIR, level)
-            assertTrue(
-                "L$level: tamir $price, 1->3 yildiz farki $jump — tamir kara gecebilir",
-                price > jump,
-            )
+            assertTrue("L$level: tamir $price, 1->3 yildiz farki $jump", price > jump)
         }
-        // Marjin bolumle BUYUMELI: gec oyunda odul dogrusal buyurken tamir de
-        // buyudugu icin arbitraj penceresi hic acilmaz.
         val marginAtUnlock = boosterPrice(BoosterType.BASE_REPAIR, 7) -
             (levelReward(7, 3) - levelReward(7, 1))
-        val marginAtEnd = boosterPrice(BoosterType.BASE_REPAIR, 22) -
+        val marginAtL22 = boosterPrice(BoosterType.BASE_REPAIR, 22) -
             (levelReward(22, 3) - levelReward(22, 1))
-        assertEquals(50, marginAtUnlock)
-        assertEquals(80, marginAtEnd)
-        assertTrue("arbitraj marjini daraliyor", marginAtEnd > marginAtUnlock)
+        assertEquals(50, marginAtUnlock)  // 240 - (510 - 320)
+        assertEquals(80, marginAtL22)     // 540 - (1230 - 770)
+        assertTrue("arbitraj marjini daraliyor", marginAtL22 > marginAtUnlock)
     }
 
     /**
-     * Acil Tedarik **yalnizca reklam** kalmali: coin -> Tedarik donusumu GDD D.4
-     * tarafindan yasak. Faz 10.1 gozden gecirmesinde korundu.
+     * ARBITRAJ: "tamir et -> yildiz atla -> tamirden fazla coin kazan". Geri verilen HER can
+     * yildiz hesabindan dusulur; iki kullanimin ikisi de ve her kayip miktari icin.
      */
     @Test
-    fun emergencySupplyHasNoPaidPathAtAnyLevel() {
-        assertEquals(BoosterCurrency.AD_ONLY, BoosterType.EMERGENCY_SUPPLY.currency)
-        assertFalse(BoosterType.EMERGENCY_SUPPLY.hasPaidPath)
-        assertEquals(0, BoosterType.EMERGENCY_SUPPLY.paidUsesPerBattle)
-        for (level in 1..EconomyConfig.CAMPAIGN_LEVELS) {
-            assertEquals("L$level acil tedarik ucretli yol acmis", 0, boosterPrice(BoosterType.EMERGENCY_SUPPLY, level))
-        }
-        assertEquals(
-            BoosterDecision.PaidPathUnavailable,
-            boosterAllowed(state(10), BoosterType.EMERGENCY_SUPPLY, viaAd = false, richWallet),
-        )
-    }
-
-    @Test
-    fun baseRepairIsStarNeutralSoItCanNeverBeCoinPositive() {
-        // ARBITRAJ: "tamir et -> yildiz atla -> tamirden fazla coin kazan".
-        // Yildiz, tamir edilen can DUSULEREK hesaplandigi icin arbitraj
-        // fiyatlamaya bagli olmaktan cikar, YAPISAL olarak yok olur.
-        //
-        // ⚠ TEST SAYI EZBERLEMIYOR (2026-08-21). Eski hali "tamir 8 can verir"
-        // ve "14 - 8 = 6" gibi ara sonuclari elle yaziyordu; us tamiri oran
-        // yerine duz cana (coin 4 / reklam 7) donunce hepsi bayatladi. Oysa
-        // kilitlenmesi gereken sey MIKTAR degil, DEGISMEZ: tamir ne kadar
-        // olursa olsun yildizi ve odulu artiramaz. Yeni hali her iki yolu da
-        // ve her kayip miktarini tarayarak bunu soruyor.
+    fun baseRepairIsStarNeutralForEveryUseSoItCanNeverBeCoinPositive() {
         val maxLives = 20
         val wallet = PlayerWallet(unlockedLevels = (1..22).toSet())
-
-        for (viaAd in listOf(false, true)) {
+        for (use in 1..BoosterType.BASE_REPAIR.paidUsesPerBattle) {
             for (health in 1 until maxLives) {
-                val repaired = baseRepairAmount(health, maxLives, viaAd)
-                val rawAfter = health + repaired
-                val effective = effectiveStarHealth(rawAfter, repaired)
+                val repaired = baseRepairAmount(health, maxLives, useNumber = use)
+                assertTrue("tamir uygulanmadi: can=$health use=$use", repaired > 0)
+                val effective = effectiveStarHealth(health + repaired, repaired)
 
+                assertEquals("tamir (use=$use, can=$health) etkin cani degistirmemeli", health, effective)
                 assertEquals(
-                    "tamir (viaAd=$viaAd, can=$health) etkin cani degistirmemeli",
-                    health, effective,
+                    "tamir (use=$use, can=$health) yildizi artirmamali",
+                    starsFor(health, maxLives), starsFor(effective, maxLives),
                 )
                 assertEquals(
-                    "tamir (viaAd=$viaAd, can=$health) yildizi artirmamali",
-                    starsFor(health, maxLives),
-                    starsFor(effective, maxLives),
-                )
-                assertEquals(
-                    "tamir (viaAd=$viaAd, can=$health) odulu ARTIRMAMALI",
+                    "tamir (use=$use, can=$health) odulu ARTIRMAMALI",
                     resolveLevelClear(wallet, 10, health, maxLives).total,
                     resolveLevelClear(wallet, 10, effective, maxLives).total,
                 )
@@ -1430,36 +967,66 @@ class BoosterEconomyTest {
         }
     }
 
+    /**
+     * Iki tamir birikir ve savas sonu can hesabi HALA notr: etkin can, savas boyunca gorulen
+     * en kotu durumu ASLA asmaz (yildiz hayatta kalma degil, en kotu an ile verilir).
+     */
     @Test
-    fun repairCanNeverManufactureAPerfectDefenseMedal() {
-        // Kusursuz Savunma "hic sizma yok" demek; tamirle satin alinamaz.
+    fun cumulativeRepairsNeverRaiseTheStarHealthAboveTheWorstMomentSeen() {
         val maxLives = 20
-        assertFalse(isPerfectDefense(effectiveStarHealth(20, 8), maxLives))
-        assertTrue(isPerfectDefense(20, maxLives))
+        var s = state(10)
+        var health = 10
+        val seen = mutableListOf(health)
+
+        val r1 = baseRepairAmount(health, maxLives, 1)
+        val d1 = boosterAllowed(s, BoosterType.BASE_REPAIR, richWallet, baseHealth = health, nowMs = 0L)
+        s = useBooster(s, BoosterType.BASE_REPAIR, d1, nowMs = 0L, repairedHealth = r1)
+        health += r1; seen += health
+        health -= 6; seen += health                                    // sizma devam ediyor
+
+        val r2 = baseRepairAmount(health, maxLives, 2)
+        val d2 = boosterAllowed(s, BoosterType.BASE_REPAIR, richWallet, baseHealth = health, nowMs = EconomyConfig.BASE_REPAIR_COOLDOWN_MS)
+        assertTrue(d2.isAllowed)
+        s = useBooster(s, BoosterType.BASE_REPAIR, d2, nowMs = EconomyConfig.BASE_REPAIR_COOLDOWN_MS, repairedHealth = r2)
+        health += r2; seen += health
+
+        assertEquals("iki tamir birikmeli", r1 + r2, s.repairedHealth)
+        assertEquals(
+            "2 kullanim sonrasi 3. tamir yok",
+            BoosterDecision.PaidLimitReached,
+            boosterAllowed(s, BoosterType.BASE_REPAIR, richWallet, baseHealth = 5, nowMs = Long.MAX_VALUE / 2),
+        )
+        val effective = effectiveStarHealth(health, s)
+        assertTrue("etkin can $effective > gorulen en kotu ${seen.min()}", effective <= seen.min())
+        assertTrue(starsFor(effective, maxLives) <= starsFor(seen.min(), maxLives))
     }
 
     @Test
-    fun repairPriceExceedsEveryStarJumpItCouldEverBuy() {
-        // Ikinci kemer: yildiz notrlugu bir gun kaldirilsa bile fiyat tek basina
-        // arbitraji zararli tutuyor mu? Kampanyadaki EN BUYUK yildiz atlama farki
-        // (1 -> 3 yildiz + madalya) ile tamir ucretini kiyasla.
-        for (level in BoosterType.BASE_REPAIR.unlockLevel..EconomyConfig.CAMPAIGN_LEVELS) {
+    fun repairCanNeverManufactureAPerfectDefenseMedal() {
+        val maxLives = 20
+        val restoredBoth = baseRepairAmount(13, maxLives, 1) + baseRepairAmount(9, maxLives, 2)
+        assertTrue(restoredBoth > 0)
+        assertFalse(isPerfectDefense(effectiveStarHealth(maxLives, restoredBoth), maxLives))
+        assertTrue(isPerfectDefense(20, maxLives))
+    }
+
+    /** Ikinci kemer: yildiz notrlugu kalksa bile fiyat tek basina arbitraji zararli tutar. */
+    @Test
+    fun repairPriceExceedsEveryStarJumpItCouldEverBuyForBothUses() {
+        for (level in BoosterType.BASE_REPAIR.unlockLevel..lastLevel) {
             val maxJump = levelReward(level, 3) - levelReward(level, 1)
-            val price = boosterPrice(BoosterType.BASE_REPAIR, level)
-            assertTrue(
-                "L$level: tamir $price, olasi en buyuk yildiz farki $maxJump — " +
-                    "yildiz notrlugu kalkarsa arbitraj karli olur",
-                price >= maxJump,
-            )
+            for (use in 1..BoosterType.BASE_REPAIR.paidUsesPerBattle) {
+                val price = boosterPrice(BoosterType.BASE_REPAIR, level, use)
+                assertTrue("L$level #$use: tamir $price < olasi en buyuk yildiz farki $maxJump", price >= maxJump)
+            }
         }
     }
 
     @Test
     fun aPlayerWhoNeverTouchesABoosterStillFinishesTheCampaign() {
-        // Guclendiriciler ekonomiye HICBIR sekilde girmez: bir tanesini bile
-        // kullanmayan oyuncunun ilerlemesi Faz 9 ile birebir aynidir.
+        // Guclendiriciler zorunlu degildir: bir tanesini bile kullanmayan oyuncu kampanyayi bitirir.
         var wallet = PlayerWallet()
-        for (level in 1..EconomyConfig.CAMPAIGN_LEVELS) {
+        for (level in 1..lastLevel) {
             if (level >= EconomyConfig.FIRST_PAID_LEVEL) {
                 assertTrue(
                     "L$level: guclendiricisiz oyuncu kapiyi acamadi (bakiye ${wallet.coins}, bedel ${lockCost(level)})",
@@ -1467,213 +1034,337 @@ class BoosterEconomyTest {
                 )
                 wallet = applyUnlock(wallet, level)
             }
-            // En kotu senaryo: her bolum 1 yildiz, gorev yok, reklam yok, guclendirici yok.
+            // En kotu senaryo: her bolum 1 yildiz, gorev yok, guclendirici yok.
             val result = resolveLevelClear(wallet, level, livesLeft = 6, maxLives = 20)
             assertEquals(1, result.stars)
             wallet = applyLevelClear(wallet, result)
         }
-        assertEquals(EconomyConfig.CAMPAIGN_LEVELS, wallet.clearedLevels.size)
+        assertEquals(lastLevel, wallet.clearedLevels.size)
         assertEquals(0, autoGrantShortfall(wallet))
     }
 
-    @Test
-    fun boosterSpendingCanNeverSoftLockTheCampaign() {
-        // Aç gözlü oyuncu: her bolumde tamiri sonuna kadar satin alir. Rezerv kilidi
-        // sayesinde kapiyi acacak coin HER ZAMAN kalir.
+    // =================================================================================
+    // 6b. SOFT-LOCK YOK — guclendirici harcamasi kampanyayi kilitleyemez (4 guclendirici)
+    // =================================================================================
+
+    /**
+     * ACGOZLU OYUNCU: her bolumu 1-yildiz benzeri kotu sonucla bitirir, ardindan her
+     * guclendiriciyi REZERV IZIN VERDIGI SURECE tekrar tekrar satin alir (kullanim sayaci
+     * bilerek ilerletilmez: en sert senaryo, "tavan yok"). Her satin almadan sonra kapiyi
+     * acacak coin kalmis olmali: `autoGrantShortfall == 0`.
+     *
+     * Ayni dongu Us Tamiri (1. kullanim), Us Tamiri 2. kullanim, Hava Destegi ve Acil Tedarik
+     * icin kosar. Testin duyarli oldugu iki sayacla kanitlanir: satin alma GERCEKTEN oldu ve
+     * dongu bazi bolumlerde rezerv yuzunden DURDU (yoksa dongu hicbir seyi olcmuyor olurdu).
+     */
+    private data class GreedyOutcome(val purchases: Int, val stoppedByReserve: Int, val stoppedByCoins: Int)
+
+    private fun greedyCampaignNeverSoftLocks(
+        type: BoosterType,
+        useNumber: Int,
+        livesLeftPerClear: Int,
+    ): GreedyOutcome {
         var wallet = PlayerWallet()
-        for (level in 1..EconomyConfig.CAMPAIGN_LEVELS) {
+        var purchases = 0
+        var byReserve = 0
+        var byCoins = 0
+        for (level in 1..lastLevel) {
             if (level >= EconomyConfig.FIRST_PAID_LEVEL) {
-                assertTrue("L$level acilamadi", canUnlock(wallet, level))
+                assertTrue("$type #$useNumber L$level acilamadi", canUnlock(wallet, level))
                 wallet = applyUnlock(wallet, level)
             }
-            val result = resolveLevelClear(wallet, level, livesLeft = 12, maxLives = 20)
-            wallet = applyLevelClear(wallet, result)
+            wallet = applyLevelClear(wallet, resolveLevelClear(wallet, level, livesLeftPerClear, 20))
 
-            // Tamiri rezerv izin verdigi surece tekrar tekrar satin al.
+            if (level < type.unlockLevel) continue
             var guard = 0
             while (guard++ < 100) {
-                val d = boosterAllowed(
-                    state(level), BoosterType.BASE_REPAIR, viaAd = false, wallet, baseHealth = 5,
-                )
+                val d = decide(type, level, useNumber, wallet)
+                if (d is BoosterDecision.ReserveLocked) byReserve++
+                if (d is BoosterDecision.InsufficientCoins) byCoins++
                 if (!d.isAllowed) break
                 wallet = payForBooster(wallet, d)
+                purchases++
+                assertEquals(
+                    "$type #$useNumber L$level satin alma sonrasi soft-lock: rezerv yenmis",
+                    0, autoGrantShortfall(wallet),
+                )
             }
-            assertEquals(
-                "L$level sonrasi soft-lock: guclendirici harcamasi rezervi yedi",
-                0, autoGrantShortfall(wallet),
-            )
+            assertEquals("$type #$useNumber L$level sonu soft-lock", 0, autoGrantShortfall(wallet))
         }
-        assertEquals(EconomyConfig.CAMPAIGN_LEVELS, wallet.clearedLevels.size)
+        assertEquals(lastLevel, wallet.clearedLevels.size)
+        return GreedyOutcome(purchases, byReserve, byCoins)
+    }
+
+    @Test
+    fun repairSpendingCanNeverSoftLockTheCampaign() {
+        val o = greedyCampaignNeverSoftLocks(BoosterType.BASE_REPAIR, 1, livesLeftPerClear = 12)
+        assertTrue("satin alma olmadi (kanit bos): $o", o.purchases > 0)
+        assertTrue("rezerv hic devreye girmedi (kanit bos): $o", o.stoppedByReserve > 0)
+    }
+
+    @Test
+    fun repairSecondUseSpendingCanNeverSoftLockTheCampaign() {
+        val o = greedyCampaignNeverSoftLocks(BoosterType.BASE_REPAIR, 2, livesLeftPerClear = 12)
+        assertTrue("satin alma olmadi (kanit bos): $o", o.purchases > 0)
+        assertTrue("rezerv hic devreye girmedi (kanit bos): $o", o.stoppedByReserve > 0)
+    }
+
+    @Test
+    fun airSupportSpendingCanNeverSoftLockTheCampaign() {
+        val o = greedyCampaignNeverSoftLocks(BoosterType.AIR_SUPPORT, 1, livesLeftPerClear = 12)
+        assertTrue("satin alma olmadi (kanit bos): $o", o.purchases > 0)
+        assertTrue("rezerv hic devreye girmedi (kanit bos): $o", o.stoppedByReserve > 0)
+    }
+
+    @Test
+    fun emergencySupplySpendingCanNeverSoftLockTheCampaign() {
+        val o = greedyCampaignNeverSoftLocks(BoosterType.EMERGENCY_SUPPLY, 1, livesLeftPerClear = 12)
+        assertTrue("satin alma olmadi (kanit bos): $o", o.purchases > 0)
+        assertTrue("rezerv hic devreye girmedi (kanit bos): $o", o.stoppedByReserve > 0)
+    }
+
+    /**
+     * Gercekci acgozlu: ayni savasta uc guclendiricinin TUM haklarini (Acil Tedarik x1, Hava
+     * Destegi x2, Us Tamiri x2) sirayla satin alir; her satin almadan sonra kapi acik kalmali.
+     */
+    @Test
+    fun buyingEveryRightInEveryBattleCanNeverSoftLockTheCampaign() {
+        var wallet = PlayerWallet()
+        var purchases = 0
+        for (level in 1..lastLevel) {
+            if (level >= EconomyConfig.FIRST_PAID_LEVEL) {
+                wallet = applyUnlock(wallet, level)
+            }
+            wallet = applyLevelClear(wallet, resolveLevelClear(wallet, level, 12, 20))
+
+            var s = state(level)
+            var now = 0L
+            for (type in BoosterType.entries) {
+                repeat(type.paidUsesPerBattle) {
+                    val d = boosterAllowed(s, type, wallet, baseHealth = 5, enemiesOnField = 5, nowMs = now)
+                    if (d.isAllowed) {
+                        wallet = payForBooster(wallet, d)
+                        s = useBooster(s, type, d, nowMs = now)
+                        purchases++
+                        assertEquals("L$level $type sonrasi soft-lock", 0, autoGrantShortfall(wallet))
+                    }
+                    now += 100_000L
+                }
+            }
+        }
+        assertTrue("satin alma olmadi", purchases > 0)
+        assertEquals(lastLevel, wallet.clearedLevels.size)
     }
 
     // =================================================================================
-    // 7. SIKILASTIRMA GERI ALINMAZ (ECONOMY_SPEC A.4)
+    // 7. SIKILASTIRMA GERI ALINMAZ (ECONOMY_SPEC A.4) ve coin cikis tavani
     // =================================================================================
 
+    /**
+     * SERT KURAL: sikilastirilmis butce + coinle alinabilen TUM ek Tedarik, bugunku (fazla bol)
+     * butcenin altinda kalmali. `maxBoosterSupplyInjection` bir zamanlar "reklam sayisi" ile
+     * carpiliyordu; artik Acil Tedarik'in tek coin-kullanimindan turetilir.
+     *
+     * NON-VACUOUS: enjeksiyon L1'de 0, L2-6'da tam `emergencySupplyAmount` (> 0) olmali;
+     * yoksa `<= legacy` her zaman gecerdi.
+     */
     @Test
-    fun adWatchingPlayerIsStillTighterThanTodaysOverflushEconomy() {
-        // SERT KURAL: sikilastirilmis butce + reklamla alinabilen TUM ek Tedarik,
-        // bugunku (fazla bol) butcenin altinda kalmali. Aksi halde reklam izleyen
-        // oyuncu icin testcinin sikayeti hic cozulmemis olur.
+    fun coinBoughtSupplyStaysBelowTodaysOverflushEconomyInTheEarlyLevels() {
+        assertEquals("L1'de guclendirici yok", 0, maxBoosterSupplyInjection(1))
         for (level in 1..6) {
             val tightened = startingSupplyFor(level) + waveSupplyIncome(level)
-            val withAds = tightened + maxBoosterSupplyInjection(level)
+            val injection = maxBoosterSupplyInjection(level)
+            val expected = if (level >= BoosterType.EMERGENCY_SUPPLY.unlockLevel) {
+                emergencySupplyAmount(level) * BoosterType.EMERGENCY_SUPPLY.paidUsesPerBattle
+            } else {
+                0
+            }
+            assertEquals("L$level enjeksiyon formulu", expected, injection)
+            if (level >= BoosterType.EMERGENCY_SUPPLY.unlockLevel) {
+                assertTrue("L$level enjeksiyon 0 — test bos gecerdi", injection > 0)
+            }
+            val withCoins = tightened + injection
             val legacy = LEGACY_STARTING_SUPPLY + legacyWaveSupplyIncome(level)
             assertTrue(
-                "L$level: reklamli butce $withAds, eski bol butce $legacy — sikilastirma geri alindi",
-                withAds <= legacy,
+                "L$level: coinli butce $withCoins, eski bol butce $legacy — sikilastirma geri alindi",
+                withCoins <= legacy,
+            )
+            assertTrue("L$level: paylasim payi kalmamis", legacy - withCoins > 0)
+        }
+    }
+
+    /** Enjeksiyon SAVAS BASINA tavanli: en fazla 1 kullanim x miktar, tum kampanya boyunca. */
+    @Test
+    fun supplyInjectionIsBoundedByTheSingleEmergencyUse() {
+        for (level in 1..lastLevel) {
+            val expected = if (level >= BoosterType.EMERGENCY_SUPPLY.unlockLevel) {
+                emergencySupplyAmount(level) * EconomyConfig.EMERGENCY_SUPPLY_USES_PER_BATTLE
+            } else {
+                0
+            }
+            assertEquals("L$level", expected, maxBoosterSupplyInjection(level))
+            assertTrue(
+                "L$level: enjeksiyon acilis Tedarikini asiyor",
+                level < BoosterType.EMERGENCY_SUPPLY.unlockLevel ||
+                    maxBoosterSupplyInjection(level) <= startingSupplyFor(level),
             )
         }
     }
 
     /**
-     * GERCEK KISIT — guclendiriciler coin ENFLASYONU yaratmaz.
-     *
-     * ⚠ 2026-08-21 — BU TEST BIR VEKIL OLCUYORDU VE VEKIL YANLIS YERDEYDI.
-     * Kirilan satir soyleydi:
-     *
-     *     boosterPrice(type, 22) == 0 || type.currency != AD_ONLY
-     *
-     * yani "AD_ONLY bir guclendiricinin fiyati 0 olmali". Bu, adi "coin
-     * enflasyonu yok" olan bir testin altinda duran ama ENFLASYONLA HICBIR
-     * ILGISI OLMAYAN bir tutarlilik kontroluydu — fiyat bir coin GIRISI degil,
-     * cikisidir. Hava Destegi AD_ONLY yapilinca (fiyat fonksiyonu ise hâlâ
-     * L22'de 269 donuyor) satir patladi ve bir enflasyon hatasi gibi gorundu.
-     *
-     * Iki parcaya ayirdim:
-     *  - Enflasyon iddiasi burada kaldi ve artik GERCEKTEN olculuyor: hicbir
-     *    yol cuzdani buyutmuyor, coin akisi yalnizca cikis yonunde.
-     *  - "AD_ONLY tipin ucretli bir yolu yoktur" tutarlilik kurali kendi
-     *    testine tasindi: [adOnlyBoostersCanNeverChargeAnyCurrency].
-     *
-     * Gevsetme DEGIL: bayat fiyat sabiti orada yasamaya devam ediyor ve ayri
-     * testte ULASILAMAZ oldugu kanitlaniyor.
+     * `maxBoosterCoinSpend` kural olarak: acik COIN kalemlerinin TUM kullanimlarinin
+     * `boosterPrice` toplami. Elle dogrulanmis capalar (aritmetik yorumda):
+     *   L1  = 0                      (guclendirici yok)
+     *   L2  = 140                    (Acil Tedarik: 2 x 70)
+     *   L3  = 140                    (amount(3) = 70)
+     *   L4  = 160 + 2 x 200 = 560    (Acil 2x80 + Hava 2 kullanim x 200)
+     *   L6  = 180 + 2 x 244 = 668
+     *   L7  = 200 + 2 x 266 + (240 + 420) = 1392
+     *   L55 = 760 + 2 x 1322 + (1200 + 2100) = 6704
      */
     @Test
-    fun boostersAddNoCoinInflationAtAll() {
-        val wallet = PlayerWallet(coins = 5_000, unlockedLevels = (1..22).toSet())
+    fun maxBoosterCoinSpendIsTheSumOfEveryUnlockedUsePrice() {
+        for (level in 1..lastLevel) {
+            val expected = BoosterType.entries
+                .filter { level >= it.unlockLevel }
+                .sumOf { type -> (1..type.paidUsesPerBattle).sumOf { use -> boosterPrice(type, level, use) } }
+            assertEquals("L$level", expected, maxBoosterCoinSpend(level))
+        }
+        assertEquals(0, maxBoosterCoinSpend(1))
+        assertEquals(140, maxBoosterCoinSpend(2))
+        assertEquals(140, maxBoosterCoinSpend(3))
+        assertEquals(560, maxBoosterCoinSpend(4))
+        assertEquals(668, maxBoosterCoinSpend(6))
+        assertEquals(1_392, maxBoosterCoinSpend(7))
+        assertEquals(6_704, maxBoosterCoinSpend(55))
+        // Yeni bir kalem acildikca tavan ASLA duserek gitmez.
+        for (level in 2..lastLevel) {
+            assertTrue("L$level", maxBoosterCoinSpend(level) >= maxBoosterCoinSpend(level - 1))
+        }
+    }
+
+    // =================================================================================
+    // 8. Gercek CampaignProgressImpl uzerinden: bir aktivasyon tam bir kez tahsil eder
+    // =================================================================================
+
+    private class FixedClock : ClockProvider {
+        override fun sample(): ClockSample = ClockSample(
+            epochDay = 20_500L,
+            wallClockMs = 20_500L * EconomyConfig.MS_PER_DAY,
+            elapsedRealtimeMs = 1_000L,
+            bootId = 1L,
+        )
+    }
+
+    private class Env(wallet: PlayerWallet, level: Int) {
+        val save = SaveManager(InMemoryKeyValueStore()).also { it.saveWallet(wallet) }
+        val progress = CampaignProgressImpl(save, FixedClock())
+        init { progress.beginBattle(level) }
+        val wallet: PlayerWallet get() = save.loadWallet()
+    }
+
+    @Test
+    fun activationChargesExactlyTheDeclaredCoinPriceOncePerRight() {
+        val level = 10
         BoosterType.entries.forEach { type ->
-            listOf(false, true).forEach { viaAd ->
-                val d = boosterAllowed(
-                    state(10), type, viaAd = viaAd, wallet,
-                    supplyOnHand = 9_999, baseHealth = 5, enemiesOnField = 5,
-                )
-                assertTrue(
-                    "$type (viaAd=$viaAd) cuzdani buyutmus — guclendirici coin kaynagi olmus",
-                    payForBooster(wallet, d).coins <= wallet.coins,
-                )
-                if (d is BoosterDecision.Allowed) {
-                    assertTrue("$type (viaAd=$viaAd) negatif fiyat", d.price >= 0)
-                    assertTrue(
-                        "$type reklam yolu coin/Tedarik odememeli",
-                        !viaAd || d.price == 0,
-                    )
-                }
+            val env = Env(openWallet(100_000), level)
+            var now = 0L
+            var spentSoFar = 0
+            repeat(type.paidUsesPerBattle) { i ->
+                val act = env.progress.activateBooster(type, baseHealth = 5, enemiesOnField = 5, nowMs = now)
+                val price = boosterPrice(type, level, i + 1)
+                assertTrue("$type #${i + 1} reddedildi: ${act.decision}", act.applied)
+                assertEquals("$type #${i + 1} coinsSpent", price, act.coinsSpent)
+                assertEquals("$type #${i + 1} Tedarik dusmemeli", 0, act.supplyCharged)
+                spentSoFar += price
+                assertEquals("$type #${i + 1} bakiye", 100_000 - spentSoFar, env.progress.coins)
+                assertEquals("$type #${i + 1} lifetimeSpent", spentSoFar, env.wallet.lifetimeSpent)
+                now += boosterCooldownMs(type) + 1L
             }
+            // Tavan: ek deneme hicbir sey degistirmez.
+            val stateBefore = env.progress.boosterState
+            val denied = env.progress.activateBooster(type, baseHealth = 5, enemiesOnField = 5, nowMs = now)
+            assertEquals("$type", BoosterDecision.PaidLimitReached, denied.decision)
+            assertEquals(0, denied.coinsSpent)
+            assertEquals(100_000 - spentSoFar, env.progress.coins)
+            assertSame(stateBefore, env.progress.boosterState)
         }
-        // Coin AKISI yalnizca CIKIS yonunde: guclendiriciler sink'tir, kaynak degil.
-        for (level in 1..EconomyConfig.CAMPAIGN_LEVELS) {
-            assertTrue(maxBoosterCoinSpend(level) >= 0)
-        }
+    }
 
-        // ⚠ 2026-09-02 — BEKLENEN DEGERLER DEGISTI VE BU DOGRU.
-        //
-        // Eskiden `maxBoosterCoinSpend(6) == 0` ve `(7) == 240` idi cunku coin
-        // harcayan TEK guclendirici Us Tamiri'ydi (acilis L7). Hava Destegi
-        // coin yoluna cevrilince (acilis L4) tavan degisti:
-        //
-        //   L4  200          (yalnizca hava destegi)
-        //   L6  244          (yalnizca hava destegi; us tamiri henuz kapali)
-        //   L7  266 + 240    (ikisi birden)
-        //
-        // Bu test degisiklikten sonra KIRILDI ve haklıydı: fonksiyon hala
-        // yalnizca Us Tamiri'ni sayiyordu, yani ECONOMY_SPEC B tablosunun
-        // okudugu gunluk coin cikisi tavani gercek degerin yarisindan azdi.
-        // Duzeltilen sey BEKLENTI DEGIL FONKSIYONDU (`maxBoosterCoinSpend`
-        // artik COIN para birimli tum guclendiricileri tariyor); buradaki
-        // sayilar o duzeltmenin sonucudur.
-        assertEquals("hava destegi acilmadan once coin cikisi olmamali", 0, maxBoosterCoinSpend(3))
-        assertEquals(
-            "L4: yalnizca hava destegi",
-            boosterPrice(BoosterType.AIR_SUPPORT, 4), maxBoosterCoinSpend(4),
+    @Test
+    fun emergencySupplyGrantsExactlyWhatItsPriceBuysAndOthersGrantNoSupply() {
+        val level = 10
+        val env = Env(openWallet(10_000), level)
+        val es = env.progress.activateBooster(BoosterType.EMERGENCY_SUPPLY)
+        assertTrue(es.applied)
+        assertEquals(emergencySupplyAmount(level), es.supplyGranted)
+        assertEquals("kur: 2 coin = 1 Tedarik", 2 * es.supplyGranted, es.coinsSpent)
+
+        val air = env.progress.activateBooster(BoosterType.AIR_SUPPORT, enemiesOnField = 4)
+        val repair = env.progress.activateBooster(BoosterType.BASE_REPAIR, baseHealth = 5)
+        listOf(air, repair).forEach {
+            assertTrue("${it.type} reddedildi: ${it.decision}", it.applied)
+            assertEquals("${it.type} Tedarik VERMEMELI", 0, it.supplyGranted)
+            assertEquals("${it.type} Tedarik HARCAMAMALI", 0, it.supplyCharged)
+        }
+        assertEquals(EconomyConfig.AIR_SUPPORT_DAMAGE_FRACTION, air.airSupportDamageFraction, 0.0)
+        assertEquals(EconomyConfig.BASE_REPAIR_LIVES_FIRST_USE, repair.healthRestored)
+    }
+
+    @Test
+    fun repairSecondActivationRestoresSevenAndChargesTheSecondUsePrice() {
+        val level = 10
+        val env = Env(openWallet(10_000), level)
+        val first = env.progress.activateBooster(BoosterType.BASE_REPAIR, baseHealth = 5, nowMs = 0L)
+        assertEquals(4, first.healthRestored)
+        val second = env.progress.activateBooster(
+            BoosterType.BASE_REPAIR, baseHealth = 5, nowMs = EconomyConfig.BASE_REPAIR_COOLDOWN_MS,
         )
-        assertEquals(
-            "L6: us tamiri henuz kapali, yalnizca hava destegi",
-            boosterPrice(BoosterType.AIR_SUPPORT, 6), maxBoosterCoinSpend(6),
-        )
-        assertEquals(
-            "L7: iki coin kalemi birden",
-            boosterPrice(BoosterType.AIR_SUPPORT, 7) + boosterPrice(BoosterType.BASE_REPAIR, 7),
-            maxBoosterCoinSpend(7),
-        )
-        // Belgelenen mutlak degerler (bayatlarsa gorulsun).
-        assertEquals(244, maxBoosterCoinSpend(6))
-        assertEquals(506, maxBoosterCoinSpend(7))
+        assertEquals(7, second.healthRestored)
+        assertEquals(boosterPrice(BoosterType.BASE_REPAIR, level, 2), second.coinsSpent)
+        assertEquals(11, env.progress.boosterState?.repairedHealth)
+        val third = env.progress.activateBooster(BoosterType.BASE_REPAIR, baseHealth = 5, nowMs = Long.MAX_VALUE / 4)
+        assertEquals(BoosterDecision.PaidLimitReached, third.decision)
+        assertEquals(11, env.progress.boosterState?.repairedHealth)
     }
 
-    // =================================================================================
-    // 8. R1 adaptif odul (BAYRAK F-11) — enflasyon yaratmadigi kanitlanir
-    // =================================================================================
-
     @Test
-    fun adaptiveRequisitionRewardIsOffByDefaultAndBehavesExactlyLikePhase9() {
-        assertFalse(EconomyConfig.R1_ADAPTIVE_REWARD_ENABLED)
-        listOf(0, 150, 400, 850, 10_000).forEach { price ->
-            assertEquals(
-                "bayrak kapaliyken odul her zaman sabit olmali",
-                EconomyConfig.R1_REWARD_FILLED, requisitionFilledReward(price),
-            )
+    fun rejectedActivationsChangeNoWalletNoUsesNoCooldown() {
+        class Case(val expected: String, val env: Env, val act: (Env) -> BoosterActivation)
+
+        val airPrice = boosterPrice(BoosterType.AIR_SUPPORT, 10)
+        val cases = listOf(
+            Case("InsufficientCoins", Env(openWallet(1), 10)) {
+                it.progress.activateBooster(BoosterType.AIR_SUPPORT, enemiesOnField = 3)
+            },
+            Case("ReserveLocked", Env(gateWallet(airPrice + 8), 10)) {
+                it.progress.activateBooster(BoosterType.AIR_SUPPORT, enemiesOnField = 3)
+            },
+            Case("NoEffect", Env(openWallet(10_000), 10)) {
+                it.progress.activateBooster(BoosterType.BASE_REPAIR, baseHealth = 20)
+            },
+            Case("Locked", Env(openWallet(10_000), 3)) {
+                it.progress.activateBooster(BoosterType.AIR_SUPPORT, enemiesOnField = 3)
+            },
+        )
+        cases.forEach { c ->
+            val walletBefore = c.env.wallet
+            val stateBefore = c.env.progress.boosterState
+            val result = c.act(c.env)
+            assertFalse("${c.expected} uygulandi", result.applied)
+            assertEquals("karar turu", c.expected, label(result.decision))
+            assertEquals("${c.expected} coinsSpent", 0, result.coinsSpent)
+            assertEquals("${c.expected} cuzdan", walletBefore, c.env.wallet)
+            assertSame("${c.expected} durum", stateBefore, c.env.progress.boosterState)
         }
     }
 
     @Test
-    fun adaptiveRewardArithmeticNeverDropsBelowTheFlatRewardNorExceedsItsCap() {
-        // Bayrak ACILDIGINDA uygulanacak aritmetigi belgeler: ECONOMY_SPEC C.4 tablosu.
-        fun scaled(nextRank: Int) = roundToTen(nextRank * EconomyConfig.R1_SCALE_OF_NEXT_RANK)
-            .coerceIn(EconomyConfig.R1_REWARD_FILLED_MIN, EconomyConfig.R1_REWARD_FILLED_MAX)
-
-        assertEquals(150, scaled(150))
-        assertEquals(150, scaled(600))
-        assertEquals(180, scaled(700))
-        assertEquals(210, scaled(850))
-        assertEquals(250, scaled(100_000)) // tavan
-
-        // Taban = sabit odul: olceklenme oyuncuyu ASLA bugunkunden kotu duruma dusurmez.
-        assertEquals(EconomyConfig.R1_REWARD_FILLED, EconomyConfig.R1_REWARD_FILLED_MIN)
-    }
-
-    @Test
-    fun dailyRequisitionCoinTotalIsBudgetBoundRegardlessOfScaling() {
-        // ENFLASYON YASAGI: odul/gosterim ne olursa olsun gunluk toplam sabit kalir.
-        listOf(0, 150, 850, 100_000).forEach { nextRank ->
-            var s = RequisitionState()
-            var total = 0
-            repeat(40) {
-                val g = grantRequisition(s, AdOutcome.REWARD_EARNED, nextRank)
-                total += g.coins
-                s = g.newState
-            }
-            assertEquals(
-                "nextRank=$nextRank icin gunluk R1 toplami butceyi asti",
-                EconomyConfig.R1_COIN_BUDGET_PER_DAY, total,
-            )
-        }
-    }
-
-    @Test
-    fun cheapestNextRankPriceTracksTheRealShopFloor() {
-        // Dukkan tabani SALVAGE rank 1 = 200. (STARTING_SUPPLY 6 x +25 -> 2 x +75
-        // olunca rank-1'i 900'e cikti; taban tek basina Hurda Degeri'nde kaldi.)
-        assertEquals(200, cheapestNextRankPrice(MetaUpgrades()))
-        // FIREPOWER rank 1 alindi -> taban degismez (SALVAGE hâlâ 200).
-        assertEquals(200, cheapestNextRankPrice(MetaUpgrades(firepower = 1)))
-        assertNotEquals(null, cheapestNextRankPrice(MetaUpgrades(firepower = 4)))
-
-        // Hat tavanlari elle yazilmamali; ECONOMY_AUDIT_2 P0 Tahkimat'i 5 -> 9,
-        // Hurda'yi 4 -> 5 rank'a cikardi ve bu test sessizce anlamini yitirmisti.
-        var maxed = MetaUpgrades()
-        for (line in UpgradeLine.entries) maxed = maxed.withRank(line, line.maxRank)
-        assertTrue(maxed.isMaxed())
-        assertEquals(null, cheapestNextRankPrice(maxed))
+    fun activatingWithoutABattleIsDisabledAndFree() {
+        val save = SaveManager(InMemoryKeyValueStore()).also { it.saveWallet(openWallet(10_000)) }
+        val progress = CampaignProgressImpl(save, FixedClock())
+        val act = progress.activateBooster(BoosterType.EMERGENCY_SUPPLY)
+        assertEquals(BoosterDecision.Disabled, act.decision)
+        assertEquals(10_000, progress.coins)
     }
 }

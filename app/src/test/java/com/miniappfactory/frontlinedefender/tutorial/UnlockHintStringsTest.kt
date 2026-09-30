@@ -197,7 +197,6 @@ class UnlockHintStringsTest {
             "hint_booster_effect_repair"
         )
         val COST_KEYS = setOf(
-            "hint_booster_cost_ad",
             "hint_booster_cost_supply",
             "hint_booster_cost_coin"
         )

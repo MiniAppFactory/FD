@@ -136,6 +136,11 @@
     <string name="dialog_defeat_title">ÜS DÜŞTÜ!</string>
     <string name="dialog_defeat_body">Düşman %1$d. dalgada savunma hattını yardı.</string>
     <string name="dialog_retry">TEKRAR DENE</string>
+    <string name="defeat_continue_label">DEVAM ET · %1$d COIN</string>
+    <string name="defeat_continue_balance">Bakiye %1$d COIN · üs canı %2$d olur</string>
+    <string name="defeat_continue_short">%1$d COIN eksik (bakiye %2$d)</string>
+    <string name="defeat_continue_reserve">Sıradaki harekât için ayrılan coin harcanamaz</string>
+    <string name="defeat_continue_used">Bu savaşta devam hakkı zaten kullanıldı</string>
 
     <string name="dialog_paused_title">OYUN DURAKLADI</string>
     <string name="dialog_sound_effects">Ses Efektleri</string>
@@ -194,36 +199,8 @@
     <string name="biome_desert">ÇÖL</string>
     <string name="biome_autumn">SONBAHAR</string>
 
-    <!-- Faz 9: reklam teklif metinleri (AdOffers.kt) -->
-    <string name="ad_supply_bar_button">TEDARİK TALEP ET  (bugün %1$d hak)</string>
-    <string name="ad_supply_bar_used">Tedarik hakkı doldu — gece yarısı yenilenir</string>
-    <string name="ad_contacting_hq">Karargâh aranıyor…</string>
-    <string name="ad_supply_full">Tedarik indi: +%1$d coin.</string>
-    <string name="ad_supply_reduced">Karargâh elindekini gönderdi: +%1$d coin. Günlük hakkın harcanmadı.</string>
-    <string name="ad_supply_unavailable">Tedarik hatları şu an meşgul. Günlük hakkın duruyor.</string>
-    <string name="ad_double_full">Çift ödeme onaylandı: ödemenizin üstüne +%1$d coin.</string>
-    <string name="ad_double_reduced">Reklam bulunamadı. Harekât ödülün zaten hesabında.</string>
-    <string name="ad_double_claimed">Bu harekât için çift ödeme daha önce alındı.</string>
-    <string name="ad_reinforce_failed">Takviye gönderilemedi. İlerlemen güvende.</string>
-    <string name="ad_reinforce_full">Takviye indi: üs canı %1$d oldu.</string>
-    <string name="ad_reinforce_noad">Reklam bulunamadı ama takviye yine indi: üs canı %1$d oldu.</string>
 
-    <!-- Faz 10: rewarded teklif popup metinleri -->
-    <string name="ad_sheet_watch">REKLAMI İZLE</string>
-    <string name="ad_sheet_skip">GEREK YOK</string>
-    <string name="ad_sheet_continue">DEVAM ET</string>
-    <string name="ad_sheet_supply_title">TEDARİK TALEBİ</string>
-    <string name="ad_sheet_supply_body">Kısa bir reklam izle, karargâh %1$d coin gönderir. Reklam bulunamazsa yine %2$d coin alırsın ve günlük hakkın harcanmaz.</string>
-    <string name="ad_sheet_supply_remaining">bugün %1$d / %2$d hak</string>
-    <string name="ad_sheet_double_title">ÇİFT ÖDEME</string>
-    <string name="ad_sheet_double_body">Kısa bir reklam izle, bu harekâtın coin ödülü ikiye katlanır. Taban ödülün her durumda hesabında.</string>
-    <string name="ad_sheet_reinforce_title">TAKVİYE ÇAĞIR</string>
-    <string name="ad_sheet_reinforce_body">Kısa bir reklam izle, üs canın %1$d olur ve savaş bulunduğun dalgadan devam eder.</string>
 
-    <!-- Faz 12: R4 savas-ici guclendirici rewarded teklifi. %1$s = guclendirici adi. -->
-    <string name="ad_sheet_booster_title">SAHA DESTEĞİ</string>
-    <string name="ad_sheet_booster_body">Kısa bir reklam izle, bu savaş için %1$s çağır. Zorunlu değil — savaş her durumda devam eder.</string>
-    <string name="ad_sheet_booster_remaining">bugün %1$d / %2$d destek hakkı</string>
 
     <!-- Faz 10: ses durumu etiketi (disli ikonu yanilticiydi) -->
     <string name="dialog_sound_on">SES AÇIK</string>
@@ -258,7 +235,6 @@
     <string name="booster_air_support_name">Hava Desteği</string>
     <string name="booster_base_repair_name">Üs Tamiri</string>
 
-    <string name="booster_chip_ad">REKLAM</string>
     <!-- Bkz. values/strings.xml: ciplak sayi fiyatla karisiyordu. -->
     <string name="booster_chip_cooldown">BEKLE %1$d</string>
     <string name="booster_chip_confirm">ONAYLA</string>
@@ -278,20 +254,13 @@
     <string name="booster_msg_no_repair">Üs canı zaten tam</string>
     <string name="booster_msg_no_targets">Sahada düşman yok</string>
     <string name="booster_msg_spent">Bu savaşta hakkın doldu</string>
-    <string name="booster_msg_daily_ad">Günlük reklam hakkı doldu — gece yarısı yenilenir</string>
-    <string name="booster_msg_paid_first">Önce ücretli hakkını kullan</string>
     <string name="booster_repair_star_note">Onarılan can yıldıza sayılmaz</string>
 
     <string name="booster_desc_ready">%1$s. Bedeli %2$s. Hazır.</string>
-    <string name="booster_desc_ad">%1$s. Kısa bir reklamla bedava.</string>
     <string name="booster_desc_cooldown">%1$s. %2$d saniye sonra hazır.</string>
     <string name="booster_desc_blocked">%1$s. Kullanılamıyor: %2$s</string>
     <string name="booster_desc_armed">%1$s hazırlandı. Onaylamak için tekrar bas.</string>
 
-    <!-- Reklam yolu sonuclari. -->
-    <string name="booster_ad_applied">%1$s devrede</string>
-    <string name="booster_ad_unavailable">Şu an reklam yok — hiçbir hakkın harcanmadı</string>
-    <string name="booster_ad_failed">%1$s uygulanamadı</string>
 
     <!-- ==================== Elit Sevk + Prestij (ECONOMY_ANALYSIS C+B) ==== -->
     <string name="elite_choice_title">TEKRAR SEÇ</string>
@@ -317,23 +286,12 @@ Normal tekrar coin kazandırmaz; Elit Sevk bir meydan okumadır.</string>
 
     <!-- ==================== store (StoreScreen) — IAP, 2026-09-02 ==================== -->
     <string name="store_title">İKMAL DEPOSU</string>
-    <string name="store_section_remove_ads">REKLAMSIZ HAREKÂT</string>
-    <string name="store_remove_ads_title">REKLAMLARI KALDIR</string>
-    <string name="store_remove_ads_body">Savaşlar arasındaki tam ekran reklamlar kalkar. Tek seferlik; Google hesabına bağlıdır.</string>
-    <string name="store_remove_ads_note">İsteğe bağlı ödüllü reklamlar (bedava coin, güçlendirici) istersen açık kalır.</string>
-    <string name="store_owned">✓ SATIN ALINDI</string>
-    <string name="store_section_coins">COIN PAKETLERİ</string>
     <string name="store_pack_coins">%1$s COIN</string>
-    <string name="store_best_value">EN İYİ DEĞER</string>
-    <string name="store_unavailable">şu an satın alınamıyor</string>
-    <string name="store_connecting">Google Play\'e bağlanılıyor…</string>
-    <string name="store_restore">SATIN ALMALARI GERİ YÜKLE</string>
-    <string name="store_restore_running">KONTROL EDİLİYOR…</string>
-    <string name="store_restore_done">Hesabındaki satın almalar kontrol edildi.</string>
-    <string name="store_restore_failed">Google Play\'e ulaşılamadı. Bağlantını kontrol edip tekrar dene.</string>
-    <string name="store_restore_hint">Cihaz veya hesap değiştiysen reklamsız hakkını buradan geri al. Coin paketleri anında yazılır, geri yükleme gerektirmez.</string>
-    <string name="store_coins_hint">Coin ile bölüm kilidi açar, Cephanelik yükseltmesi, Prestij Nişanı, Elit Sevk ve savaş içi Hava Desteği alırsın.</string>
+    <string name="store_pack_ordinal">PAKET %1$d / %2$d</string>
+    <string name="store_price_loading">…</string>
+    <string name="store_price_unavailable">ŞU AN YOK</string>
     <string name="store_card_title">İkmal Deposu</string>
-    <string name="store_card_body">Coin al veya reklamları kaldır</string>
+    <string name="store_card_body">Coin paketleri al</string>
     <string name="store_card_open">AÇ</string>
+    <string name="store_card_packs">%1$d PAKET</string>
 </resources>

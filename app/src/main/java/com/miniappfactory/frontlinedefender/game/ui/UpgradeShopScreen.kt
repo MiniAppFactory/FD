@@ -5,7 +5,6 @@ import androidx.compose.foundation.background
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -22,6 +21,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.miniappfactory.frontlinedefender.R
@@ -30,15 +30,24 @@ import com.miniappfactory.frontlinedefender.game.economy.PrestigeDecision
 import com.miniappfactory.frontlinedefender.game.economy.EconomyConfig
 import com.miniappfactory.frontlinedefender.game.economy.MetaUpgrades
 import com.miniappfactory.frontlinedefender.game.economy.PurchaseDecision
+import com.miniappfactory.frontlinedefender.game.economy.StoreCatalog
 import com.miniappfactory.frontlinedefender.game.economy.UpgradeLine
 import com.miniappfactory.frontlinedefender.game.model.GameConfig
 import com.miniappfactory.frontlinedefender.ui.theme.*
 
 /**
+ * Cephanelik "geri" hedefinin dokunma tabani. Depodaki 44 dp kuralinin ayni
+ * degeri (`GameDialogs.MinTouchTarget`, `ArtToggleMinTouch`). Ilk halinde bu
+ * hedef ciplak 15 sp'lik bir `Text`ti: ~18 dp yuksekligindeydi (yazi tipinden
+ * TAHMIN edildi, calisma zamaninda olculmedi). Bkz. `ShopScreenTouchTest`.
+ */
+internal val ShopBackMinTouch = 44.dp
+
+/**
  * CEPHANELIK — kalici meta yukseltme dukkani.
  *
  * NEDEN VAR: kullanici testinde "ilk levellarda hic ihtiyacim olmadi" dedi ve
- * haklıydi — coin'in gidecek GORUNUR bir yeri yoktu, dolayisiyla reklam izlemek
+ * haklıydı — coin'in gidecek GORUNUR bir yeri yoktu, dolayisiyla reklam izlemek
  * de anlamsizdi. Ekonomi modeli (5 yukseltme hatti, rezerv kurali, fiyat
  * tablolari) bastan hazirdi; eksik olan tek sey bu ekrandi.
  *
@@ -74,22 +83,31 @@ fun UpgradeShopScreen(
         Column(Modifier.fillMaxSize()) {
 
             // ---- baslik seridi ----
+            // Dikey ic bosluk 12 -> 8 dp: "geri" hedefi 44 dp'ye cikti ve serit
+            // (8 + 44 + 8 = 60 dp) eski yukseklikte (12 + 36 coin cipi + 12)
+            // KALDI. Cocuklarin hepsi dikeyde ortali, yani gorunum kaymaz.
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(SleekSurfaceHeader)
-                    .padding(horizontal = 20.dp, vertical = 12.dp)
+                    .padding(horizontal = 20.dp, vertical = 8.dp)
             ) {
-                Text(
-                    text = stringResource(R.string.level_back),
-                    color = SleekTextAccent,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp,
+                Box(
+                    contentAlignment = Alignment.CenterStart,
                     modifier = Modifier
+                        .heightIn(min = ShopBackMinTouch)
+                        .widthIn(min = ShopBackMinTouch)
                         .clickable(onClick = onBack)
                         .testTag("shop_back")
-                )
+                ) {
+                    Text(
+                        text = stringResource(R.string.level_back),
+                        color = SleekTextAccent,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp
+                    )
+                }
                 Spacer(Modifier.width(20.dp))
                 Text(
                     text = stringResource(R.string.shop_title),
@@ -105,6 +123,8 @@ fun UpgradeShopScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         modifier = Modifier
+                            // 44 dp dokunma tabani: cip Ikmal Deposu kapisi (ShopBackMinTouch ile ayni kural).
+                            .heightIn(min = ShopBackMinTouch)
                             .clip(RoundedCornerShape(10.dp))
                             .background(Color(0x33FFD700))
                             .clickable(enabled = onOpenStore != null) { onOpenStore?.invoke() }
@@ -189,56 +209,326 @@ fun UpgradeShopScreen(
     }
 }
 
+// =============================================================================
+// KART SABLONU — TEK KAYNAK
+// =============================================================================
+
+/**
+ * `ui_card_shop.webp` (560 x 747) uzerindeki bolgeler. UpgradeCard, PrestigeCard
+ * ve StoreEntryCard'in UCU DE bu nesneyi kullanir; bolge sayisi artik uc kopya
+ * DEGIL (HANDOVER §5 sinif 2 — "ayni deger iki yerde, biri bayatlar": kalkan
+ * satiri bolum kartlarinda duzeltildiginde burada 0,645'te kalmisti).
+ *
+ * Bir bolge, kartin GENISLIK/YUKSEKLIGINE oranla dort ic bosluktur (`start` ve
+ * `end` genislige, `top` ve `bottom` yukseklige). Yerlestirme `w * fraction`
+ * ile yapilir: kart tek bir genislik secilerek (168 dp) kurulur, yukseklik
+ * sablonun oranindan turer.
+ *
+ * OLCUM (2026-09-30, `ui_card_shop.webp` piksel satirlari, WIC ile cozulerek):
+ *   satir 376  -> 0,5033   tam genislikte ayrac (baslik plakasinin alti)
+ *   satir 436  -> 0,5837   crosshair satirinin ALT cizgisi (x 168-446)
+ *   satir 450  -> 0,6024   tam genislikte ince ayrac (yuvanin ICINDE kalir)
+ *   satir 498  -> 0,6667   yama bolgesinin baslangici (dokuda 23 -> 57 luminans)
+ * Ayni uc deger `ui_card_available.webp` uzerinde de olculmustu ve LevelCard
+ * cihazda dogrulandi (2026-09-02). Ikon merkezleri: crosshair 0,5569 · kalkan
+ * 0,6412 (yani yuva merkezlerinin ~3 dp ALTINDA — bkz. asagidaki "yazi orta
+ * noktasi" notu).
+ *
+ * YAZI ORTA NOKTASI (cikarim, yeni kodda cihazda OLCULMEDI): Tema
+ * `bodyLarge`'i `lineHeight = 24.sp` tasir ve `MaterialTheme` bunu her `Text`e
+ * varsayilan verir. 18 dp'lik yuva 24 sp'lik satira SIGMAZ; metin yuvanin
+ * ustunden baslar ve ~3 dp asagiya tasar. Bu tasma tam olarak ikon
+ * merkezlerine denk gelir (yuva merkezi + ~3 dp ~ ikon merkezi). Ayni tasma
+ * `AutoShrinkText`in yuksekligi TASMA saymasina yol acar; yani bu yuvalardaki
+ * `AutoShrinkText` fiilen HEP taban punto (7 sp) ile cizilir — LevelCard'daki
+ * hedef/dalga satirlari gibi. v52 cihaz karesinde ayni sey baslik (22 dp band)
+ * ve buton (22,8 dp band) icin gorulur: ikisi de 11,5 / 10 sp yerine 7 sp.
+ */
+internal object ShopCardBands {
+
+    /** Genislik SECILIR, yukseklik sablonun oranindan turer. */
+    val CardWidth: Dp = 168.dp
+    const val ASPECT: Float = 560f / 747f
+
+    /** Sablondaki yatay ayrac cizgileri (y / h). */
+    const val DIVIDER_TOP: Float = 0.5033f
+    const val DIVIDER_MID: Float = 0.5837f
+    const val DIVIDER_BOTTOM: Float = 0.6667f
+
+    /** Bir bolge: kart olcusune KESIR olarak dort ic bosluk. */
+    data class Band(val start: Float, val top: Float, val end: Float, val bottom: Float) {
+        /** Sol / ust / sag / alt KENARIN kart icindeki konumu (0..1). */
+        val x0: Float get() = start
+        val y0: Float get() = top
+        val x1: Float get() = 1f - end
+        val y1: Float get() = 1f - bottom
+        val centreY: Float get() = (y0 + y1) / 2f
+        val height: Float get() = y1 - y0
+    }
+
+    /** Pencere: ikon / madeni para / (gelecekte) paket gorseli. */
+    val WINDOW = Band(start = 0.110f, top = 0.085f, end = 0.116f, bottom = 0.615f)
+
+    /** Baslik plakasi. */
+    val TITLE = Band(start = 0.14f, top = 0.408f, end = 0.14f, bottom = 0.492f)
+
+    /** Crosshair satiri — sablonun ilk metin yuvasi (0,5033 - 0,5837). */
+    val EFFECT = Band(start = 0.285f, top = DIVIDER_TOP, end = 0.13f, bottom = 1f - DIVIDER_MID)
+
+    /** Kalkan satiri — sablonun ikinci metin yuvasi (0,5837 - 0,6667). */
+    val SHIELD = Band(start = 0.285f, top = DIVIDER_MID, end = 0.13f, bottom = 1f - DIVIDER_BOTTOM)
+
+    /** Buton bandi (etiket; buton sanati sablonda GOMULU). */
+    val BUTTON = Band(start = 0.16f, top = 0.806f, end = 0.16f, bottom = 0.092f)
+
+    /** Numara dairesi: sol ust; `size` GENISLIGIN kesridir (kare daire). */
+    const val NUMBER_START: Float = 0.115f
+    const val NUMBER_TOP: Float = 0.077f
+    const val NUMBER_SIZE: Float = 0.165f
+
+    /** Nokta satirinin ust kenari (yama bolgesinde). */
+    const val DOTS_TOP: Float = 0.695f
+
+    /** Nokta capi: dolu / bos. Dolu-bos ayrimi boyutla da verilir (renk tek kanal degil). */
+    val DotFilled: Dp = 8.dp
+    val DotEmpty: Dp = 6.dp
+}
+
+private val ShopWindowBackground = Color(0xFF141A0E)
+private val ShopNumberColor = Color(0xFFEAF2DC)
+private val ShopTitleColor = Color(0xFFE8F0DC)
+private val ShopEffectColor = Color(0xFFAAB894)
+private val ShopShieldColor = Color(0xFFD8C46A)
+private val ShopDotEmptyColor = Color(0xFF49533E)
+private val ShopButtonActiveColor = Color(0xFFDCE8CC)
+private val ShopButtonInactiveColor = Color(0x99C5D6B4)
+
+private fun Modifier.inShopBand(band: ShopCardBands.Band, w: Dp, h: Dp): Modifier =
+    padding(
+        start = w * band.start,
+        top = h * band.top,
+        end = w * band.end,
+        bottom = h * band.bottom
+    ).fillMaxSize()
+
+/**
+ * Cephanelik kart cercevesi — UC kart (yukseltme, prestij, ikmal deposu) ayni
+ * cerceveyi kullanir.
+ *
+ * BOLGELERIN ANLAMI (bolum kartlariyla ayni dil; kullanici istegi 2026-08-26):
+ *   pencere        -> [window] (ikon / madeni para; koyu zeminde, Fit)
+ *   numara dairesi -> [number] (null ise BOS: magaza ilerleme kalemi degil, kapi)
+ *   baslik bandi   -> [title]
+ *   crosshair sat. -> [effect] (TEK satir, 9 -> 7 sp)
+ *   kalkan satiri  -> [shield]
+ *   yama bolgesi   -> [dotCount] nokta, ilk [dotsFilled] tanesi dolu
+ *   buton bandi    -> [buttonLabel] (fiyat / MAKS / kisit etiketi / AC)
+ *
+ * EFFECT NEDEN TEK SATIR: eski band (0,478 / 0,392) iki satira izin veriyordu
+ * ama sablonun iki ayrac cizgisini (0,5033 ve 0,5837) YIYORDU; yuva yalnizca
+ * ~18 dp. O iki satirin sebebi ("etki cumleleri hedeften uzun, tek satir
+ * kesiyordu") cumleler kisaltilinca ortadan kalkti — en uzun etki metni
+ * ("Next: Command Insignia") ~98 dp'lik yuvada 9 sp'de ~97, 7 sp'de ~77 dp
+ * (java.awt yazi olcusunun, v52 cihaz karesindeki tek bir olcume kalibre
+ * edilmis TAHMINI — calisma zamaninda olculmedi; cihazda dogrulanmali).
+ *
+ * SAF DESEN: sablon sanati + metin bandi. Buton/`Surface` YOK — S8 (API 24)
+ * buyuk sablon ile ayni kapta Material `Surface` butonunu METINSIZ ciziyor
+ * (HANDOVER §1c). Tiklama kartin kendisinde (`clickable`).
+ */
 @Composable
-private fun StoreEntryCard(onOpen: () -> Unit) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.SpaceBetween,
-        modifier = Modifier
-            .width(150.dp)
-            .fillMaxHeight()
-            .clip(RoundedCornerShape(14.dp))
-            .background(SleekSurfaceCard)
-            .border(1.dp, SleekGoldBorder, RoundedCornerShape(14.dp))
-            .clickable(onClick = onOpen)
-            .padding(horizontal = 12.dp, vertical = 12.dp)
-            .testTag("store_entry_card")
+internal fun ShopCardFrame(
+    cardTag: String,
+    number: String?,
+    title: String,
+    effect: String,
+    shield: String,
+    dotCount: Int,
+    dotsFilled: Int,
+    buttonLabel: String,
+    buttonActive: Boolean,
+    buttonTag: String,
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
+    window: @Composable BoxScope.() -> Unit
+) {
+    BoxWithConstraints(
+        modifier = modifier
+            .width(ShopCardBands.CardWidth)
+            .aspectRatio(ShopCardBands.ASPECT)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .testTag(cardTag)
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            SpriteIcon(id = R.drawable.spr_ic_coins, size = 40.dp, contentDescription = null)
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = stringResource(R.string.store_card_title),
-                color = SleekGold,
-                fontWeight = FontWeight.ExtraBold,
-                fontSize = 14.sp,
+        val w = maxWidth
+        val h = maxHeight
+
+        // PENCERE — sablonun ALTINDA (sablonun penceresi seffaf).
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .inShopBand(ShopCardBands.WINDOW, w, h)
+                .background(ShopWindowBackground),
+            content = window
+        )
+
+        Image(
+            painter = painterResource(R.drawable.ui_card_shop),
+            contentDescription = null,
+            contentScale = ContentScale.FillBounds,
+            modifier = Modifier.matchParentSize()
+        )
+
+        // NUMARA DAIRESI — yalnizca deger varsa.
+        if (number != null) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .padding(start = w * ShopCardBands.NUMBER_START, top = h * ShopCardBands.NUMBER_TOP)
+                    .size(w * ShopCardBands.NUMBER_SIZE)
+            ) {
+                AutoShrinkText(
+                    text = number,
+                    color = ShopNumberColor,
+                    maxFontSize = 13.sp,
+                    minFontSize = 9.sp,
+                    fontWeight = FontWeight.Black,
+                    maxLines = 1,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+
+        // BASLIK
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier.inShopBand(ShopCardBands.TITLE, w, h)
+        ) {
+            AutoShrinkText(
+                text = title,
+                color = ShopTitleColor,
+                fontWeight = FontWeight.Black,
+                maxFontSize = 11.5.sp,
+                minFontSize = 7.sp,
+                maxLines = 1,
                 textAlign = TextAlign.Center,
-                maxLines = 2,
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = stringResource(R.string.store_card_body),
-                color = SleekTextAccent.copy(alpha = 0.75f),
-                fontSize = 11.sp,
-                textAlign = TextAlign.Center,
-                maxLines = 3,
+                modifier = Modifier.fillMaxWidth()
             )
         }
-        Text(
-            text = stringResource(R.string.store_card_open),
-            color = Color.White,
-            fontWeight = FontWeight.Black,
-            fontSize = 13.sp,
-            textAlign = TextAlign.Center,
+
+        // ETKI — crosshair satiri (ikon sablonda GOMULU, metin sola hizali).
+        Box(
+            contentAlignment = Alignment.CenterStart,
+            modifier = Modifier.inShopBand(ShopCardBands.EFFECT, w, h)
+        ) {
+            AutoShrinkText(
+                text = effect,
+                color = ShopEffectColor,
+                maxFontSize = 9.sp,
+                minFontSize = 7.sp,
+                maxLines = 1,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        // KALKAN SATIRI — kademe n/m, paket sayisi vb.
+        Box(
+            contentAlignment = Alignment.CenterStart,
+            modifier = Modifier.inShopBand(ShopCardBands.SHIELD, w, h)
+        ) {
+            Text(
+                text = shield,
+                color = ShopShieldColor,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1
+            )
+        }
+
+        // NOKTALAR — yamali bolgede. Dolu/bos ayrimi boyutla da verilir.
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(3.dp),
+            verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(10.dp))
-                .background(SleekPrimaryGreen)
-                .padding(vertical = 10.dp)
-                .testTag("store_entry_open")
-        )
+                .padding(top = h * ShopCardBands.DOTS_TOP)
+                .align(Alignment.TopCenter)
+        ) {
+            repeat(dotCount) { i ->
+                val filled = i < dotsFilled
+                Box(
+                    Modifier
+                        .size(if (filled) ShopCardBands.DotFilled else ShopCardBands.DotEmpty)
+                        .clip(RoundedCornerShape(50))
+                        .background(if (filled) SleekGold else ShopDotEmptyColor)
+                )
+            }
+        }
+
+        // FIYAT / DURUM — buton bandi (buton sanati sablonda gomulu).
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .inShopBand(ShopCardBands.BUTTON, w, h)
+                .testTag(buttonTag)
+        ) {
+            AutoShrinkText(
+                text = buttonLabel,
+                color = if (buttonActive) ShopButtonActiveColor else ShopButtonInactiveColor,
+                maxFontSize = 10.sp,
+                minFontSize = 7.sp,
+                fontWeight = FontWeight.Black,
+                maxLines = 1,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
     }
 }
+
+// =============================================================================
+// 7. KART — IKMAL DEPOSU GIRISI
+// =============================================================================
+
+/**
+ * Ikmal Deposu girisi. Numara dairesi BOS (kapi, ilerleme kalemi degil);
+ * pencere madeni para; noktalar = paket sayisi ([StoreCatalog.coinPacks]'ten,
+ * elle yazilmis "5" DEGIL). Metin reklamsizdir: oyundan tum reklamlar kalkiyor.
+ */
+@Composable
+private fun StoreEntryCard(onOpen: () -> Unit) {
+    val packCount = StoreCatalog.coinPacks.size
+    ShopCardFrame(
+        cardTag = "store_entry_card",
+        onClick = onOpen,
+        number = null,
+        title = stringResource(R.string.store_card_title),
+        effect = stringResource(R.string.store_card_body),
+        shield = stringResource(R.string.store_card_packs, packCount),
+        dotCount = packCount,
+        dotsFilled = packCount,
+        buttonLabel = stringResource(R.string.store_card_open),
+        buttonActive = true,
+        buttonTag = "store_entry_open",
+        window = { StoreCardWindow() }
+    )
+}
+
+/**
+ * Ikmal Deposu kartinin pencere ICERIGI — bilerek kucuk ve DEGISTIRILEBILIR:
+ * paket basina gorsel gelince yalnizca bu govde degisir, cerceve/bandlar degil.
+ */
+@Composable
+private fun BoxScope.StoreCardWindow() {
+    Image(
+        painter = painterResource(R.drawable.spr_ic_coins),
+        contentDescription = null,
+        contentScale = ContentScale.Fit,
+        modifier = Modifier.fillMaxSize(0.62f)
+    )
+}
+
+// =============================================================================
+// YUKSELTME KARTI
+// =============================================================================
 
 @Composable
 private fun UpgradeCard(
@@ -249,54 +539,41 @@ private fun UpgradeCard(
     val upgrades = progress.metaUpgrades
     val rank = upgrades.rankOf(line)
     val decision = progress.purchaseDecision(line)
-
-    // =========================================================================
-    // BOLUM KARTLARIYLA AYNI DIL (kullanici istegi 2026-08-26: "cephanelikteki
-    // kartlar ... bolum kartlari gibi tasarla").
-    //
-    // Sablon `ui_card_shop`: available sablonunun YILDIZSIZ turevi (uretici
-    // tools/ui_art_pipeline.py — yildiz bandi pencere dokusuyla yamali).
-    // Bolum kartindaki bolgeler burada su anlamlari tasir:
-    //   pencere       -> yukseltme hattinin IKONU (savastaki sprite'in kendisi)
-    //   numara dairesi -> mevcut KADEME
-    //   baslik bandi  -> hat adi
-    //   crosshair sat. -> bir SONRAKI kademenin etkisi
-    //   kalkan satiri -> KADEME n/m
-    //   yama bolgesi  -> kademe NOKTALARI (dolu/bos — renk tek kanal degil)
-    //   buton bandi   -> fiyat / MAKS / kisit etiketi
-    // =========================================================================
     val satinAlinabilir = decision is PurchaseDecision.Allowed
 
-    BoxWithConstraints(
-        modifier = Modifier
-            .width(168.dp)
-            .aspectRatio(560f / 747f)
-            .then(
-                if (satinAlinabilir) {
-                    Modifier.clickable {
-                        if (progress.buyUpgrade(line) is PurchaseDecision.Allowed) onBought()
-                    }
-                } else Modifier
-            )
-            .testTag("upgrade_card_${line.name}")
-    ) {
-        val w = maxWidth
-        val h = maxHeight
+    // FIYAT / DURUM etiketi.
+    val etiket = when (decision) {
+        is PurchaseDecision.Allowed -> stringResource(R.string.shop_buy, decision.price)
+        is PurchaseDecision.MaxRank -> stringResource(R.string.shop_max)
+        is PurchaseDecision.InsufficientFunds ->
+            stringResource(R.string.shop_short, decision.shortfall)
+        is PurchaseDecision.RankGated ->
+            stringResource(R.string.shop_gated, decision.requiredClearedLevel)
+        else -> stringResource(R.string.shop_reserve_blocked)
+    }
 
-        // IKON — pencerede, koyu zeminde. Kupurun aksine kenardan kenara
-        // degil ORTALI: sprite'lar dikdortgen doldurmaz, Fit ile ortalanir.
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .padding(
-                    start = w * 0.110f,
-                    top = h * 0.085f,
-                    end = w * 0.116f,
-                    bottom = h * 0.615f
-                )
-                .fillMaxSize()
-                .background(Color(0xFF141A0E))
-        ) {
+    ShopCardFrame(
+        cardTag = "upgrade_card_${line.name}",
+        onClick = if (satinAlinabilir) {
+            { if (progress.buyUpgrade(line) is PurchaseDecision.Allowed) onBought() }
+        } else null,
+        // KADEME — numara dairesinde.
+        number = stringResource(R.string.level_number, rank),
+        title = stringResource(lineNameRes(line)),
+        // Bir SONRAKI kademenin toplam etkisi.
+        effect = stringResource(
+            lineEffectRes(line),
+            effectValue(line, (rank + 1).coerceAtMost(line.maxRank))
+        ),
+        shield = stringResource(R.string.shop_rank, rank, line.maxRank),
+        dotCount = line.maxRank,
+        dotsFilled = rank,
+        buttonLabel = etiket,
+        buttonActive = satinAlinabilir,
+        buttonTag = "upgrade_buy_${line.name}",
+        window = {
+            // IKON — oyundan TANIDIK sprite; kupurun aksine kenardan kenara
+            // degil ORTALI: sprite'lar dikdortgen doldurmaz, Fit ile ortalanir.
             Image(
                 painter = painterResource(lineIconRes(line)),
                 contentDescription = null,
@@ -304,159 +581,7 @@ private fun UpgradeCard(
                 modifier = Modifier.fillMaxSize(0.72f)
             )
         }
-
-        Image(
-            painter = painterResource(R.drawable.ui_card_shop),
-            contentDescription = null,
-            contentScale = ContentScale.FillBounds,
-            modifier = Modifier.matchParentSize()
-        )
-
-        // KADEME — numara dairesinde.
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .padding(start = w * 0.115f, top = h * 0.077f)
-                .size(w * 0.165f)
-        ) {
-            AutoShrinkText(
-                text = stringResource(R.string.level_number, rank),
-                color = Color(0xFFEAF2DC),
-                maxFontSize = 13.sp,
-                minFontSize = 9.sp,
-                fontWeight = FontWeight.Black,
-                maxLines = 1,
-                textAlign = TextAlign.Center
-            )
-        }
-
-        // HAT ADI — baslik bandinda.
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .padding(
-                    start = w * 0.14f,
-                    end = w * 0.14f,
-                    top = h * 0.408f,
-                    bottom = h * 0.492f
-                )
-                .fillMaxSize()
-        ) {
-            AutoShrinkText(
-                text = stringResource(lineNameRes(line)),
-                color = Color(0xFFE8F0DC),
-                fontWeight = FontWeight.Black,
-                maxFontSize = 11.5.sp,
-                minFontSize = 7.sp,
-                maxLines = 1,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-
-        // ETKI — crosshair satirinda: bir SONRAKI kademenin toplam etkisi.
-        Box(
-            contentAlignment = Alignment.CenterStart,
-            modifier = Modifier
-                .padding(
-                    start = w * 0.285f,
-                    end = w * 0.13f,
-                    // Etki cumleleri bolum hedeflerinden UZUN ("Tum
-                    // kulelerin atis mesafesi +%5") — tek satir kesiyordu
-                    // (cihazda goruldu). Iki satira izin verilir; band
-                    // kalkan satirina (0,605) kadar buyutuldu.
-                    top = h * 0.478f,
-                    bottom = h * 0.392f
-                )
-                .fillMaxSize()
-        ) {
-            AutoShrinkText(
-                text = stringResource(
-                    lineEffectRes(line),
-                    effectValue(line, (rank + 1).coerceAtMost(line.maxRank))
-                ),
-                color = Color(0xFFAAB894),
-                maxFontSize = 9.sp,
-                minFontSize = 7.sp,
-                maxLines = 2,
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-
-        // KADEME n/m — kalkan satirinda.
-        Box(
-            contentAlignment = Alignment.CenterStart,
-            modifier = Modifier
-                .padding(
-                    start = w * 0.285f,
-                    end = w * 0.13f,
-                    top = h * 0.605f,
-                    bottom = h * 0.315f
-                )
-                .fillMaxSize()
-        ) {
-            Text(
-                text = stringResource(R.string.shop_rank, rank, line.maxRank),
-                color = Color(0xFFD8C46A),
-                fontSize = 9.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1
-            )
-        }
-
-        // KADEME NOKTALARI — eski kartin gostergesi, yamali bolgede.
-        // Dolu/bos ayrimi boyutla da verilir (renk tek kanal degil).
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(3.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .padding(top = h * 0.695f)
-                .align(Alignment.TopCenter)
-        ) {
-            repeat(line.maxRank) { i ->
-                Box(
-                    Modifier
-                        .size(if (i < rank) 8.dp else 6.dp)
-                        .clip(RoundedCornerShape(50))
-                        .background(if (i < rank) SleekGold else Color(0xFF49533E))
-                )
-            }
-        }
-
-        // FIYAT / DURUM — buton bandinda (bolum kartiyla ayni band).
-        val etiket = when (decision) {
-            is PurchaseDecision.Allowed -> stringResource(R.string.shop_buy, decision.price)
-            is PurchaseDecision.MaxRank -> stringResource(R.string.shop_max)
-            is PurchaseDecision.InsufficientFunds ->
-                stringResource(R.string.shop_short, decision.shortfall)
-            is PurchaseDecision.RankGated ->
-                stringResource(R.string.shop_gated, decision.requiredClearedLevel)
-            else -> stringResource(R.string.shop_reserve_blocked)
-        }
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .padding(
-                    start = w * 0.16f,
-                    end = w * 0.16f,
-                    top = h * 0.806f,
-                    bottom = h * 0.092f
-                )
-                .fillMaxSize()
-                .testTag("upgrade_buy_${line.name}")
-        ) {
-            AutoShrinkText(
-                text = etiket,
-                color = if (satinAlinabilir) Color(0xFFDCE8CC) else Color(0x99C5D6B4),
-                maxFontSize = 10.sp,
-                minFontSize = 7.sp,
-                fontWeight = FontWeight.Black,
-                maxLines = 1,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-    }
+    )
 }
 
 /**
@@ -508,10 +633,10 @@ private fun effectValue(line: UpgradeLine, rank: Int): Int {
 }
 
 /**
- * Prestij Nisani karti — tamamen KOZMETIK derin emici (toplam 19.900).
+ * Prestij Nisani karti — tamamen KOZMETIK derin emici.
  *
- * [UpgradeCard] ile ayni sablon yerlesimi; kopya olmasinin sebebi
- * `UpgradeLine`a bagimli olmamasi (bkz. cagri yerindeki not).
+ * [UpgradeCard] ile ayni cerceve ([ShopCardFrame]); ayri kompozisyon olmasinin
+ * sebebi `UpgradeLine`a bagimli olmamasi (bkz. cagri yerindeki not).
  */
 @Composable
 private fun PrestigeCard(
@@ -522,32 +647,39 @@ private fun PrestigeCard(
     val decision = progress.prestigeDecision()
     val satinAlinabilir = decision is PrestigeDecision.Allowed
 
-    BoxWithConstraints(
-        modifier = Modifier
-            .width(168.dp)
-            .aspectRatio(560f / 747f)
-            .then(
-                if (satinAlinabilir) {
-                    Modifier.clickable { if (progress.buyPrestige()) onBought() }
-                } else Modifier
-            )
-            .testTag("prestige_card")
-    ) {
-        val w = maxWidth
-        val h = maxHeight
+    val etiket = when (decision) {
+        is PrestigeDecision.Allowed -> stringResource(R.string.shop_buy, decision.price)
+        is PrestigeDecision.MaxRank -> stringResource(R.string.shop_max)
+        is PrestigeDecision.InsufficientFunds ->
+            stringResource(R.string.shop_short, decision.shortfall)
+        is PrestigeDecision.ReserveLocked ->
+            stringResource(R.string.shop_reserve_blocked)
+    }
 
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .padding(
-                    start = w * 0.110f,
-                    top = h * 0.085f,
-                    end = w * 0.116f,
-                    bottom = h * 0.615f
-                )
-                .fillMaxSize()
-                .background(Color(0xFF141A0E))
-        ) {
+    ShopCardFrame(
+        cardTag = "prestige_card",
+        onClick = if (satinAlinabilir) {
+            { if (progress.buyPrestige()) onBought() }
+        } else null,
+        number = stringResource(R.string.level_number, rank),
+        title = stringResource(R.string.prestige_title),
+        effect = if (rank >= EconomyConfig.PRESTIGE_MAX) {
+            stringResource(R.string.prestige_effect_max)
+        } else {
+            stringResource(
+                R.string.prestige_effect_next,
+                stringResource(prestigeNameRes(rank + 1))
+            )
+        },
+        shield = stringResource(
+            R.string.prestige_rank_label, rank, EconomyConfig.PRESTIGE_MAX
+        ),
+        dotCount = EconomyConfig.PRESTIGE_MAX,
+        dotsFilled = rank,
+        buttonLabel = etiket,
+        buttonActive = satinAlinabilir,
+        buttonTag = "prestige_buy",
+        window = {
             Image(
                 painter = painterResource(R.drawable.spr_ic_victory_star),
                 contentDescription = null,
@@ -555,156 +687,10 @@ private fun PrestigeCard(
                 modifier = Modifier.fillMaxSize(0.62f)
             )
         }
-
-        Image(
-            painter = painterResource(R.drawable.ui_card_shop),
-            contentDescription = null,
-            contentScale = ContentScale.FillBounds,
-            modifier = Modifier.matchParentSize()
-        )
-
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .padding(start = w * 0.115f, top = h * 0.077f)
-                .size(w * 0.165f)
-        ) {
-            AutoShrinkText(
-                text = stringResource(R.string.level_number, rank),
-                color = Color(0xFFEAF2DC),
-                maxFontSize = 13.sp,
-                minFontSize = 9.sp,
-                fontWeight = FontWeight.Black,
-                maxLines = 1,
-                textAlign = TextAlign.Center
-            )
-        }
-
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .padding(
-                    start = w * 0.14f,
-                    end = w * 0.14f,
-                    top = h * 0.408f,
-                    bottom = h * 0.492f
-                )
-                .fillMaxSize()
-        ) {
-            AutoShrinkText(
-                text = stringResource(R.string.prestige_title),
-                color = Color(0xFFE8F0DC),
-                fontWeight = FontWeight.Black,
-                maxFontSize = 11.5.sp,
-                minFontSize = 7.sp,
-                maxLines = 1,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-
-        Box(
-            contentAlignment = Alignment.CenterStart,
-            modifier = Modifier
-                .padding(
-                    start = w * 0.285f,
-                    end = w * 0.13f,
-                    top = h * 0.478f,
-                    bottom = h * 0.392f
-                )
-                .fillMaxSize()
-        ) {
-            AutoShrinkText(
-                text = if (rank >= EconomyConfig.PRESTIGE_MAX) {
-                    stringResource(R.string.prestige_effect_max)
-                } else {
-                    stringResource(
-                        R.string.prestige_effect_next,
-                        stringResource(prestigeNameRes(rank + 1))
-                    )
-                },
-                color = Color(0xFFAAB894),
-                maxFontSize = 9.sp,
-                minFontSize = 7.sp,
-                maxLines = 2,
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-
-        Box(
-            contentAlignment = Alignment.CenterStart,
-            modifier = Modifier
-                .padding(
-                    start = w * 0.285f,
-                    end = w * 0.13f,
-                    top = h * 0.605f,
-                    bottom = h * 0.315f
-                )
-                .fillMaxSize()
-        ) {
-            Text(
-                text = stringResource(
-                    R.string.prestige_rank_label, rank, EconomyConfig.PRESTIGE_MAX
-                ),
-                color = Color(0xFFD8C46A),
-                fontSize = 9.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1
-            )
-        }
-
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(3.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .padding(top = h * 0.695f)
-                .align(Alignment.TopCenter)
-        ) {
-            repeat(EconomyConfig.PRESTIGE_MAX) { i ->
-                Box(
-                    Modifier
-                        .size(if (i < rank) 8.dp else 6.dp)
-                        .clip(RoundedCornerShape(50))
-                        .background(if (i < rank) SleekGold else Color(0xFF49533E))
-                )
-            }
-        }
-
-        val etiket = when (decision) {
-            is PrestigeDecision.Allowed -> stringResource(R.string.shop_buy, decision.price)
-            is PrestigeDecision.MaxRank -> stringResource(R.string.shop_max)
-            is PrestigeDecision.InsufficientFunds ->
-                stringResource(R.string.shop_short, decision.shortfall)
-            is PrestigeDecision.ReserveLocked ->
-                stringResource(R.string.shop_reserve_blocked)
-        }
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .padding(
-                    start = w * 0.16f,
-                    end = w * 0.16f,
-                    top = h * 0.806f,
-                    bottom = h * 0.092f
-                )
-                .fillMaxSize()
-                .testTag("prestige_buy")
-        ) {
-            AutoShrinkText(
-                text = etiket,
-                color = if (satinAlinabilir) Color(0xFFDCE8CC) else Color(0x99C5D6B4),
-                maxFontSize = 10.sp,
-                minFontSize = 7.sp,
-                fontWeight = FontWeight.Black,
-                maxLines = 1,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-    }
+    )
 }
 
-/** Nisan adi — kademe 1..5. */
+/** Nisan adi — kademe 1..7. */
 fun prestigeNameRes(rank: Int): Int = when (rank.coerceIn(1, EconomyConfig.PRESTIGE_MAX)) {
     1 -> R.string.prestige_name_1
     2 -> R.string.prestige_name_2
@@ -714,4 +700,3 @@ fun prestigeNameRes(rank: Int): Int = when (rank.coerceIn(1, EconomyConfig.PREST
     6 -> R.string.prestige_name_6
     else -> R.string.prestige_name_7
 }
-

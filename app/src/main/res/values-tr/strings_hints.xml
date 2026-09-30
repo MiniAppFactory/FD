@@ -67,9 +67,8 @@
 
     <string name="hint_booster_effect_supply">+%1$d Tedarik</string>
     <string name="hint_booster_effect_damage">herkese %%%1$d hasar</string>
-    <string name="hint_booster_effect_repair">+%%%1$d üs canı</string>
+    <string name="hint_booster_effect_repair">+%1$d üs canı</string>
 
-    <string name="hint_booster_cost_ad">reklamla ücretsiz</string>
     <string name="hint_booster_cost_supply">%1$d Tedarik</string>
     <string name="hint_booster_cost_coin">%1$d Coin</string>
 

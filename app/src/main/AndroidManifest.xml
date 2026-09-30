@@ -2,13 +2,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Faz 5 — AdMob. Oyun OFFLINE oynanabilir: INTERNET izni yalnizca reklam
-         ve riza (UMP) icin var, oynanis icin gerekli DEGIL. Ag yoksa reklamsiz
-         akis calisir, hicbir ekran bloklanmaz. -->
-    <uses-permission android:name="android.permission.INTERNET" />
-    <!-- Mobile Ads SDK bunu kendi manifest'inde de bildirir; burada acikca
-         yazilmasi izin denetimini (Play Data Safety) okunur kilar. -->
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Oyun tamamen OFFLINE oynanir. INTERNET ve ACCESS_NETWORK_STATE izinlerini bu dosya
+         artik BILDIRMEZ (yalnizca reklam ve riza SDK'lari icindi; 2026-09-30'da kaldirildi).
+         Birlesik manifest'te bu ikisi yine gorunur: Play Billing kutuphanesi
+         (billing-ktx 8.0.0 -> datatransport `transport-backend-cct`) kendi telemetrisi icin
+         ekler. Oynanista kullanilmazlar; Data Safety/gizlilik taslaklari BIRLESIK manifest'e
+         gore yazilir (bkz. store/listing). Play Billing izni (com.android.vending.BILLING)
+         de kutuphanenin manifest'inden gelir. -->
 
     <!-- Haptik geri bildirim (game/audio/HapticsManager.kt).
 
@@ -46,29 +46,6 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-
-        <!-- Faz 5 — AdMob App ID. Bu meta-data OLMAZSA uygulama SDK
-             baslatilirken CRASH eder (SDK'nin bilincli davranisi).
-
-             Su anki deger Google'in herkese acik TEST App ID'sidir
-             (ca-app-pub-3940256099942544~3347511713) — DECISIONS "Reklam
-             doktrini": ilk APK'da yalnizca test kimlikleri. Gercek App ID
-             ayri bir karar + kullanici onayi gerektirir ve degistirildiginde
-             AdIds.PRODUCTION_APP_ID ile AYNI olmak zorundadir. -->
-        <meta-data
-            android:name="com.google.android.gms.ads.APPLICATION_ID"
-            android:value="${admobAppId}" />
-
-        <!-- SDK baslatma ve reklam yukleme islerini ana is parcacigindan
-             cikarir (acilis jank'i ve ANR riskini azaltir). SDK zaten kendi
-             kendine baslamaz: MobileAds.initialize cagrisi AdMobAdHost
-             tarafindan, ancak riza (canRequestAds) okunduktan SONRA yapilir. -->
-        <meta-data
-            android:name="com.google.android.gms.ads.flag.OPTIMIZE_INITIALIZATION"
-            android:value="true" />
-        <meta-data
-            android:name="com.google.android.gms.ads.flag.OPTIMIZE_AD_LOADING"
-            android:value="true" />
     </application>
 
 </manifest>

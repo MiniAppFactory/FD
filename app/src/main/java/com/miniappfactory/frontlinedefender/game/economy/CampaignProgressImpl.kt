@@ -4,6 +4,8 @@ import android.os.SystemClock
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.miniappfactory.frontlinedefender.game.billing.GrantResult
+import com.miniappfactory.frontlinedefender.game.billing.PurchaseGrantRequest
 import com.miniappfactory.frontlinedefender.game.data.SaveManager
 import com.miniappfactory.frontlinedefender.game.ui.CampaignProgress
 import java.util.TimeZone
@@ -39,8 +41,6 @@ class CampaignProgressImpl(
     private var wallet by mutableStateOf(saveManager.loadWallet())
     private var upgrades by mutableStateOf(saveManager.loadMetaUpgrades())
     private var missionState by mutableStateOf(saveManager.loadMissionState())
-    private var requisition by mutableStateOf(saveManager.loadRequisitionState())
-    private var boostedReplaysToday by mutableStateOf(saveManager.boostedReplaysUsedToday)
 
     // ---- Elit Sevk + Prestij (ECONOMY_ANALYSIS C+B) --------------------------
     private var eliteClearsState by mutableStateOf(saveManager.eliteClears)
@@ -74,27 +74,16 @@ class CampaignProgressImpl(
      *
      * `battleBoosters` bilincli olarak SIFIRLANIR: savasa kapsamli ve
      * sifirlanmis bir ilerlemenin uzerinde bayat kalmasi anlamsiz olurdu.
-     * `boosterAdViewsToday` artik KALICI oldugu icin depodan okunur.
-     *
-     * `adsRemovedState` de yeniden okunur ama `resetProgress` ona DOKUNMAZ
-     * (`PRESERVED_ON_RESET`) — para odenmis hak silinmez; buradaki okuma
-     * yalnizca bellekteki kopyayi depoyla ayni tutar.
      */
     fun reloadFromStore() {
         wallet = saveManager.loadWallet()
         upgrades = saveManager.loadMetaUpgrades()
         missionState = saveManager.loadMissionState()
-        requisition = saveManager.loadRequisitionState()
-        boostedReplaysToday = saveManager.boostedReplaysUsedToday
         eliteClearsState = saveManager.eliteClears
         prestigeRankState = saveManager.prestigeRank
-        adsRemovedState = saveManager.adsRemoved
-        // Depodan OKUNUR (sabit 0 degil): metodun sozlesmesi "her seyi depodan
-        // yeniden oku". Sifirlama sonrasi zaten 0 doner cunku anahtar
-        // PRESERVED_ON_RESET disinda; ama baska bir cagiran eklenirse bu satir
-        // sessizce yanlis olmaz.
-        boosterAdViewsToday = saveManager.boosterAdViewsToday
         battleBoosters = null
+        continuesUsed = 0
+        boosterUndo = null
         daily = emptyList()
         refreshMissions()
         // Sifirlanmis kayit soft-lock invariant'ini da saglamak zorunda.
@@ -141,18 +130,28 @@ class CampaignProgressImpl(
         return true
     }
 
-    // ---- IAP (2026-09-02) — coin paketleri + "Reklamlari Kaldir" ----------------
-
-    private var adsRemovedState by mutableStateOf(saveManager.adsRemoved)
-
-    /** "Reklamlari Kaldir" alinmis mi (Compose'un izledigi kopya). */
-    val adsRemoved: Boolean get() = adsRemovedState
+    // ---- IAP — coin paketleri (2026-09-02; 2026-09-30: reklamlar tamamen kaldirildi) ----
 
     /** Satin alinan toplam coin — rapor/telemetri. */
     val lifetimePurchasedCoins: Int get() = saveManager.lifetimePurchasedCoins
 
     /**
-     * Play'den (veya debug'da FakeBilling'den) gelen coin paketini yazar.
+     * Play'den (veya debug'da FakeBilling'den) gelen satin almayi DAYANIKLI defterle yazar ve
+     * ACIK sonuc doner ([GrantResult]); `consume` yalnizca `Granted` / eslesen `AlreadyGranted`
+     * sonrasi yapilir. Cuzdanin sahibi bu sinif oldugundan `Granted` sonrasi bellekteki kopya
+     * depodan yenilenir — yenilenmezse bir sonraki `commitWallet` satin alinan coini ustune yazar.
+     */
+    fun grantPurchase(request: PurchaseGrantRequest): GrantResult {
+        val result = saveManager.fulfillPurchase(request)
+        if (result is GrantResult.Granted) {
+            wallet = saveManager.loadWallet()
+            analytics("iap_coins_granted", mapOf("coins" to request.coins))
+        }
+        return result
+    }
+
+    /**
+     * ESKI (jeton, coin) sekilli giris — yalnizca debug paneli ve testler icin.
      * IDEMPOTENT: kayit `SaveManager`da, burasi yalnizca cuzdan state'ini
      * yeniler. `true` = yazildi, cagiran `consume` edebilir.
      */
@@ -165,13 +164,15 @@ class CampaignProgressImpl(
         return ok
     }
 
-    /** Play'in soyledigi son durum. Her `restorePurchases`te cagrilir. */
-    fun setAdsRemoved(purchased: Boolean) {
-        if (saveManager.adsRemoved != purchased) {
-            saveManager.adsRemoved = purchased
-            analytics("iap_remove_ads", mapOf("purchased" to purchased))
+    /**
+     * ESKI "Reklamlari Kaldir" alicisi isareti. YAPISKAN: yalniz `true` yazilir, hicbir yol `false`
+     * yazmaz (odenmis hak silinmez). Oyunda artik reklam yok; isaret yalnizca satin alma tarihcesidir.
+     */
+    fun noteLegacyAdFreePurchase() {
+        if (!saveManager.adsRemoved) {
+            saveManager.adsRemoved = true
+            analytics("iap_legacy_remove_ads", emptyMap())
         }
-        adsRemovedState = purchased
     }
 
     private var daily by mutableStateOf<List<Mission>>(emptyList())
@@ -192,18 +193,6 @@ class CampaignProgressImpl(
 
     /** Bu savasin olcumu goreve islendi mi? Zafer + cikis yolunun ikisi de flush eder. */
     private var battleMissionsFlushed by mutableStateOf(false)
-
-    /**
-     * Faz 10 — guclendirici gunluk reklam sayaci.
-     *
-     * **Bilincli olarak KALICI DEGIL.** Guclendirici reklami hicbir coin odemez
-     * (BoosterSystem.kt dosya basi 3), dolayisiyla uygulamayi yeniden baslatarak
-     * sifirlamak bir *ekonomi* exploit'i degildir: oyuncu yalnizca daha fazla reklam
-     * izleyebilir (gelir yonu olumlu) ve savas basina 1 kullanim limiti degismez.
-     * Kalici hale getirmek istenirse `SaveManager`'a tek `Int` alani yeter —
-     * ECONOMY_SPEC 9 devir listesi madde 5.
-     */
-    private var boosterAdViewsToday by mutableStateOf(saveManager.boosterAdViewsToday)
 
     /** Suren savasin guclendirici durumu. Savas disinda `null`. */
     private var battleBoosters by mutableStateOf<BoosterState?>(null)
@@ -285,27 +274,24 @@ class CampaignProgressImpl(
     /** Suren savasin guclendirici durumu; savas disinda `null`. */
     val boosterState: BoosterState? get() = battleBoosters
 
-    /** Bugun guclendirici reklami icin kalan hak. */
-    val boosterAdViewsLeftToday: Int
-        get() = (EconomyConfig.BOOSTER_AD_VIEWS_PER_DAY - boosterAdViewsToday).coerceAtLeast(0)
-
     /**
-     * Savas basladi — guclendirici sayaclarini sifirlar (gunluk reklam sayaci tasinir).
-     * Motor bolume girerken bir kez cagirir.
+     * Savas basladi — guclendirici ve devam sayaclarini sifirlar. Motor bolume girerken
+     * (`battleEpoch` degisince) bir kez cagirir; "TEKRAR DENE" de yeni savastir.
      */
     fun beginBattle(levelId: Int): BoosterState {
-        // Onceki savas hic KAPATILMADIYSA olcumu burada isle. Bu dal gercek bir
-        // yolu kurtarir: yenilgi -> "TEKRAR DENE" akisi `endBattle()`e HIC
-        // ugramaz (savas ekranindan cikilmadigi icin), yalnizca yeni bir
-        // `beginBattle` gelir. Bu cagri olmadan kaybedilen savasta oldurulen
-        // her dusman sessizce silinirdi — en sik tekrarlanan oynanis yolunda.
+        // Onceki savas hic KAPATILMADIYSA olcumu burada isle. Yenilgi -> "TEKRAR DENE" akisi
+        // `endBattle()`e HIC ugramaz (savas ekranindan cikilmadigi icin), yalnizca yeni bir
+        // `beginBattle` gelir; bu cagri olmadan kaybedilen savasta oldurulen her dusman
+        // sessizce silinirdi — en sik tekrarlanan oynanis yolunda.
         flushBattleMissions(victory = false)
 
-        val state = BoosterState.startBattle(levelId, boosterAdViewsToday)
+        val state = BoosterState.startBattle(levelId)
         battleBoosters = state
-        // R2 takviyesi de savasa kapsamlidir: onceki savastan devreden bir
-        // "geri verilmis can" yeni savasin yildizini haksiz yere dusururdu.
+        // Devam ile geri verilen can ve devam hakki de savasa kapsamlidir: onceki savastan
+        // devreden "geri verilmis can" yeni savasin yildizini haksiz yere dusururdu.
         reinforcedHealth = 0
+        continuesUsed = 0
+        boosterUndo = null
         // Faz 14: gorev olcumu de savasa kapsamlidir. Yarida birakilan savasin
         // "kurulan kule" sayisi yeni savasa devrederse `d_v_build15` bir bolum
         // acip kapatarak kirilirdi.
@@ -326,6 +312,8 @@ class CampaignProgressImpl(
         flushBattleMissions(victory = false)
         battleBoosters = null
         reinforcedHealth = 0
+        continuesUsed = 0
+        boosterUndo = null
     }
 
     /** Bu bolumde HUD'da gosterilecek guclendiriciler. */
@@ -337,7 +325,6 @@ class CampaignProgressImpl(
      */
     fun boosterDecision(
         type: BoosterType,
-        viaAd: Boolean,
         supplyOnHand: Int = 0,
         baseHealth: Int = 0,
         maxBaseHealth: Int = upgrades.maxBaseHealth,
@@ -348,7 +335,6 @@ class CampaignProgressImpl(
         return boosterAllowed(
             state = state,
             type = type,
-            viaAd = viaAd,
             wallet = wallet,
             supplyOnHand = supplyOnHand,
             baseHealth = baseHealth,
@@ -358,20 +344,27 @@ class CampaignProgressImpl(
         )
     }
 
+    /** [activateBooster]'in geri alinabilmesi icin aktivasyon ANINDAKI durum. */
+    private class BoosterUndo(
+        val stateBefore: BoosterState,
+        val walletBefore: PlayerWallet,
+        val activation: BoosterActivation,
+    )
+
+    private var boosterUndo: BoosterUndo? = null
+
     /**
-     * Guclendiriciyi kullanir. Reddedilirse **hicbir sey degismez** (cuzdan, sayaclar,
-     * gunluk reklam hakki). Coin dususu burada yapilir; Tedarik dususu/eklemesi motorun
-     * isidir ve [BoosterActivation.supplyCharged] / [BoosterActivation.supplyGranted]
-     * uzerinden bildirilir.
+     * Guclendiriciyi kullanir. Reddedilirse **hicbir sey degismez** (cuzdan, sayaclar, bekleme).
+     * Coin dususu burada yapilir; Tedarik dususu/eklemesi motorun isidir ve
+     * [BoosterActivation.supplyCharged] / [BoosterActivation.supplyGranted] uzerinden bildirilir.
+     * Motor uygulamayi reddederse cagiran [undoBooster] ile odemeyi geri alir.
      *
-     * [enemiesOnField] sahadaki dusman sayisidir; bildirilirse ekonomi katmani
-     * hedefsiz [BoosterType.AIR_SUPPORT] kullanimini ucret kesmeden reddeder
-     * ([BoosterDecision.NoEffect]). Varsayilan [ENEMY_COUNT_UNKNOWN] = bildirilmedi,
-     * kontrol atlanir.
+     * [enemiesOnField] sahadaki dusman sayisidir; bildirilirse ekonomi katmani hedefsiz
+     * [BoosterType.AIR_SUPPORT] kullanimini ucret kesmeden reddeder ([BoosterDecision.NoEffect]).
+     * Varsayilan [ENEMY_COUNT_UNKNOWN] = bildirilmedi, kontrol atlanir.
      */
     fun activateBooster(
         type: BoosterType,
-        viaAd: Boolean,
         supplyOnHand: Int = 0,
         baseHealth: Int = 0,
         maxBaseHealth: Int = upgrades.maxBaseHealth,
@@ -379,11 +372,10 @@ class CampaignProgressImpl(
         nowMs: Long = clock.sample().elapsedRealtimeMs,
     ): BoosterActivation {
         val state = battleBoosters
-            ?: return BoosterActivation(type, BoosterDecision.Disabled, viaAd)
+            ?: return BoosterActivation(type, BoosterDecision.Disabled)
 
         val decision = boosterDecision(
             type = type,
-            viaAd = viaAd,
             supplyOnHand = supplyOnHand,
             baseHealth = baseHealth,
             maxBaseHealth = maxBaseHealth,
@@ -396,58 +388,45 @@ class CampaignProgressImpl(
                 mapOf(
                     "type" to type.name,
                     "level" to state.level,
-                    "via_ad" to viaAd,
                     "reason" to decision::class.simpleName.orEmpty(),
                 )
             )
-            return BoosterActivation(type, decision, viaAd)
+            return BoosterActivation(type, decision)
         }
 
         val restored = if (type == BoosterType.BASE_REPAIR) {
-            // Reklam yolu daha comert (7 vs 4); karar burada, cizim tarafinda
-            // DEGIL — UI yalnizca sonucu gosterir.
-            baseRepairAmount(baseHealth, maxBaseHealth, viaAd)
+            baseRepairAmount(baseHealth, maxBaseHealth, useNumber = state.paidUsesOf(type) + 1)
         } else {
             0
         }
         val granted = if (type == BoosterType.EMERGENCY_SUPPLY) emergencySupplyAmount(state.level) else 0
-        val charged = if (decision.currency == BoosterCurrency.SUPPLY && !viaAd) decision.price else 0
-        val coins = if (decision.currency == BoosterCurrency.COIN && !viaAd) decision.price else 0
+        val charged = if (decision.currency == BoosterCurrency.SUPPLY) decision.price else 0
+        val coins = if (decision.currency == BoosterCurrency.COIN) decision.price else 0
 
+        val walletBefore = wallet
         if (coins > 0) commitWallet(payForBooster(wallet, decision))
 
-        val updated = useBooster(
+        battleBoosters = useBooster(
             state = state,
             type = type,
-            viaAd = viaAd,
             decision = decision,
             nowMs = nowMs,
             repairedHealth = restored,
         )
-        battleBoosters = updated
-        if (viaAd) {
-            boosterAdViewsToday = updated.adViewsToday
-            // KALICI (2026-09-02): gerekce `SaveManager.boosterAdViewsToday`
-            // KDoc'unda. Ozetle: tavan bir OYUNCU KORUMASI ve ayni zamanda
-            // Hava Destegi'nin coin yolunu acan tek kapi.
-            saveManager.boosterAdViewsToday = boosterAdViewsToday
-        }
 
         analytics(
             "booster_used",
             mapOf(
                 "type" to type.name,
                 "level" to state.level,
-                "via_ad" to viaAd,
                 "supply_cost" to charged,
                 "coin_cost" to coins,
             )
         )
 
-        return BoosterActivation(
+        val activation = BoosterActivation(
             type = type,
             decision = decision,
-            viaAd = viaAd,
             supplyGranted = granted,
             supplyCharged = charged,
             healthRestored = restored,
@@ -458,37 +437,91 @@ class CampaignProgressImpl(
             },
             coinsSpent = coins,
         )
+        boosterUndo = BoosterUndo(state, walletBefore, activation)
+        return activation
     }
 
     /**
-     * Faz 13 — R2 "Takviye" ile bu savasta geri verilen us cani.
+     * Motor [activation]'i uygulamayi REDDETTI (savas durumu arada degisti): odenen coin, kullanim
+     * hakki, bekleme ve tamir kaydi geri alinir; aksi halde oyuncu karsiliksiz odeme yapmis olurdu.
+     * Cuzdan kopyalanarak geri yazilir ([PlayerWallet.credited] KULLANILMAZ — `lifetimeEarned`
+     * sismezdi). Yalnizca EN SON aktivasyon geri alinabilir. Geri alindiysa `true`.
+     */
+    fun undoBooster(activation: BoosterActivation): Boolean {
+        val undo = boosterUndo ?: return false
+        if (undo.activation !== activation) return false
+        battleBoosters = undo.stateBefore
+        commitWallet(undo.walletBefore)
+        boosterUndo = null
+        analytics("booster_undone", mapOf("type" to activation.type.name))
+        return true
+    }
+
+    // =================================================================================
+    // Yenilgiden sonra DEVAM (coin) — saf karar: ContinueSystem.kt
+    // =================================================================================
+
+    /** Bu savasta kullanilan devam sayisi. Savasa kapsamli; [beginBattle]/[endBattle] sifirlar. */
+    private var continuesUsed by mutableStateOf(0)
+
+    /**
+     * Yenilgi ekraninin okudugu karar (bedel, eksik/rezerv, hak). UI kendi bakiye
+     * karsilastirmasini YAPMAZ.
+     */
+    fun continueDecision(levelId: Int): ContinueDecision =
+        continueAllowed(wallet, levelId, continuesUsed)
+
+    /**
+     * Devam eder. **Bedel ve etki TAM BIR KEZ**: once ekonomi kontrolu, sonra motor
+     * ([resumeBattle], `GameEngine.reinforceAfterDefeat`), motor savasi gercekten surdurduyse
+     * AYNI senkron blokta bedel dusulur ve hak isaretlenir. Motor DEFEAT disinda 0 dondugu icin
+     * ikinci dokunus hicbir sey degistirmez; reddedilen/yetmeyen devam cuzdani ve sayaci degistirmez.
+     * Devam ile gelen can yildiz hesabindan dusulur ([noteReinforcement]).
+     */
+    fun continueAfterDefeat(levelId: Int, resumeBattle: (lives: Int) -> Int): ContinueResult {
+        val decision = continueDecision(levelId)
+        if (decision !is ContinueDecision.Allowed) {
+            analytics(
+                "continue_blocked",
+                mapOf("level" to levelId, "reason" to decision::class.simpleName.orEmpty())
+            )
+            return ContinueResult.Declined(decision)
+        }
+        val applied = resumeBattle(decision.lives)
+        if (applied <= 0) return ContinueResult.EngineRefused
+        commitWallet(wallet.debited(decision.price))
+        continuesUsed += 1
+        noteReinforcement(applied)
+        analytics(
+            "continue_used",
+            mapOf("level" to levelId, "price" to decision.price, "lives" to applied)
+        )
+        return ContinueResult.Continued(decision.price, applied)
+    }
+
+    /**
+     * Devam ile bu savasta geri verilen us cani.
      *
-     * Us Tamiri'nin [BoosterState.repairedHealth] alaniyla **ayni rolu** oynar ve
-     * ayni yere, [starHealthFor]'a akar: takviye HAYATTA KALMA satin alir, yildiz
-     * ve coin ASLA. Ayri bir alan olmasinin sebebi, takviyenin bir guclendirici
-     * olmamasi — savas bittikten (DEFEAT) sonra gelir, dolayisiyla
-     * `BoosterState`in savas-ici kullanim tavanlarina ve fiyat mantigina hic
-     * girmemelidir.
-     *
-     * Kalici DEGIL: savasa kapsamlidir, [beginBattle] / [endBattle] sifirlar.
+     * Us Tamiri'nin [BoosterState.repairedHealth] alaniyla **ayni rolu** oynar ve ayni yere,
+     * [starHealthFor]'a akar: devam HAYATTA KALMA satin alir, yildiz ve coin ASLA. Ayri bir
+     * alan olmasinin sebebi, devamin bir guclendirici olmamasi — savas bittikten (DEFEAT) sonra
+     * gelir, dolayisiyla `BoosterState`in savas-ici kullanim tavanlarina ve fiyat mantigina hic
+     * girmemelidir. Kalici DEGIL: savasa kapsamlidir.
      */
     private var reinforcedHealth by mutableStateOf(0)
 
     /**
-     * R2 Takviye uygulandi — geri verilen [lives] cani yildiz hesabindan dusulur.
-     *
-     * Motor cagrisini yapan taraf (reklam koprusu) bunu **motor gercekten savasi
-     * surdurduyse** cagirir; uygulanmayan bir takviye yildizi cezalandirmamalidir.
+     * Devam uygulandi — geri verilen [lives] cani yildiz hesabindan dusulur. Motor savasi
+     * gercekten surdurduyse cagrilir; uygulanmayan bir devam yildizi cezalandirmamalidir.
      */
     fun noteReinforcement(lives: Int) {
         reinforcedHealth += lives.coerceAtLeast(0)
     }
 
     /**
-     * Yildiz hesabina girmesi gereken can. **Us Tamiri ve R2 Takviye ile geri
-     * verilen can dusulur** (BoosterSystem.effectiveStarHealth) — ikisi de hayatta
-     * kalma satin alir, yildiz ve coin ASLA. Hicbiri kullanilmadiysa girdiyle ayni
-     * degeri dondurur.
+     * Yildiz hesabina girmesi gereken can. **Us Tamiri ve Devam ile geri verilen can dusulur**
+     * (BoosterSystem.effectiveStarHealth) — ikisi de hayatta kalma satin alir, yildiz ve coin
+     * ASLA. Hicbiri kullanilmadiysa girdiyle ayni degeri dondurur.
      */
     fun starHealthFor(livesLeft: Int): Int {
         val granted = (battleBoosters?.repairedHealth ?: 0) + reinforcedHealth
@@ -505,11 +538,9 @@ class CampaignProgressImpl(
     // =================================================================================
 
     /**
-     * Zaferi kaydeder ve coin oder. **Reklamdan ONCE cagrilir ve hemen yazilir**
-     * (GDD G.4 R3 kurali: taban odul reklamin on kosulu degildir).
+     * Zaferi kaydeder ve coin oder. Zafer aninda cagrilir ve hemen yazilir.
      *
-     * @return odul dokumu; UI kalem kalem gosterir, R3 icin
-     *   [LevelClearResult.doublableAmount] kullanilir.
+     * @return odul dokumu; UI kalem kalem gosterir.
      */
     fun onLevelCleared(
         levelId: Int,
@@ -524,12 +555,8 @@ class CampaignProgressImpl(
         // Haftalik "Elit Operator" sayaci icin: cuzdan YAZILMADAN ONCEKI en iyi
         // yildiz. Asagida yalnizca ARTIS sayilir (bkz. `starGain`).
         val starsBefore = wallet.starsOf(levelId)
-        val result = resolveLevelClear(wallet, levelId, starHealth, maxLives, boostedReplaysToday)
+        val result = resolveLevelClear(wallet, levelId, starHealth, maxLives)
         commitWallet(applyLevelClear(wallet, result))
-        if (result.consumesBoostedReplay) {
-            boostedReplaysToday += 1
-            saveManager.boostedReplaysUsedToday = boostedReplaysToday
-        }
         advanceDaily(MissionType.COMPLETE_ANY_LEVEL, 1)
         if (result.stars >= 3) advanceDaily(MissionType.CLEAR_WITH_THREE_STARS, 1)
         // Gorev de tamir edilmis cana gore ILERLEMEZ; yoksa "tamir et -> yuksek can
@@ -556,7 +583,7 @@ class CampaignProgressImpl(
         // FARMING'E KAPALI: yildiz best-of'tur (`applyLevelClear` maxOf) ve
         // asla dusmez, dolayisiyla bir bolumun her yildizi omur boyu EN FAZLA
         // BIR KEZ sayilabilir. Ust sinir sabit: 55 bolum x 3 = 165 yildiz.
-        // Ayni bolumu tekrar oynamak 0 uretir. Us Tamiri / R2 Takviye ile
+        // Ayni bolumu tekrar oynamak 0 uretir. Us Tamiri / Devam ile
         // satin alinan can zaten `starHealth` uzerinden dusulmustur, yani
         // guclendiriciyle yildiz yukseltip sayac doldurma yolu da kapalidir.
         //
@@ -590,55 +617,6 @@ class CampaignProgressImpl(
         )
         enforceUnlockInvariant()
         return result
-    }
-
-    /** R3 "Cift Odeme" — reklam DOLU dondugunde ek katmani yatirir. */
-    fun grantDoublePayout(result: LevelClearResult, outcome: AdOutcome): Int {
-        val bonus = doublePayoutBonus(result.doublableAmount, outcome)
-        if (bonus > 0) {
-            commitWallet(wallet.credited(bonus))
-            analytics("coin_earn", mapOf("source" to "double_payout", "amount" to bonus))
-        }
-        return bonus
-    }
-
-    /**
-     * R1 icin bugun kalan **dolu gosterim** hakki — oyuncuya "N/3" olarak
-     * gosterilen sayi.
-     *
-     * Faz 13: bu sayinin sahibi ARTIK EKONOMI. Onceden UI onu reklam
-     * katmanindan (`AdHost.rewardedRemaining`) okuyordu; oradaki sayac
-     * BELLEK-ICI ve uygulama yeniden baslayinca sifirlaniyor, buradaki ise
-     * [SaveManager] ile KALICI. Yani oyuncu uygulamayi kapatip acinca ekran
-     * "3 hakkin var" diyor, ekonomi ise hakki dolu gorup 150 yerine 50 coin
-     * oduyordu — ekranda yazan sayi ile cebe giren para ayrisiyordu.
-     */
-    val supplyDropViewsLeftToday: Int
-        get() = (EconomyConfig.R1_VIEWS_PER_DAY - requisition.filledViewsToday).coerceAtLeast(0)
-
-    /** R1 icin bugun odenebilecek kalan coin. 0 = butce doldu (ilerleme kapanmaz). */
-    val supplyDropBudgetLeftToday: Int
-        get() = (EconomyConfig.R1_COIN_BUDGET_PER_DAY - requisition.coinsPaidToday).coerceAtLeast(0)
-
-    /**
-     * R1 "Tedarik Talebi". No-fill/kapatma/timeout'ta da odeme yapar ve **gunluk
-     * hakki tuketmez** (GDD G.4). Gunluk coin butcesi tukendiyse 0 doner ama
-     * hicbir ilerleme yolu kapanmaz.
-     */
-    fun grantSupplyDrop(outcome: AdOutcome): RequisitionGrant {
-        // Siradaki rank fiyati BAYRAK F-11 (adaptif odul) icin girdi; bayrak kapaliyken
-        // deger yok sayilir ve odul sabit 150 kalir.
-        val grant = grantRequisition(requisition, outcome, cheapestNextRankPrice(upgrades) ?: 0)
-        requisition = grant.newState
-        saveManager.saveRequisitionState(requisition)
-        if (grant.coins > 0) {
-            commitWallet(wallet.credited(grant.coins))
-            analytics(
-                if (grant.fallback) "rewarded_fallback_granted" else "coin_earn",
-                mapOf("placement" to "supply_drop", "amount" to grant.coins)
-            )
-        }
-        return grant
     }
 
     // =================================================================================
@@ -861,15 +839,6 @@ class CampaignProgressImpl(
         missionState = decision.newState
         if (decision.dailyReset) {
             saveManager.resetDailyCounters()
-            requisition = RequisitionState()
-            boostedReplaysToday = 0
-            saveManager.boostedReplaysUsedToday = 0
-            boosterAdViewsToday = 0
-            // `resetDailyCounters` bu anahtari zaten sifirliyor; buradaki yazim
-            // bellekteki kopyayi depoyla ayni tutar (gun donusu depo yazimindan
-            // ONCE de olabilir).
-            saveManager.boosterAdViewsToday = 0
-            battleBoosters = battleBoosters?.copy(adViewsToday = 0)
             missionState = missionState.copy(rerollsUsedToday = 0)
         }
         if (decision.weeklyReset) {

@@ -300,7 +300,7 @@ class CoinLedgerTest {
     }
 
     // =================================================================================
-    // 3. GOREV VE REKLAM GELIRI — fazlanin USTUNE ne biniyor
+    // 3. GOREV GELIRI — fazlanin USTUNE ne biniyor (reklam 2026-09-30 kalkti)
     // =================================================================================
 
     /**
@@ -310,7 +310,7 @@ class CoinLedgerTest {
      * gorevler degil, gorevlerin ZATEN fazla olan bir cebe eklenmesidir.
      */
     @Test
-    fun missionIncomeIsNotAProgressionBypassButItCompoundsTheSurplus() {
+    fun missionIncomeIsNotAProgressionBypassAndCannotBuyHalfTheTreeAlone() {
         val weeklyIncome = 7 * EconomyConfig.DAILY_MAX_TOTAL + EconomyConfig.WEEKLY_BUDGET
         assertEquals("haftalik gorev geliri", 3_620, weeklyIncome)
 
@@ -321,14 +321,20 @@ class CoinLedgerTest {
             weeklyIncome * 100 <= EconomyConfig.TOTAL_LOCK_COST * 16,
         )
 
-        // Ama fazlanin uzerine biniyor: iki haftalik gorev + reklam geliri tek
-        // basina agacin yarisindan fazlasini oduyor.
-        val adIncome = 14 * EconomyConfig.R1_COIN_BUDGET_PER_DAY
-        val twoWeeks = 2 * weeklyIncome + adIncome
-        assertEquals(13_540, twoWeeks)
+        // 2026-09-30 KURAL DEGISIKLIGI (reklam kaldirildi). Eskiden burada
+        // "iki haftalik gorev + reklam geliri (13.540) agacin yarisindan FAZLA"
+        // (`twoWeeks > tree/2`) kilitliydi. Reklam gelirinin (14 x 450) kalkmasiyla o
+        // iddia TASARIM GEREGI YANLIS: oynanis disindaki tek gelir artik gorevdir ve
+        // 2 x 3.620 = 7.240 < 9.800 = agac / 2. Yani gorev geliri TEK BASINA agacin
+        // yarisini iki haftada alamaz; ilerleme buna HICBIR ZAMAN bagli degildir (agac
+        // ve kilitler yalnizca bolum odulleriyle finanse edilir, bkz. `runCampaign`).
+        // Rakam dondurmuyoruz, KURAL: gorev gelirinin iki haftalik toplami agacin
+        // yarisinin altinda kalir.
+        val twoWeeks = 2 * weeklyIncome
+        assertEquals("iki haftalik gorev geliri (reklamsiz)", 7_240, twoWeeks)
         assertTrue(
-            "iki haftalik gorev+reklam geliri $twoWeeks, agacin ($treeCost) yarisinin altinda olmali",
-            twoWeeks > treeCost / 2,
+            "iki haftalik gorev geliri $twoWeeks, agacin ($treeCost) yarisinin ALTINDA olmali",
+            twoWeeks < treeCost / 2,
         )
     }
 

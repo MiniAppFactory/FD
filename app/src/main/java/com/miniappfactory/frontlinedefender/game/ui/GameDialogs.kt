@@ -27,6 +27,7 @@ import com.miniappfactory.frontlinedefender.R
 import com.miniappfactory.frontlinedefender.game.audio.rememberHaptics
 import com.miniappfactory.frontlinedefender.game.engine.GameEngine
 import com.miniappfactory.frontlinedefender.game.engine.GameState
+import com.miniappfactory.frontlinedefender.game.economy.ContinueDecision
 import com.miniappfactory.frontlinedefender.game.economy.LevelClearResult
 import com.miniappfactory.frontlinedefender.game.economy.healthNeededForStars
 import com.miniappfactory.frontlinedefender.ui.theme.*
@@ -55,6 +56,37 @@ internal val ResultModalMaxWidth = 480.dp
  * sonra butonlara kalan satir. Test bu hesabi tekrarlamaz, buradan okur.
  */
 internal val ResultModalInnerWidth = ResultModalMaxWidth - 24.dp - 28.dp
+
+/**
+ * DURAKLATMA MENUSU OLCULERI — testler BURADAN okur, kendi kopyalarini tutmaz.
+ *
+ * Menu 2x2 sanat butonu izgarasi: her hucre `(ic genislik - aralik) / 2` ve
+ * sanat en-boy oranini korudugu icin yukseklik hucre genisliginden TURER:
+ *
+ *   birincil (4,33) hucre >= 190,5 dp  -> 44 dp tabani icin ic genislik >= 393 dp
+ *   ikincil  (3,97) hucre >= 174,7 dp  -> ic genislik >= 362 dp
+ *
+ * Zafer/yenilgi modalinin butonlariyla AYNI sanat, AYNI aritmetik; bu yuzden
+ * azami genislik ondan turetilir ve ayri ayri oynanmaz. 480 dp'de EN DAR ic
+ * genislik (genis ekranda ferah dolgu, 2 x 24 dp) 432 dp -> hucre 210 dp ->
+ * birincil 48,5 dp, ikincil 52,9 dp; ikisi de tabanin uzerinde.
+ */
+internal val PauseModalMaxWidth = ResultModalMaxWidth
+
+/** Modalin ekran kenarindan boslugu (Surface'in DISINDA). Dikey butce buradan dusulur. */
+internal val PauseModalOuterPadding = 12.dp
+
+/** Izgara hucreleri arasindaki yatay aralik. */
+internal val PauseModalCellGap = 12.dp
+
+private val PausePanelPaddingCompact = 14.dp
+private val PausePanelPaddingRoomy = 24.dp
+
+/**
+ * EN DAR ic genislik (ferah dolgu). Kisa yatay ekranda (compact) dolgu 14 dp'ye
+ * iner ve ic genislik 452 dp'ye cikar — yani bu deger butonlar icin EN KOTU durumdur.
+ */
+internal val PauseModalInnerWidth = PauseModalMaxWidth - PausePanelPaddingRoomy * 2
 
 /**
  * Ana menu — oyuncunun gordugu ILK ekran.
@@ -664,11 +696,20 @@ fun VictoryModal(
     }
 }
 
+/**
+ * Yenilgi modalinin "DEVAM" satiri icin ekonomi goruntusu: karar ([ContinueDecision]) ve
+ * gosterilecek bakiye. `null` = satir hic cizilmez (kill switch kapali). Modal kendi bakiye
+ * karsilastirmasini YAPMAZ; her durum kararin tipinden okunur.
+ */
+data class ContinueOffer(val decision: ContinueDecision, val balance: Int)
+
 @Composable
 fun DefeatModal(
     gameEngine: GameEngine,
     onRetry: () -> Unit,
-    onMainMenu: () -> Unit
+    onMainMenu: () -> Unit,
+    continueOffer: ContinueOffer? = null,
+    onContinue: () -> Unit = {}
 ) {
     val waveIndex by gameEngine.currentWaveIndex.collectAsState()
 
@@ -718,14 +759,17 @@ fun DefeatModal(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(gap)
                 ) {
-                    // Faz 3: asset pack icon_defeat_skull. Sprite DEGISMEDI.
-                    SpriteIcon(
-                        id = R.drawable.spr_ic_defeat_skull,
-                        // 52 -> 44: baslik plakasi dikey yer aldi
-                        // (docs/UI_ART_INTEGRATION_SPEC.md §3.4).
-                        size = 44.dp,
-                        contentDescription = null
-                    )
+                    // Faz 3: asset pack icon_defeat_skull. Sprite DEGISMEDI. DEVAM satiri
+                    // gorunurken dikey yer o satira gider (yalnizca dar yatay ekranda).
+                    if (!(compact && continueOffer != null)) {
+                        SpriteIcon(
+                            id = R.drawable.spr_ic_defeat_skull,
+                            // 52 -> 44: baslik plakasi dikey yer aldi
+                            // (docs/UI_ART_INTEGRATION_SPEC.md §3.4).
+                            size = 44.dp,
+                            contentDescription = null
+                        )
+                    }
 
                     ArtHeaderPlate(
                         title = stringResource(R.string.dialog_defeat_title),
@@ -743,6 +787,15 @@ fun DefeatModal(
                         textAlign = TextAlign.Center,
                         fontSize = 14.sp
                     )
+                }
+
+                // DEVAM (coin): bedel ve bakiye tiklamadan ONCE gorunur. Yetmiyorsa buton
+                // gorunur ama devre disidir ve nedeni yazilidir (yalnizca soluklasma degil);
+                // ucretsiz TEKRAR DENE asagida her zaman durur. Butonlar kaydirma alaninin
+                // DISINDA ve yarim genislikte: sanat butonu en-boyu korur, tam genislikte 100 dp+
+                // yukselirdi.
+                if (continueOffer != null) {
+                    ContinueRow(offer = continueOffer, onContinue = onContinue)
                 }
 
                 // BUTONLAR: kaydirma alaninin DISINDA, yani her zaman gorunur.
@@ -771,6 +824,68 @@ fun DefeatModal(
     }
 }
 
+/**
+ * "DEVAM ET · N COIN" satiri. Bedel butonun uzerinde, bakiye/eksik/neden altinda yazili.
+ * Etiket ve aciklama ayni karardan turer; kararin dallari birbirini dislar.
+ */
+@Composable
+private fun ContinueRow(offer: ContinueOffer, onContinue: () -> Unit) {
+    val decision = offer.decision
+    val price = when (decision) {
+        is ContinueDecision.Allowed -> decision.price
+        is ContinueDecision.InsufficientCoins -> decision.price
+        is ContinueDecision.ReserveLocked -> decision.price
+        else -> null
+    }
+    val caption = when (decision) {
+        is ContinueDecision.Allowed -> stringResource(
+            R.string.defeat_continue_balance, offer.balance, decision.lives
+        )
+        is ContinueDecision.InsufficientCoins -> stringResource(
+            R.string.defeat_continue_short, decision.shortfall, offer.balance
+        )
+        is ContinueDecision.ReserveLocked -> stringResource(R.string.defeat_continue_reserve)
+        is ContinueDecision.AlreadyUsed -> stringResource(R.string.defeat_continue_used)
+        else -> ""
+    }
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        if (price != null) {
+            ArtSecondaryButton(
+                label = stringResource(R.string.defeat_continue_label, price),
+                onClick = onContinue,
+                modifier = Modifier.fillMaxWidth(0.5f),
+                icon = R.drawable.spr_ic_coins,
+                enabled = decision.isAllowed,
+                testTag = "defeat_continue_button"
+            )
+        }
+        if (caption.isNotEmpty()) {
+            Text(
+                text = caption,
+                color = if (decision.isAllowed) Color.LightGray else SleekTextAccent,
+                textAlign = TextAlign.Center,
+                fontSize = 11.sp,
+                modifier = Modifier.testTag("defeat_continue_caption")
+            )
+        }
+    }
+}
+
+/**
+ * Duraklatma menusu: baslik plakasi + 2x2 sanat butonu izgarasi.
+ *
+ * ```
+ * [ BOLUMU BASTAN AL ] [ ANA MENU ]      testTag: pause_restart_button, pause_main_menu_button
+ * [ AYARLAR          ] [ DEVAM ET  ]     testTag: pause_settings_button, pause_resume_button
+ * ```
+ *
+ * AYARLAR modalin USTUNDE acilir ve kapaninca ayni modala doner; oynanis
+ * kendiliginden devam ETMEZ (yalnizca DEVAM ET [onResume] cagirir).
+ */
 @Composable
 fun PauseMenuModal(
     gameEngine: GameEngine,
@@ -789,25 +904,22 @@ fun PauseMenuModal(
     var hapticsEnabled by remember { mutableStateOf(haptics.isHapticsEnabled) }
     var settingsOpen by remember { mutableStateOf(false) }
 
-    // ⛔ BU MODAL, ZAFER MODALIYLA AYNI YAPISAL HATAYI TASIYORDU.
+    // SANAT DILI: `Surface` kabuk + `ArtHeaderPlate` baslik + YALNIZCA sanat
+    // butonlari (2x2 izgara). Zafer/yenilgi modallariyla AYNI, cihazda
+    // kanitlanmis desen.
     //
-    // Yukseklik sinirlanmamis, icerik kaydirilamaz ve bosluklar sabitti. Test
-    // cihazinda (Galaxy S8, yatay 740x360 dp) dorduncu buton — ANA MENU —
-    // ekranin altinda YARIM kaliyordu: oyuncu ana menuye donemiyordu.
+    // ⛔ BU KAPSAYICIYA MATERIAL `Button` KONMAZ. Galaxy S8 / API 24'te buyuk
+    // sanatla ayni kapsayicidaki Material `Surface` butonlari METINSIZ cizildi
+    // (dort denemeyle olculdu; HANDOVER §1c ve `LevelSelectScreen.kt`). Kok neden
+    // bilinmiyor — bu yuzden desenden SAPILMAZ.
     //
-    // Zafer modalinde ayni hata duzeltilirken bu modal GOZDEN KACTI; ikisi
-    // ayni cati altinda olmadigi icin duzeltme kendiliginden buraya gelmedi.
-    // Simdi ikisi de ayni uc kurali uyguluyor:
-    //  1) Yukseklik ekrana KILITLENIR (`heightIn`), icerik kaydirilir.
-    //  2) Dar ekranda bosluklar ve dolgu kucululur (`compact`).
-    //  3) Baslik sabit kalir, butonlar kaydirma alanindadir.
-    //
-    // BUTON SIRASI DEGISTIRILMEDI. Zafer modalinde birincil butonlar kaydirma
-    // alaninin disinda tutulmustu; burada ayni seyi yapmak DEVAM ET'i listenin
-    // basina veya sonuna tasimak demekti ve duraklatma menusu oyuncunun kas
-    // hafizasiyla kullandigi bir ekran. Compact modda dort buton 360 dp'ye
-    // zaten sigiyor (olcum: ~280 dp), yani kaydirma bir emniyet agi; sirayi
-    // bozmaya deger bir kazanc yok.
+    // ⛔ ESKI MODAL ZAFERLE AYNI YAPISAL HATAYI TASIYORDU (2026-08-18, S8 yatay
+    // 740x360 dp): dorduncu buton — ANA MENU — ekranin altinda YARIM kaliyor,
+    // oyuncu ana menuye donemiyordu. Ayni kural surer: yukseklik ekrana KILITLI
+    // (`heightIn`), baslik kaydirilabilir alanda, BUTONLAR kaydirma alaninin
+    // DISINDA (kirpilacak sey baslik olur, cikis yolu asla).
+    // Hucre = (ic genislik - aralik) / 2 ve `PauseModalMaxWidth`ten turer; 44 dp
+    // dokunma tabani `PauseMenuModalTest` / `ArtButtonTouchTargetTest`te kilitli.
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
@@ -815,117 +927,100 @@ fun PauseMenuModal(
         contentAlignment = Alignment.Center
     ) {
         val compact = maxHeight < 420.dp
-        val gap = if (compact) 8.dp else 14.dp
+        val gap = if (compact) 8.dp else 16.dp
         Surface(
-            shape = RoundedCornerShape(20.dp),
+            shape = RoundedCornerShape(24.dp),
             color = SleekDarkBg,
             border = androidx.compose.foundation.BorderStroke(1.5.dp, SleekBorderLight),
             modifier = Modifier
-                .widthIn(max = 360.dp)
-                .heightIn(max = maxHeight - 24.dp)
-                .padding(if (compact) 8.dp else 20.dp)
+                .padding(PauseModalOuterPadding)
+                .widthIn(max = PauseModalMaxWidth)
+                .heightIn(max = maxHeight - PauseModalOuterPadding * 2)
+                .testTag("pause_panel")
         ) {
             Column(
-                modifier = Modifier.padding(if (compact) 14.dp else 20.dp),
+                modifier = Modifier.padding(
+                    if (compact) PausePanelPaddingCompact else PausePanelPaddingRoomy
+                ),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(gap)
             ) {
-                Text(
-                    text = stringResource(R.string.dialog_paused_title),
-                    color = SleekTextAccent,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = if (compact) 18.sp else 22.sp,
-                    textAlign = TextAlign.Center
-                )
-
                 Column(
                     modifier = Modifier
                         // `fill = false`: butonlar sigiyorsa modal onlarin
                         // boyunda kalir, ekrani gereksiz yere doldurmaz.
                         .weight(1f, fill = false)
                         .verticalScroll(rememberScrollState()),
-                    horizontalAlignment = Alignment.CenterHorizontally,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    ArtHeaderPlate(
+                        title = stringResource(R.string.dialog_paused_title),
+                        modifier = Modifier.fillMaxWidth(0.62f),
+                        titleSize = 24.sp,
+                        testTag = "pause_title_plate"
+                    )
+                }
+
+                // BUTONLAR: kaydirma alaninin DISINDA, her zaman gorunur.
+                // SIRA KARARI: eski dikey liste (AYARLAR/DEVAM/BASTAN/ANA MENU)
+                // izgaraya gecerken DEVAM ET zafer/yenilgideki gibi SAG-ALTA
+                // (birincil = ayni yer), yikici ikili ust satira gitti.
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(gap)
                 ) {
-
-                // AYARLAR
-                //
-                // Buradaki tek basina duran ses anahtari, ayarlarin YARISININ
-                // duraklatma menusunde YARISININ ana menude olmasi demekti; ustelik
-                // duraklatma menusunden gizlilik secenekleri erisilemiyordu.
-                // Anahtar ayarlar ekranina TASINDI (davranis birebir ayni) ve
-                // yerine ekranin tamamini acan tek bir giris kondu. Boylece her
-                // ayar tek bir yerde yasar ve iki kopya zamanla ayrisamaz.
-                Button(
-                    onClick = { settingsOpen = true },
-                    colors = ButtonDefaults.buttonColors(containerColor = SleekSurfaceCard),
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("pause_settings_button")
-                ) {
-                    AutoShrinkText(
-                        text = stringResource(R.string.settings_button_label),
-                        color = Color.Unspecified,
-                        fontWeight = FontWeight.Bold,
-                        maxFontSize = 16.sp,
-                        minFontSize = 12.sp,
-                        maxLines = 1,
-                        textAlign = TextAlign.Center
-                    )
-                }
-
-                Button(
-                    onClick = onResume,
-                    colors = ButtonDefaults.buttonColors(containerColor = SleekPrimaryGreen),
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("pause_resume_button")
-                ) {
-                    Text(
-                        text = stringResource(R.string.dialog_resume),
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1
-                    )
-                }
-
-                Button(
-                    onClick = onRestart,
-                    colors = ButtonDefaults.buttonColors(containerColor = SleekSurfaceCard),
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("pause_restart_button")
-                ) {
-                    // En uzun karsilik: "BOLUMU BASTAN AL" (TR). Buton
-                    // fillMaxWidth (360 dp dialog - 80 dp dolgu = 280 dp),
-                    // 16 sp Bold'da ~150 dp -> sigar; tek satirda kalir.
-                    AutoShrinkText(
-                        text = stringResource(R.string.dialog_restart_level),
-                        color = Color.Unspecified,
-                        fontWeight = FontWeight.Bold,
-                        maxFontSize = 16.sp,
-                        minFontSize = 12.sp,
-                        maxLines = 1,
-                        textAlign = TextAlign.Center
-                    )
-                }
-
-                Button(
-                    onClick = onMainMenu,
-                    colors = ButtonDefaults.buttonColors(containerColor = SleekDarkBg),
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("pause_main_menu_button")
-                ) {
-                    Text(
-                        text = stringResource(R.string.dialog_main_menu),
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1
-                    )
-                }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(PauseModalCellGap),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Ikonlar (sekizgen yuva bos kalirsa buton yarim cizilmis
+                        // gorunur): BASTAN AL = kirmizi nisangah, ANA MENU = us
+                        // kalkani (karargaha don), AYARLAR = disli. Anlami yazi
+                        // tasir; renk tek ayrim kanali degil.
+                        ArtSecondaryButton(
+                            label = stringResource(R.string.dialog_restart_level),
+                            onClick = onRestart,
+                            modifier = Modifier.weight(1f),
+                            icon = R.drawable.spr_ic_target,
+                            testTag = "pause_restart_button"
+                        )
+                        ArtSecondaryButton(
+                            label = stringResource(R.string.dialog_main_menu),
+                            onClick = onMainMenu,
+                            modifier = Modifier.weight(1f),
+                            icon = R.drawable.spr_ic_base_health,
+                            testTag = "pause_main_menu_button"
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(PauseModalCellGap),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // AYARLAR
+                        //
+                        // Buradaki tek basina duran ses anahtari, ayarlarin YARISININ
+                        // duraklatma menusunde YARISININ ana menude olmasi demekti; ustelik
+                        // duraklatma menusunden gizlilik secenekleri erisilemiyordu.
+                        // Anahtar ayarlar ekranina TASINDI (davranis birebir ayni) ve
+                        // yerine ekranin tamamini acan tek bir giris kondu. Boylece her
+                        // ayar tek bir yerde yasar ve iki kopya zamanla ayrisamaz.
+                        ArtSecondaryButton(
+                            label = stringResource(R.string.settings_button_label),
+                            onClick = { settingsOpen = true },
+                            modifier = Modifier.weight(1f),
+                            icon = R.drawable.spr_ic_settings,
+                            testTag = "pause_settings_button"
+                        )
+                        // Oynat ucgeni sanatta GOMULU; ayrica ikon verilmez.
+                        ArtPrimaryButton(
+                            label = stringResource(R.string.dialog_resume),
+                            onClick = onResume,
+                            modifier = Modifier.weight(1f),
+                            testTag = "pause_resume_button"
+                        )
+                    }
                 }
             }
         }

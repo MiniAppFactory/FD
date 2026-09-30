@@ -1723,13 +1723,11 @@ object HintFlow {
                     (EconomyConfig.AIR_SUPPORT_DAMAGE_FRACTION * 100.0).roundToInt()
 
             // Us tamiri artik ORAN degil DUZ CAN veriyor; ders de yuzde
-            // yerine can sayisi soyluyor. Ucretli yol gosteriliyor cunku ipucu
-            // guclendiriciyi TANITIYOR, reklam yolunu pazarlamiyor.
+            // yerine can sayisi soyluyor (1. kullanim).
             BoosterType.BASE_REPAIR ->
-                HintBoosterEffect.REPAIR to EconomyConfig.BASE_REPAIR_LIVES_PAID
+                HintBoosterEffect.REPAIR to EconomyConfig.BASE_REPAIR_LIVES_FIRST_USE
         }
         val cost = when (booster.currency) {
-            BoosterCurrency.AD_ONLY -> HintBoosterCost.AD to 0
             BoosterCurrency.SUPPLY -> HintBoosterCost.SUPPLY to boosterPrice(booster, level)
             BoosterCurrency.COIN -> HintBoosterCost.COIN to boosterPrice(booster, level)
         }
@@ -1782,9 +1780,6 @@ enum class HintBoosterEffect {
 
 /** [HintCopy.BoosterIntro] bedelinin BIRIMI. Metin sablonunu bu secer. */
 enum class HintBoosterCost {
-    /** Ucretli yol yok; rewarded reklamla alinir. */
-    AD,
-
     /** Savas ici Tedarik. */
     SUPPLY,
 
@@ -2366,14 +2361,9 @@ private fun boosterEffectText(copy: HintCopy.BoosterIntro): String = when (copy.
         stringResource(R.string.hint_booster_effect_repair, copy.effectAmount)
 }
 
-/**
- * Guclendiricinin BEDELI. Reklam yolu ayri bir sablon: "0 Tedarik" demek
- * teknik olarak dogru ama oyuncuya hicbir sey soylemez; ogrenmesi gereken
- * sey butona basinca kisa bir reklam acilacagidir.
- */
+/** Guclendiricinin BEDELI (fiyat eylemden ONCE ipucunda soylenir). */
 @Composable
 private fun boosterCostText(copy: HintCopy.BoosterIntro): String = when (copy.cost) {
-    HintBoosterCost.AD -> stringResource(R.string.hint_booster_cost_ad)
     HintBoosterCost.SUPPLY -> stringResource(R.string.hint_booster_cost_supply, copy.price)
     HintBoosterCost.COIN -> stringResource(R.string.hint_booster_cost_coin, copy.price)
 }

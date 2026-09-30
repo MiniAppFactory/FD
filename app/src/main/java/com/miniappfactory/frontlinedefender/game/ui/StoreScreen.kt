@@ -1,27 +1,33 @@
 package com.miniappfactory.frontlinedefender.game.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.annotation.DrawableRes
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -29,7 +35,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -40,41 +48,39 @@ import com.android.billingclient.api.ProductDetails
 import com.miniappfactory.frontlinedefender.R
 import com.miniappfactory.frontlinedefender.game.billing.BillingManager
 import com.miniappfactory.frontlinedefender.game.billing.FakeBilling
+import com.miniappfactory.frontlinedefender.game.billing.ProductsState
+import com.miniappfactory.frontlinedefender.game.billing.StoreConnection
+import com.miniappfactory.frontlinedefender.game.billing.StoreEvent
+import com.miniappfactory.frontlinedefender.game.billing.messageRes
+import com.miniappfactory.frontlinedefender.game.billing.nameRes
 import com.miniappfactory.frontlinedefender.game.economy.CampaignProgressImpl
 import com.miniappfactory.frontlinedefender.game.economy.StoreCatalog
 import com.miniappfactory.frontlinedefender.ui.theme.SleekBorderLight
 import com.miniappfactory.frontlinedefender.ui.theme.SleekDarkBg
 import com.miniappfactory.frontlinedefender.ui.theme.SleekGold
-import com.miniappfactory.frontlinedefender.ui.theme.SleekGoldBorder
-import com.miniappfactory.frontlinedefender.ui.theme.SleekPrimaryGreen
-import com.miniappfactory.frontlinedefender.ui.theme.SleekSurfaceCard
 import com.miniappfactory.frontlinedefender.ui.theme.SleekSurfaceHeader
 import com.miniappfactory.frontlinedefender.ui.theme.SleekTextAccent
 import java.text.NumberFormat
 
 /**
- * IKMAL DEPOSU — coin paketleri ve "Reklamlari Kaldir" (IAP, 2026-09-02).
+ * IKMAL DEPOSU — bes coin paketi (Play Faturalandirma, 2026-09-30 yeniden yazim).
  *
- * `UpgradeShopScreen` (Cephanelik) ile AYNI ekran dili: baslik seridi, coin
- * cipi, koyu gradyan. Cephanelik META yukseltme satar (coin HARCAR); burasi
- * coin'in kendisini ve reklamsiz hakki satar (para HARCAR). Ikisi bilincli
- * olarak AYRI ekran: ayni kart sirasina gercek para ve oyun parasi
- * karistirmak, oyuncunun "bu buton bana kac lira?" sorusunu her kartta
- * yeniden sordurur.
+ * `UpgradeShopScreen` (Cephanelik) ile AYNI ekran dili ve AYNI kart cercevesi
+ * ([ShopCardFrame]): yatay kaydirilan kart siralari. Cephanelik coin HARCAR; burasi
+ * coin'in kendisini satar (para HARCAR). Ikisi bilincli olarak AYRI ekran.
  *
  * ## FIYAT METNI HER ZAMAN PLAY'DEN
- * Ekrandaki her fiyat [ProductDetails.oneTimePurchaseOfferDetails]
- * `.formattedPrice`. Play'den cozulemeyen urun (Console'da yok, ag yok, Play
- * Store guncelleniyor) "su an satin alinamiyor" yazar ve butonu kilitlenir —
- * SESSIZCE KAYBOLMAZ. Kaybolan satir oyuncuya "magaza bozuk" dedirtir.
+ * Karttaki her fiyat [ProductDetails.oneTimePurchaseOfferDetails] `.formattedPrice`. Play'den
+ * cozulemeyen urun "satin alinamiyor" yazar ve karti KILITLENIR — sessizce kaybolmaz, ve bu dosyada
+ * ya da string kaynaklarinda hicbir fiyat/yuzde metni YOKTUR (`StoreStringsTest`).
  *
  * ## Bu ekranda reklam yuzeyi YOK
- * Satin alma teklifi gosteren ekran reklam tasimaz (banner zaten kapali).
+ * Oyundan tum reklamlar kaldirildi; "Reklamlari Kaldir" urunu satistan kalkti. Eski hak sahipleri
+ * icin `remove_ads` yalnizca sessizce onaylanir ([StoreCatalog.PRODUCT_REMOVE_ADS]).
  *
- * ## Yatay ekran
- * 740x360 dp'de dikey alan 300 dp'nin altinda; icerik `verticalScroll`.
- * Reklamsiz karti ve paketler tek sutun, ust uste. Kartlar `widthIn(max=560)`
- * ile ortalanir; genis tablette uzayip okunmaz hale gelmez.
+ * ## Yatay ekran (740x360 dp)
+ * Baslik ~52 dp + kart 224 dp + alt serit ~44 dp sigar; beş 168 dp'lik kart yatay kaydirilir
+ * (Cephanelik gibi). Tum icerik ayrica `verticalScroll` icinde: kucuk ekranda kesilmez.
  */
 @Composable
 fun StoreScreen(
@@ -88,11 +94,20 @@ fun StoreScreen(
     BackHandler(onBack = onBack)
 
     val products by billing.products.collectAsStateWithLifecycle()
-    val billingReady by billing.ready.collectAsStateWithLifecycle()
+    val connection by billing.connection.collectAsStateWithLifecycle()
+    val productsState by billing.productsState.collectAsStateWithLifecycle()
     val purchaseInFlight by billing.purchaseInFlight.collectAsStateWithLifecycle()
-    val restoreState by billing.restoreState.collectAsStateWithLifecycle()
+    val pendingCount by billing.pendingCount.collectAsStateWithLifecycle()
+    val recoverState by billing.restoreState.collectAsStateWithLifecycle()
 
-    // Debug sahte satin almadan sonra bakiye/bayrak yenilensin diye.
+    // Ekran acikken gelen tek seferlik geri bildirim (odeme geldi / iptal / hata sebebi).
+    var lastEvent by remember { mutableStateOf<StoreEvent?>(null) }
+    LaunchedEffect(billing) { billing.events.collect { lastEvent = it } }
+
+    // Magaza acilinca eksik urun varsa yeniden sor (baglanti kopmus ya da sorgu bos donmus olabilir).
+    LaunchedEffect(billing) { billing.ensureProducts() }
+
+    // Debug sahte satin almadan sonra bakiye yenilensin diye.
     var tick by remember { mutableIntStateOf(0) }
 
     Box(
@@ -109,17 +124,22 @@ fun StoreScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(SleekSurfaceHeader)
-                    .padding(horizontal = 20.dp, vertical = 12.dp)
+                    .padding(horizontal = 20.dp, vertical = 4.dp)
             ) {
-                Text(
-                    text = stringResource(R.string.level_back),
-                    color = SleekTextAccent,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp,
+                Box(
+                    contentAlignment = Alignment.Center,
                     modifier = Modifier
+                        .heightIn(min = 44.dp)
                         .clickable(onClick = onBack)
                         .testTag("store_back")
-                )
+                ) {
+                    Text(
+                        text = stringResource(R.string.level_back),
+                        color = SleekTextAccent,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                    )
+                }
                 Spacer(Modifier.width(20.dp))
                 Text(
                     text = stringResource(R.string.store_title),
@@ -133,6 +153,7 @@ fun StoreScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier
+                        .heightIn(min = 44.dp)
                         .clip(RoundedCornerShape(10.dp))
                         .background(Color(0x33FFD700))
                         .padding(horizontal = 12.dp, vertical = 6.dp)
@@ -149,294 +170,208 @@ fun StoreScreen(
             }
 
             Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 20.dp, vertical = 10.dp)
+                    .padding(vertical = 8.dp)
             ) {
-                Column(
-                    modifier = Modifier.widthIn(max = 560.dp).fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                // --- PAKET KARTLARI (ucuzdan pahaliya; yatay kaydirilir) ---
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 20.dp)
+                        .testTag("store_pack_row")
                 ) {
-                    // --- REKLAMSIZ ---
-                    SectionLabel(stringResource(R.string.store_section_remove_ads))
-                    RemoveAdsCard(
-                        owned = progress.adsRemoved,
-                        priceText = products[StoreCatalog.PRODUCT_REMOVE_ADS]?.oneTimePrice(),
-                        enabled = !purchaseInFlight,
-                        onBuy = { onPurchase(StoreCatalog.PRODUCT_REMOVE_ADS) },
-                    )
-
-                    Spacer(Modifier.height(6.dp))
-
-                    // --- COIN PAKETLERI (ucuzdan pahaliya) ---
-                    SectionLabel(stringResource(R.string.store_section_coins))
-                    Text(
-                        text = stringResource(R.string.store_coins_hint),
-                        color = SleekTextAccent.copy(alpha = 0.7f),
-                        fontSize = 11.sp,
-                    )
-                    StoreCatalog.coinPacks.forEach { pack ->
-                        CoinPackRow(
-                            coins = pack.coins,
-                            priceText = products[pack.id]?.oneTimePrice(),
-                            best = pack.coins == StoreCatalog.largestPackCoins,
-                            enabled = !purchaseInFlight,
-                            onBuy = { onPurchase(pack.id) },
-                            testTag = "store_pack_${pack.coins}",
+                    StoreCatalog.coinPacks.forEachIndexed { index, pack ->
+                        val price = products[pack.id]?.oneTimePrice()
+                        val available = price != null && !purchaseInFlight
+                        ShopCardFrame(
+                            cardTag = "store_pack_${pack.coins}",
+                            number = null,
+                            title = stringResource(pack.tier.nameRes()),
+                            effect = stringResource(R.string.store_pack_coins, formatCoins(pack.coins)),
+                            shield = stringResource(
+                                R.string.store_pack_ordinal,
+                                index + 1,
+                                StoreCatalog.coinPacks.size,
+                            ),
+                            dotCount = StoreCatalog.coinPacks.size,
+                            dotsFilled = index + 1,
+                            buttonLabel = price ?: stringResource(
+                                if (productsState == ProductsState.LOADING) R.string.store_price_loading
+                                else R.string.store_price_unavailable
+                            ),
+                            buttonActive = available,
+                            buttonTag = "store_pack_${pack.coins}_buy",
+                            onClick = if (available) ({ onPurchase(pack.id) }) else null,
+                            window = { PackWindow(pack.id) }
                         )
                     }
-
-                    if (!billingReady) {
-                        Text(
-                            text = stringResource(R.string.store_connecting),
-                            color = SleekTextAccent.copy(alpha = 0.6f),
-                            fontSize = 12.sp,
-                            modifier = Modifier.fillMaxWidth().testTag("store_connecting"),
-                            textAlign = TextAlign.Center,
-                        )
-                    }
-
-                    Spacer(Modifier.height(8.dp))
-
-                    // --- GERI YUKLE ---
-                    RestoreRow(state = restoreState) { billing.restorePurchases(manuel = true) }
-
-                    // --- DEBUG PANELI — yalniz debug derlemede ---
-                    if (FakeBilling.enabled) {
-                        Spacer(Modifier.height(10.dp))
-                        DebugPanel(progress = progress, onChanged = { tick++ })
-                    }
-
-                    Spacer(Modifier.height(16.dp))
                 }
+
+                Spacer(Modifier.height(6.dp))
+
+                // --- DURUM SERIDI + KURTARMA ---
+                StatusStrip(
+                    lastEvent = lastEvent,
+                    pending = pendingCount > 0,
+                    productsFailed = productsState == ProductsState.FAILED ||
+                        connection == StoreConnection.UNAVAILABLE,
+                    productsLoading = productsState == ProductsState.LOADING,
+                    recoverState = recoverState,
+                    onRetry = { billing.refresh() },
+                    onRecover = { billing.restorePurchases(manuel = true) },
+                )
+
+                // --- DEBUG PANELI — yalniz debug derlemede ---
+                if (FakeBilling.enabled) {
+                    Spacer(Modifier.height(10.dp))
+                    DebugPanel(
+                        progress = progress,
+                        billing = billing,
+                        onChanged = { tick++ },
+                        modifier = Modifier.padding(horizontal = 20.dp),
+                    )
+                }
+
+                Spacer(Modifier.height(8.dp))
             }
         }
     }
 }
 
+/** Paket urun kimligine gore kart penceresi gorseli; bilinmeyen kimlik `null` (madeni para yedegi). */
+@DrawableRes
+internal fun packArtRes(productId: String): Int? = when (productId) {
+    StoreCatalog.PACK_RECRUIT -> R.drawable.spr_pack_fd_coins_1000
+    StoreCatalog.PACK_SERGEANT -> R.drawable.spr_pack_fd_coins_2200
+    StoreCatalog.PACK_CAPTAIN -> R.drawable.spr_pack_fd_coins_3600
+    StoreCatalog.PACK_COLONEL -> R.drawable.spr_pack_fd_coins_5200
+    StoreCatalog.PACK_GENERAL -> R.drawable.spr_pack_fd_coins_7000
+    else -> null
+}
+
+@Composable
+private fun BoxScope.PackWindow(productId: String) {
+    Image(
+        painter = painterResource(packArtRes(productId) ?: R.drawable.spr_ic_coins),
+        contentDescription = null,
+        contentScale = ContentScale.Fit,
+        modifier = Modifier.fillMaxSize()
+    )
+}
+
 /**
- * Tek seferlik urunun bicimli fiyati. `oneTimePurchaseOfferDetails` null
- * olabilir (urun Play'de abonelik tanimlanmis ya da detay eksik gelmis);
- * cagiran null'i "su an satin alinamiyor" olarak gosterir, fiyat UYDURMAZ.
+ * Tek seferlik urunun bicimli fiyati. `oneTimePurchaseOfferDetails` null olabilir; cagiran null'i
+ * "satin alinamiyor" olarak gosterir, fiyat UYDURMAZ.
  */
 private fun ProductDetails.oneTimePrice(): String? =
     oneTimePurchaseOfferDetails?.formattedPrice
 
-/** Binlik ayracli coin metni ("25.000"). Dil ayari ne olursa olsun okunur. */
+/** Binlik ayracli coin metni ("7.000"). Dil ayari ne olursa olsun okunur. */
 internal fun formatCoins(coins: Int): String = NumberFormat.getIntegerInstance().format(coins)
 
-@Composable
-private fun SectionLabel(text: String) {
-    Text(
-        text = text,
-        color = SleekTextAccent.copy(alpha = 0.75f),
-        fontSize = 12.sp,
-        fontWeight = FontWeight.Black,
-        letterSpacing = 1.2.sp,
-        modifier = Modifier.padding(top = 4.dp),
-    )
-}
-
-@Composable
-private fun StoreCard(
-    modifier: Modifier = Modifier,
-    borderColor: Color = SleekBorderLight,
-    content: @Composable () -> Unit,
-) {
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(SleekSurfaceCard)
-            .border(1.dp, borderColor, RoundedCornerShape(12.dp))
-            .padding(horizontal = 14.dp, vertical = 12.dp)
-    ) { content() }
-}
-
-@Composable
-private fun PriceButton(
-    text: String,
-    enabled: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    testTag: String,
-) {
-    Text(
-        text = text,
-        color = if (enabled) Color.White else Color.White.copy(alpha = 0.5f),
-        fontSize = 14.sp,
-        fontWeight = FontWeight.Black,
-        maxLines = 1,
-        textAlign = TextAlign.Center,
-        modifier = modifier
-            .clip(RoundedCornerShape(10.dp))
-            .background(if (enabled) SleekPrimaryGreen else SleekPrimaryGreen.copy(alpha = 0.45f))
-            .clickable(enabled = enabled, onClick = onClick)
-            // 44 dp dokunma tabani (ArtButtonTouchTargetTest ile ayni kural).
-            .padding(horizontal = 18.dp, vertical = 12.dp)
-            .testTag(testTag),
-    )
-}
-
-@Composable
-private fun UnavailableNote() {
-    Text(
-        text = stringResource(R.string.store_unavailable),
-        color = SleekTextAccent.copy(alpha = 0.55f),
-        fontSize = 11.sp,
-        textAlign = TextAlign.End,
-        modifier = Modifier.testTag("store_unavailable"),
-    )
-}
-
-@Composable
-private fun RemoveAdsCard(
-    owned: Boolean,
-    priceText: String?,
-    enabled: Boolean,
-    onBuy: () -> Unit,
-) {
-    StoreCard(borderColor = SleekGoldBorder, modifier = Modifier.testTag("store_remove_ads")) {
-        Column {
-            Text(
-                text = stringResource(R.string.store_remove_ads_title),
-                color = SleekGold,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Black,
-            )
-            Spacer(Modifier.height(3.dp))
-            Text(
-                text = stringResource(R.string.store_remove_ads_body),
-                color = SleekTextAccent,
-                fontSize = 12.sp,
-            )
-            Spacer(Modifier.height(3.dp))
-            // ZORUNLU CUMLE: rewarded kalkmaz, oyuncu bunu satin almadan ONCE
-            // bilmeli — sonradan ogrenmesi "bozuk urun" olarak okunur.
-            Text(
-                text = stringResource(R.string.store_remove_ads_note),
-                color = SleekTextAccent.copy(alpha = 0.65f),
-                fontSize = 11.sp,
-            )
-            Spacer(Modifier.height(10.dp))
-            when {
-                owned -> Text(
-                    text = stringResource(R.string.store_owned),
-                    color = Color(0xFF9CD67D),
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Black,
-                    modifier = Modifier.testTag("store_remove_ads_owned"),
-                )
-
-                priceText == null -> UnavailableNote()
-
-                else -> PriceButton(
-                    text = priceText,
-                    enabled = enabled,
-                    onClick = onBuy,
-                    modifier = Modifier.fillMaxWidth(),
-                    testTag = "store_remove_ads_buy",
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun CoinPackRow(
-    coins: Int,
-    priceText: String?,
-    best: Boolean,
-    enabled: Boolean,
-    onBuy: () -> Unit,
-    testTag: String,
-) {
-    StoreCard(
-        borderColor = if (best) SleekGold.copy(alpha = 0.6f) else SleekBorderLight,
-        modifier = Modifier.testTag(testTag),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            SpriteIcon(id = R.drawable.spr_ic_coins, size = 28.dp, contentDescription = null)
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    text = stringResource(R.string.store_pack_coins, formatCoins(coins)),
-                    color = Color(0xFFFFF3C4),
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Black,
-                    maxLines = 1,
-                )
-                if (best) {
-                    Text(
-                        text = stringResource(R.string.store_best_value),
-                        color = SleekGold,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Black,
-                        letterSpacing = 0.8.sp,
-                    )
-                }
-            }
-            Spacer(Modifier.width(10.dp))
-            if (priceText == null) UnavailableNote()
-            else PriceButton(text = priceText, enabled = enabled, onClick = onBuy, testTag = "${testTag}_buy")
-        }
-    }
-}
-
 /**
- * "SATIN ALMALARI GERI YUKLE". Play bunu ZORUNLU tutmaz (hak hesaba bagli,
- * `queryPurchasesAsync` ile kendi gelir); dugme su gercek ariza icin var:
- * cevrimdisi acilan oturumda `remove_ads` yazilamaz ve oyuncunun elinde
- * hicbir kontrol kalmaz — "odedim, hala reklam goruyorum". `refresh()` her
- * on plana gelmede dener; bu dugme oyuncunun ACIKCA "simdi dene" demesi.
+ * Kartlarin altindaki tek satirlik serit: en onemli mesaj + gerekli tek dugme.
+ * Oncelik: son olay > bekleyen odeme > urunler yuklenemedi > yukleniyor > bos durumda kurtarma ipucu.
+ * "Tekrar dene" YALNIZ yukleme basarisizken; "bitmemis satin almalari kontrol et" her zaman.
  */
 @Composable
-private fun RestoreRow(state: BillingManager.RestoreState, onRestore: () -> Unit) {
-    val running = state == BillingManager.RestoreState.RUNNING
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+private fun StatusStrip(
+    lastEvent: StoreEvent?,
+    pending: Boolean,
+    productsFailed: Boolean,
+    productsLoading: Boolean,
+    recoverState: BillingManager.RestoreState,
+    onRetry: () -> Unit,
+    onRecover: () -> Unit,
+) {
+    val running = recoverState == BillingManager.RestoreState.RUNNING
+    val message: String = when {
+        lastEvent is StoreEvent.Granted ->
+            stringResource(R.string.store_event_granted, formatCoins(lastEvent.coins))
+
+        lastEvent != null -> stringResource(lastEvent.messageRes())
+        pending -> stringResource(R.string.store_pending_note)
+        productsFailed -> stringResource(R.string.store_products_failed)
+        productsLoading -> stringResource(R.string.store_products_loading)
+        recoverState == BillingManager.RestoreState.DONE -> stringResource(R.string.store_recover_done)
+        recoverState == BillingManager.RestoreState.FAILED -> stringResource(R.string.store_recover_failed)
+        else -> stringResource(R.string.store_recover_hint)
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp)
+    ) {
         Text(
-            text = stringResource(if (running) R.string.store_restore_running else R.string.store_restore),
-            color = SleekTextAccent,
-            fontSize = 13.sp,
+            text = message,
+            color = SleekTextAccent.copy(alpha = 0.75f),
+            fontSize = 10.sp,
+            maxLines = 3,
+            modifier = Modifier
+                .weight(1f)
+                .testTag("store_status")
+        )
+        if (productsFailed) {
+            StripButton(
+                text = stringResource(R.string.store_products_retry),
+                enabled = true,
+                onClick = onRetry,
+                testTag = "store_retry",
+            )
+        }
+        StripButton(
+            text = stringResource(if (running) R.string.store_recover_running else R.string.store_recover_button),
+            enabled = !running,
+            onClick = onRecover,
+            testTag = "store_recover",
+        )
+    }
+}
+
+@Composable
+private fun StripButton(text: String, enabled: Boolean, onClick: () -> Unit, testTag: String) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .heightIn(min = 44.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .border(1.dp, SleekBorderLight, RoundedCornerShape(10.dp))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .testTag(testTag)
+    ) {
+        Text(
+            text = text,
+            color = if (enabled) SleekTextAccent else SleekTextAccent.copy(alpha = 0.5f),
+            fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center,
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(10.dp))
-                .border(1.dp, SleekBorderLight, RoundedCornerShape(10.dp))
-                .clickable(enabled = !running, onClick = onRestore)
-                .padding(vertical = 12.dp)
-                .testTag("store_restore"),
-        )
-        Spacer(Modifier.height(4.dp))
-        Text(
-            text = stringResource(
-                when (state) {
-                    BillingManager.RestoreState.DONE -> R.string.store_restore_done
-                    BillingManager.RestoreState.FAILED -> R.string.store_restore_failed
-                    else -> R.string.store_restore_hint
-                }
-            ),
-            color = SleekTextAccent.copy(alpha = 0.6f),
-            fontSize = 10.sp,
-            textAlign = TextAlign.Center,
+            maxLines = 2,
         )
     }
 }
 
 /**
  * DEBUG PANELI — release'te HIC cizilmez ([FakeBilling.enabled]).
- * Uc soruyu Play'e dokunmadan cevaplar: coin yaziliyor mu; ayni jeton IKI kez
- * odeniyor mu (bakiye DEGISMEMELI); reklamsiz bayragi interstitial kapisini
- * kapatiyor mu. Etiketler "hak ver/geri al" DEMEZ — bu hak yonetimi degil,
- * test durumu sifirlamasidir (Kron-Drive 2026-09-01 dersi).
+ * Senaryolar GERCEK isleme hattindan ([BillingManager.debugRun]) gecer; yalniz Play'e giden
+ * tuketme/onay sahtedir. Etiketler "hak ver/geri al" DEMEZ: bu test durumu sifirlamasidir
+ * (Kron-Drive 2026-09-01 dersi). Sahte satin alma, Play'de gercek bir kayit olusturmaz.
  */
 @Composable
-private fun DebugPanel(progress: CampaignProgressImpl, onChanged: () -> Unit) {
+private fun DebugPanel(
+    progress: CampaignProgressImpl,
+    billing: BillingManager,
+    onChanged: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(Color(0xFF1A2230))
@@ -457,36 +392,19 @@ private fun DebugPanel(progress: CampaignProgressImpl, onChanged: () -> Unit) {
                 color = SleekTextAccent.copy(alpha = 0.6f),
                 fontSize = 10.sp,
             )
-            DebugButton(
-                text = stringResource(R.string.store_debug_fake_pack, formatCoins(StoreCatalog.smallestPackCoins)),
-                testTag = "store_debug_fake_pack",
-            ) {
-                val token = FakeBilling.newToken(StoreCatalog.PACK_RECRUIT)
-                FakeBilling.rememberToken(token)
-                progress.grantPurchasedCoins(token, FakeBilling.coinsOf(StoreCatalog.PACK_RECRUIT))
-                onChanged()
-            }
-            DebugButton(
-                text = stringResource(R.string.store_debug_same_token),
-                testTag = "store_debug_same_token",
-            ) {
-                val token = FakeBilling.lastToken ?: FakeBilling.newToken(StoreCatalog.PACK_RECRUIT)
-                FakeBilling.rememberToken(token)
-                progress.grantPurchasedCoins(token, FakeBilling.coinsOf(StoreCatalog.PACK_RECRUIT))
-                onChanged()
-            }
-            DebugButton(
-                text = stringResource(if (progress.adsRemoved) R.string.store_debug_ads_off else R.string.store_debug_ads_on),
-                testTag = "store_debug_toggle_ads",
-            ) {
-                progress.setAdsRemoved(!progress.adsRemoved)
-                onChanged()
+            debugScenarios().forEach { (scenario, labelRes) ->
+                DebugButton(
+                    text = stringResource(labelRes),
+                    testTag = "store_debug_${scenario.name.lowercase()}",
+                ) {
+                    billing.debugRun(scenario)
+                    onChanged()
+                }
             }
             Text(
                 text = stringResource(
                     R.string.store_debug_status,
                     formatCoins(progress.coins),
-                    if (progress.adsRemoved) "ACIK" else "kapali",
                     formatCoins(progress.lifetimePurchasedCoins),
                 ),
                 color = SleekTextAccent,
@@ -497,20 +415,36 @@ private fun DebugPanel(progress: CampaignProgressImpl, onChanged: () -> Unit) {
     }
 }
 
+private fun debugScenarios(): List<Pair<FakeBilling.Scenario, Int>> = listOf(
+    FakeBilling.Scenario.BUY to R.string.store_debug_sc_buy,
+    FakeBilling.Scenario.PENDING to R.string.store_debug_sc_pending,
+    FakeBilling.Scenario.COMPLETE_PENDING to R.string.store_debug_sc_complete_pending,
+    FakeBilling.Scenario.CANCEL to R.string.store_debug_sc_cancel,
+    FakeBilling.Scenario.ARM_PERSIST_FAILURE to R.string.store_debug_sc_persist_failed,
+    FakeBilling.Scenario.LEGACY_COINS_1200 to R.string.store_debug_sc_legacy,
+    FakeBilling.Scenario.REPLAY_LAST to R.string.store_debug_sc_replay,
+    FakeBilling.Scenario.QUANTITY_2 to R.string.store_debug_sc_quantity2,
+)
+
 @Composable
 private fun DebugButton(text: String, testTag: String, onClick: () -> Unit) {
-    Text(
-        text = text,
-        color = SleekTextAccent,
-        fontSize = 11.sp,
-        fontWeight = FontWeight.Bold,
-        textAlign = TextAlign.Center,
+    Box(
+        contentAlignment = Alignment.Center,
         modifier = Modifier
             .fillMaxWidth()
+            .heightIn(min = 44.dp)
             .clip(RoundedCornerShape(8.dp))
             .border(1.dp, Color(0xFF4A78B0), RoundedCornerShape(8.dp))
             .clickable(onClick = onClick)
-            .padding(vertical = 10.dp, horizontal = 8.dp)
-            .testTag(testTag),
-    )
+            .padding(vertical = 6.dp, horizontal = 8.dp)
+            .testTag(testTag)
+    ) {
+        Text(
+            text = text,
+            color = SleekTextAccent,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+        )
+    }
 }
