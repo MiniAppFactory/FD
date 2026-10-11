@@ -9,8 +9,10 @@ import androidx.annotation.DrawableRes
 import androidx.annotation.VisibleForTesting
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
@@ -19,7 +21,10 @@ import com.miniappfactory.frontlinedefender.game.model.Biome
 import com.miniappfactory.frontlinedefender.game.model.BiomeRecolor
 import com.miniappfactory.frontlinedefender.game.model.BiomeSlotCache
 import com.miniappfactory.frontlinedefender.game.model.GameConfig
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
@@ -166,6 +171,46 @@ class GameSprites private constructor(
             return result.asImageBitmap().also { BiomeBackgroundCache.put(mapId, biome, it) }
         }
 
+        /**
+         * `loadBackground`'un tekillestirilmis (dedupe) hali — tek-ucus
+         * [singleFlightMap] uzerinden. Ayni (mapId,biome) icin es-zamanli
+         * yuklemeler (on-isitma + `rememberMapBackground`) tek decode'a iner;
+         * boylece ikinci 8.3 MB bitmap bellekte olusmaz ve API 24 heap tepesi
+         * korunur. Cagiran taraf `Dispatchers.Default`'ta olmalidir (bloklar).
+         */
+        internal suspend fun loadBackgroundDeduped(
+            res: Resources,
+            mapId: Int,
+            biome: Biome,
+        ): ImageBitmap = singleFlightMap(
+            cached = { BiomeBackgroundCache.get(mapId, biome) },
+            load = { loadBackground(res, mapId, biome) },
+        )
+
+        /**
+         * SAVASA GIRIS ON-ISITMASI. Bolume girilirken (canvas ilk cizilmeden)
+         * cagrilirsa, decode+recolor arka planda ERKEN baslar ve harita bitmap'i
+         * ilk kareye yetisme sansi artar; boylece soguk giriste pad'lerin bos
+         * zemine asili gorundugu pencere kisalir. Dedupe sayesinde
+         * `rememberMapBitmap`in kendi yuklemesiyle CAKISMAZ (ikinci decode yok).
+         * Zaten cache'teyse hicbir sey yapmaz. Fire-and-forget.
+         */
+        fun prewarmBackground(scope: CoroutineScope, res: Resources, mapId: Int, biome: Biome) {
+            if (BiomeBackgroundCache.get(mapId, biome) != null) return
+            scope.launch(Dispatchers.Default) {
+                try {
+                    loadBackgroundDeduped(res, mapId, biome)
+                } catch (c: CancellationException) {
+                    throw c // iptal yayilir (bolum degisince on-isitma iptal olur)
+                } catch (e: Throwable) {
+                    // ON-ISITMA BEST-EFFORT (FD-019): decode hatasi burada
+                    // YUTULUR; aksi halde launch'in exception'i parent scope'u
+                    // dusurup uygulamayi cokertir ve UI retry yolunu atlardi.
+                    // Gercek yukleme + retry + hata ekrani rememberMapBackground'da.
+                }
+            }
+        }
+
         private fun recolor(src: Bitmap, biome: Biome): Bitmap {
             val w = src.width
             val h = src.height
@@ -307,38 +352,58 @@ object BiomeBackgroundCache {
 }
 
 /**
- * Aktif bolumun harita arkaplani — biyom uygulanmis halde.
+ * Aktif bolumun harita arkaplani — biyom uygulanmis halde, YUKLEME DURUMUYLA.
  *
- * NEDEN NULLABLE / NEDEN ASENKRON
- *   Decode (~8.3 MB) + recolor (~2.08M piksel) birlikte yuzlerce ms surer.
- *   Bunu ana thread'de yapmak bolum girisinde ANR sinirina yaklasan bir donma
- *   uretir. Is `Dispatchers.Default`'a taşındi; hazir olana kadar `null`
- *   doner ve `GameCanvas` yalnizca harita katmanini atlar (letterbox zemini
- *   ve HUD cizilmeye devam eder, girdi bloklanmaz).
+ * NEDEN ASENKRON / DURUMLU (FD-018)
+ *   Decode (~8.3 MB) + recolor (~2.08M piksel) birlikte yuzlerce ms surer; ana
+ *   thread'de yapmak ANR'ye yaklasan bir donma uretir. Is `Dispatchers.Default`'a
+ *   tasinir. ESKIDEN hazir olana kadar `null` donuluyor ve `GameCanvas` yalniz
+ *   harita katmanini atliyordu — bu da soguk giriste pad/dusmanlarin bos
+ *   letterbox'a asili "bozuk" gorunmesine yol aciyordu. Artik durum acik:
+ *   [MapLoad.Loading] / [MapLoad.Ready] / [MapLoad.Failed]. Cagiran taraf
+ *   Loading/Failed'de notr zemin + "yukleniyor" gosterir, saha etkilesimini ve
+ *   erken dalga baslatmayi bekletir (bkz. GameCanvas / GameEngine.setMapReady).
  *
- *   Bu bosluk oynanisi bozmaz: motor bolume `PREPARATION` fazinda
- *   (`GameConfig.PREPARATION_TIME_SECONDS = 10`) giriyor, yani ilk dusman
- *   spawn olmadan once saniyeler var.
+ * Dayaniklilik [loadMapWithRetry] icinde: AYNI hedef retry + ASKIDA kalmama
+ * (farkli-harita fallback YOK — FD-019). [Failed]'de cagiran taraf hata ekrani
+ * (yeniden dene / bolum sec) gosterir; oyun kilitli kalir. Tek-ucus (dedupe)
+ * [GameSprites.loadBackgroundDeduped] icinde; es-zamanli on-isitmayla ikinci
+ * 8.3 MB decode olmaz. Donen [MapBackgroundHandle.retry] ayni haritayi yeniden dener.
  *
- * `remember(mapId, biome)` ANAHTARLI: bolum degisince state ANINDA null'a
- * doner. `produceState` burada YANLIS olurdu — onun ic state'i anahtarsiz
- * `remember` ile tutulur ve bolum degistiginde bir sure ONCEKI bolumun
- * haritasini gosterirdi.
+ * `remember(mapId, biome)` ANAHTARLI: bolum degisince durum ANINDA sifirlanir ve
+ * LaunchedEffect iptal olur — hizli hedef degisiminde ESKI map+biome sonucu
+ * gosterilmez (`produceState` anahtarsiz ic state'iyle onceki haritayi gosterirdi).
  */
+/** [rememberMapBackground] sonucu: yukleme durumu + "yeniden dene" eylemi. */
+class MapBackgroundHandle internal constructor(
+    val state: MapLoad<ImageBitmap>,
+    /** Failed sonrasi AYNI haritayi yeniden yukler (hata ekranindaki "yeniden dene"). */
+    val retry: () -> Unit,
+)
+
 @Composable
-fun rememberMapBitmap(mapId: Int, biome: Biome): ImageBitmap? {
+fun rememberMapBackground(mapId: Int, biome: Biome): MapBackgroundHandle {
     val res = LocalContext.current.resources
-    val state = remember(res, mapId, biome) {
-        // Onbellekte hazirsa ilk karede senkron olarak gelir — tekrar denemede
-        // hic bosluk gorunmez.
-        mutableStateOf(BiomeBackgroundCache.get(mapId, biome))
+    val scope = rememberCoroutineScope()
+    // Yayinlama/anahtar mekanizmasi MapBackgroundLoader'da (Compose'suz,
+    // test edilebilir): hizli hedef degisiminde gec gelen eski sonuc EZMEZ,
+    // onbellek hit'inde senkron Ready, Failed sonrasi retry.
+    val loader = remember(res) {
+        MapBackgroundLoader<ImageBitmap>(
+            scope = scope,
+            maxAttempts = 2,
+            cached = { m, b -> BiomeBackgroundCache.get(m, b) },
+            decode = { m, b ->
+                withContext(Dispatchers.Default) { GameSprites.loadBackgroundDeduped(res, m, b) }
+            },
+        )
     }
-    LaunchedEffect(res, mapId, biome) {
-        if (state.value == null) {
-            state.value = withContext(Dispatchers.Default) {
-                GameSprites.loadBackground(res, mapId, biome)
-            }
-        }
-    }
-    return state.value
+    LaunchedEffect(mapId, biome) { loader.request(mapId, biome) }
+    val published by loader.state.collectAsState()
+    // FD-021: cizime donen durum HEDEF (mapId,biome) icin degilse SENKRON
+    // Loading doner — hedef A'dan B'ye degisince, request efekti henuz
+    // kosmamis olsa bile B'nin ilk karesinde A'nin bitmap'i/Ready'si
+    // KULLANILMAZ (eski harita yeni geometriyle cizilmez, readiness eski kalmaz).
+    val state = selectMapState(mapId, biome, published)
+    return MapBackgroundHandle(state) { loader.retry() }
 }

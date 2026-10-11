@@ -150,4 +150,46 @@
         <item>The slope. Everything.</item>
     </string-array>
 
+    <!-- ==================================================================
+         BOSS ZAFER DONUS KARTI — docs/STORY.md §7 (ertelenen "perde kapanis
+         karti"). Zafer panelinin ICINDE, YALNIZCA elit-disi boss zaferinde
+         cizilir (game/ui/GameDialogs.kt VictoryModal). Boss bolumleri
+         11 16 22 33 44 48 55 (STORY §4.4). Motor-dogru kaynak:
+         WaveDefinitions.wavesFor(levelId) icinde COMMAND_TANK; StoryBeats.
+         BOSS_LEVELS o kumeye karsi ActIntroTest ile KILITLI.
+
+         Her boss: kisa DONUS satiri (ne oldu) + SIRADAKI hedef (bir sonraki
+         perdenin emri). L55 FINAL: sonraki hedef YERINE kapanis satiri.
+         Dizeler EN; Turkcesi values-tr. Ton: telsiz, sifatsiz, STORY §0.
+         Butceler StoryStringsTest.bossDebriefLinesFitTheirBudget ile kilitli:
+           story_boss_<n>       (donus)   <= 64
+           story_boss_next_<n>  (siradaki)<= 48
+           story_boss_finale               <= 64
+           story_debrief_label / story_next_label <= 12
+         ================================================================== -->
+    <string name="story_debrief_label">DEBRIEF</string>
+    <string name="story_next_label">NEXT</string>
+
+    <!-- L11 · Act I finali -> Act II -->
+    <string name="story_boss_11">First command tank down. The column has a head.</string>
+    <string name="story_boss_next_11">Counter-attack. Take the village back.</string>
+    <!-- L16 · Act II orta (cift boss) -->
+    <string name="story_boss_16">Two heads down in one night.</string>
+    <string name="story_boss_next_16">Push to the falls. Three tanks wait.</string>
+    <!-- L22 · Act II finali -> Act III -->
+    <string name="story_boss_22">Three tanks stopped at one pass. The column was never one.</string>
+    <string name="story_boss_next_22">Winter front. Stop chasing. Hold.</string>
+    <!-- L33 · Act III finali -> Act IV -->
+    <string name="story_boss_33">The village split the column in two.</string>
+    <string name="story_boss_next_33">Fall back. Hold the desert line.</string>
+    <!-- L44 · Act IV finali -> Act V -->
+    <string name="story_boss_44">Two heads down at the fork. Command has gone quiet.</string>
+    <string name="story_boss_next_44">Last position. Whoever stands holds.</string>
+    <!-- L48 · Act V orta (kusatma) -->
+    <string name="story_boss_48">The siege broke.</string>
+    <string name="story_boss_next_48">Fall back to the last corridor.</string>
+    <!-- L55 · FINAL -->
+    <string name="story_boss_55">The slope held. The Iron Column is broken.</string>
+    <string name="story_boss_finale">The line is still standing.</string>
+
 </resources>

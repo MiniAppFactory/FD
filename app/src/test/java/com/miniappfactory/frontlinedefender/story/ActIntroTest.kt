@@ -1,8 +1,10 @@
 package com.miniappfactory.frontlinedefender.story
 
 import com.miniappfactory.frontlinedefender.game.model.GameConfig
+import com.miniappfactory.frontlinedefender.game.model.WaveDefinitions
 import com.miniappfactory.frontlinedefender.game.ui.ActIntro
 import com.miniappfactory.frontlinedefender.game.ui.ActIntroStore
+import com.miniappfactory.frontlinedefender.game.ui.StoryBeats
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -157,6 +159,48 @@ class ActIntroTest {
                     "(varsayilan davranis bugunkuyle birebir ayni)",
                 gate(null, levelId)
             )
+        }
+    }
+
+    // =====================================================================
+    // STORY BEATS — boss donus karti (docs/STORY.md §7)
+    // =====================================================================
+
+    /**
+     * `StoryBeats.BOSS_LEVELS` saf bir veri kumesidir ama MOTOR-DOGRU kaynak,
+     * bir bolumun dalgalarinda `COMMAND_TANK` bulunup bulunmadigidir. Iki taraf
+     * ayrisirsa zafer donus karti YANLIS bolumde cikar (boss olmayanda) ya da
+     * bir boss bolumunde HIC cikmaz. `actOfAgreesWithGameConfig` ile ayni
+     * disiplin: elle yazilan kume motorun gercegine kilitlenir.
+     */
+    @Test
+    fun bossLevelsMatchTheEngineCommandTankWaves() {
+        val engineBossLevels = (1..GameConfig.CAMPAIGN_LEVEL_COUNT).filter { levelId ->
+            WaveDefinitions.wavesFor(levelId).any { wave ->
+                wave.spawns.any { it.enemyType == GameConfig.EnemyType.COMMAND_TANK }
+            }
+        }.toSet()
+        assertEquals(
+            "StoryBeats.BOSS_LEVELS motorun COMMAND_TANK tasiyan dalgalarindan " +
+                "ayrisiyor; donus karti yanlis bolumde cikar veya boss bolumunde cikmaz",
+            engineBossLevels,
+            StoryBeats.BOSS_LEVELS
+        )
+        assertEquals("STORY §4.4: tam 7 boss bolumu", 7, StoryBeats.BOSS_LEVELS.size)
+    }
+
+    @Test
+    fun finaleIsTheLastCampaignLevelAndStillABoss() {
+        assertEquals(
+            "final, kampanyanin son bolumu olmali",
+            GameConfig.CAMPAIGN_LEVEL_COUNT,
+            StoryBeats.FINALE_LEVEL
+        )
+        assertTrue("final bir boss bolumudur", StoryBeats.isBoss(StoryBeats.FINALE_LEVEL))
+        assertTrue(StoryBeats.isFinale(StoryBeats.FINALE_LEVEL))
+        // Finalden baska hicbir bolum "final" degildir.
+        (1 until StoryBeats.FINALE_LEVEL).forEach { levelId ->
+            assertFalse("bolum $levelId final olmamali", StoryBeats.isFinale(levelId))
         }
     }
 }

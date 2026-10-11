@@ -246,6 +246,15 @@ object GameConfig {
     const val LETTERBOX_COLOR = 0xFF0B0E08
 
     /**
+     * Harita bitmap'i (boyali pad yuvalari + yol) asenkron gelene kadar
+     * oynanis dikdortgenine cizilen NOTR ZEMIN. Letterbox'tan (neredeyse
+     * siyah) acik, arazi tonunda bir koyu zeytin; soguk savasa giriste pad'ler
+     * bos/siyah bosluga asili "bozuk" gorunmesin, "yukleniyor" okunsun diye.
+     * Harita gelince ustune oturur (bkz. GameCanvas null dali).
+     */
+    const val MAP_LOADING_FILL_COLOR = 0xFF2A3120
+
+    /**
      * SPRITE YONU — olculdu, tahmin edilmedi (olcum sonucu hemen asagida).
      * atan2(dy, dx) ekran koordinatlarinda 0 derece = SAG, +90 derece = ASAGI.
      *

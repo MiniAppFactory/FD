@@ -411,6 +411,16 @@ class GameEngine(
     private val _preparationTimer = MutableStateFlow(GameConfig.PREPARATION_TIME_SECONDS.toFloat())
     val preparationTimer: StateFlow<Float> = _preparationTimer.asStateFlow()
 
+    // FD-018 — HARITA HAZIR MI. Soguk savasa giriste harita arkaplani (boyali
+    // pad yuvalari + yol) asenkron geldiginden, hazir DEGILKEN hazirlik sayaci
+    // DONAR (PREPARATION suresi korunur), erken dalga baslamaz ve saha dokunusu
+    // islenmez (GameCanvas `isMapReady`yi okur). Varsayilan `true`: bu bayragi
+    // set etmeyen birim testleri ve onizlemeler bugunkuyle BIREBIR ayni davranir.
+    @Volatile
+    private var mapReady: Boolean = true
+    val isMapReady: Boolean get() = mapReady
+    fun setMapReady(ready: Boolean) { mapReady = ready }
+
     private val _gameSpeed = MutableStateFlow(1.0f)
     val gameSpeed: StateFlow<Float> = _gameSpeed.asStateFlow()
 
@@ -922,16 +932,22 @@ class GameEngine(
         fieldTopPx = rect.top
         renderScale = rect.renderScale
 
-        // Faz 4: AKTIF bolumun geometrisi. Eskiden burada `LevelData.LEVEL_1`
-        // sabit kodluydu, yani hangi bolum yuklenirse yuklensin ilk karede
-        // harita 1'in yolu/pad'leri geri geliyordu.
-        // Update positions of existing towers
-        towers.forEach { tower ->
-            scaledBuildSpots.find { it.id == tower.buildSpotId }?.let { spot ->
-                tower.posX = spot.normX
-                tower.posY = spot.normY
-            }
-        }
+        // ⚠ 2026-10-11 — HARITA KAYMASI (cihazda goruldu: SM-G950F, dalga 1).
+        //
+        // ROTA/PAD/KULE GEOMETRISI BURADA YENIDEN OLCEKLENMELI. Onceki surum
+        // `rescaleGeometry()`yi yalniz `loadLevel`de cagiriyordu ve burada
+        // sadece kuleleri (stale) `scaledBuildSpots`tan yeniden konumluyordu.
+        // Oysa `hudInsetPx` once bir TAHMINLE (GameConfig.HUD_TOP_INSET_DP)
+        // baslar, sonra HUD olculunce (`onSizeChanged`) GERCEK yukseklige
+        // guncellenir. O degisim `topInsetPx`i degistirir -> `fieldRect`
+        // yeniden hesaplanir -> harita bitmap'i YENI dikdortgene cizilir, ama
+        // `scaledRoutes`/`scaledBuildSpots` ESKI (tahmine dayali) dikdortgende
+        // kalirdi. Sonuc: boyali yol ile yurunen rota arasinda KALICI dikey
+        // kayma — "harita kaymis, dusmanlar yoldan gitmiyor". `mapArtRect` =
+        // `fieldRect` ozdesligi dogruydu; eksik olan rotanin AYNI dikdortgene
+        // yeniden olceklenmesiydi. rescaleGeometry rotalari, pad'leri ve
+        // (pad kimliginden) kuleleri birlikte YENI dikdortgene tasir.
+        rescaleGeometry()
 
         // CANLI VARLIKLARI da yeni dikdortgene tasi.
         //
@@ -1276,7 +1292,9 @@ class GameEngine(
     }
 
     fun startNextWaveNow() {
-        if (_gameState.value == GameState.PREPARATION) {
+        // FD-018: harita hazir degilken (soguk giris) elle START da dalga
+        // baslatmaz — oyuncu haritayi/yollari gormeden savasa girmesin.
+        if (_gameState.value == GameState.PREPARATION && mapReady) {
             _gameState.value = GameState.WAVE_RUNNING
             // Yukseltme kilidinin TEK dogruluk kaynagi (bkz.
             // upgradeLockedUntilFirstWave). Bir kez acilir, bir daha kapanmaz.
@@ -2016,6 +2034,9 @@ class GameEngine(
 
         // Preparation phase
         if (_gameState.value == GameState.PREPARATION) {
+            // FD-018: harita hazir degilken hazirlik suresi DONAR (korunur) ve
+            // erken dalga baslamaz — oyuncu haritayi gormeden sure tukenmez.
+            if (!mapReady) return
             _preparationTimer.value -= dt
             if (_preparationTimer.value <= 0f) {
                 startNextWaveNow()
@@ -2473,14 +2494,48 @@ class GameEngine(
         }
     }
 
-    /** Yakinda bulunan dusmanlar (canvas px yaricap). */
-    private fun enemiesWithin(x: Float, y: Float, radiusPx: Float): List<EnemyEntity> {
+    /**
+     * Yakindaki dusmanlari tahsissiz gezer (canvas px yaricap).
+     *
+     * Carpma yolu eskiden her top/cryo/fuze darbesinde `enemies.filter` ile
+     * yeni bir ArrayList uretiyordu. Sonuc yalnizca bir kez gezildigi icin
+     * ara koleksiyon gereksizdi; indeksli gecis hem listeyi hem iterator'u
+     * ortadan kaldirir. Dusman sirasi korundugu icin hasar/oldurme sirasi da
+     * onceki davranisla birebirdir.
+     */
+    private inline fun forEachEnemyWithin(
+        x: Float,
+        y: Float,
+        radiusPx: Float,
+        action: (EnemyEntity) -> Unit,
+    ) {
         val rSq = radiusPx * radiusPx
-        return enemies.filter {
-            val dx = it.posX - x
-            val dy = it.posY - y
-            (dx * dx + dy * dy) <= rSq
+        for (i in enemies.indices) {
+            val enemy = enemies[i]
+            val dx = enemy.posX - x
+            val dy = enemy.posY - y
+            if ((dx * dx + dy * dy) <= rSq) action(enemy)
         }
+    }
+
+    /** Olen tek-hedef mermisi icin tolerans icindeki en yakin dusman; tahsissiz. */
+    private fun nearestEnemyWithin(x: Float, y: Float, radiusPx: Float): EnemyEntity? {
+        val rSq = radiusPx * radiusPx
+        var nearest: EnemyEntity? = null
+        var nearestDistanceSq = Float.MAX_VALUE
+        for (i in enemies.indices) {
+            val enemy = enemies[i]
+            val dx = enemy.posX - x
+            val dy = enemy.posY - y
+            val distanceSq = dx * dx + dy * dy
+            // `minByOrNull` esitlikte ilk elemani tutar; kesin `<` ayni
+            // hedef secimini korur.
+            if (distanceSq <= rSq && distanceSq < nearestDistanceSq) {
+                nearest = enemy
+                nearestDistanceSq = distanceSq
+            }
+        }
+        return nearest
     }
 
     /** CANNON — genis patlama, zirhi bypass eder (DECISIONS B2). */
@@ -2500,7 +2555,7 @@ class GameEngine(
             )
         )
 
-        enemiesWithin(proj.targetX, proj.targetY, proj.splashRadius).forEach { enemy ->
+        forEachEnemyWithin(proj.targetX, proj.targetY, proj.splashRadius) { enemy ->
             applyDamageToEnemy(
                 enemy, proj.damage, proj.armorPierce,                proj.slowFactor, proj.slowDuration, isSplash = true,
                 ownerTowerId = proj.ownerTowerId
@@ -2529,7 +2584,7 @@ class GameEngine(
                 radiusPx = proj.slowPulseRadius
             )
         )
-        enemiesWithin(proj.targetX, proj.targetY, proj.slowPulseRadius).forEach { enemy ->
+        forEachEnemyWithin(proj.targetX, proj.targetY, proj.slowPulseRadius) { enemy ->
             applyDamageToEnemy(
                 enemy, proj.damage, proj.armorPierce,
                 proj.slowFactor, proj.slowDuration,
@@ -2566,9 +2621,10 @@ class GameEngine(
 
         if (proj.impactRadius > 0f && proj.impactDamageFraction > 0f) {
             val splashDamage = proj.damage * proj.impactDamageFraction
-            enemiesWithin(proj.targetX, proj.targetY, proj.impactRadius).forEach { enemy ->
-                if (enemy.id == primary?.id) return@forEach
-                applyDamageToEnemy(enemy, splashDamage, proj.armorPierce, 0f, 0f, ownerTowerId = proj.ownerTowerId)
+            forEachEnemyWithin(proj.targetX, proj.targetY, proj.impactRadius) { enemy ->
+                if (enemy.id != primary?.id) {
+                    applyDamageToEnemy(enemy, splashDamage, proj.armorPierce, 0f, 0f, ownerTowerId = proj.ownerTowerId)
+                }
             }
         }
     }
@@ -2580,11 +2636,7 @@ class GameEngine(
         // ucundaki dusmana hasar tasiyordu.
         val tolerance = GameConfig.PROJECTILE_REDIRECT_TOLERANCE_REF_PX * renderScale
         val target = enemies.find { it.id == proj.targetEnemyId }
-            ?: enemiesWithin(proj.targetX, proj.targetY, tolerance).minByOrNull {
-                val dx = it.posX - proj.targetX
-                val dy = it.posY - proj.targetY
-                dx * dx + dy * dy
-            }
+            ?: nearestEnemyWithin(proj.targetX, proj.targetY, tolerance)
 
         // ISABET YOKSA GERI BILDIRIM DE YOK. Eskiden hedef bulunamasa bile
         // isabet sesi ve kivilcim ciziliyordu: oyuncu vurdugunu sanip can

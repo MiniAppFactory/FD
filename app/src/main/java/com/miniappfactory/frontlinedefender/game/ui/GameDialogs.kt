@@ -652,6 +652,82 @@ fun VictoryModal(
                     }
                 }
 
+                // BOSS DONUS KARTI — docs/STORY.md §7'nin ertelenen "perde
+                // kapanis karti". Zafer panelinin ICINDE, kaydirilabilir
+                // alanda; butonlar bu alanin DISINDA kaldigi icin kisa
+                // ekranda alt eylemler GORUNUR kalir. Yalnizca ELIT-DISI boss
+                // zaferinde cizilir: elit sonucu kayda yildiz yazmaz ve bu
+                // panel yildiz/ipucuyla ayni kapidan gecer. Yeni modal YOK,
+                // sanat yuzeyi (ArtSurface/Nameplate) YOK — S8/API24 metinsiz
+                // -buton tuzagi (HANDOVER §1c); yuksek-skor cipiyle ayni duz
+                // arka plan + kenarlik deseni kullanilir.
+                val levelId = gameEngine.levelSpec.levelId
+                val bossOutcomeRes = storyBossOutcomeRes(levelId)
+                if (!elite && StoryBeats.isBoss(levelId) && bossOutcomeRes != null) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                SleekSurfaceCard.copy(alpha = 0.85f),
+                                RoundedCornerShape(12.dp)
+                            )
+                            .border(
+                                1.dp,
+                                SleekGold.copy(alpha = 0.55f),
+                                RoundedCornerShape(12.dp)
+                            )
+                            .padding(horizontal = 14.dp, vertical = 10.dp)
+                            .testTag("victory_boss_card")
+                    ) {
+                        Text(
+                            text = stringResource(R.string.story_debrief_label),
+                            color = SleekGold,
+                            fontWeight = FontWeight.Black,
+                            fontSize = 11.sp,
+                            maxLines = 1
+                        )
+                        Text(
+                            text = stringResource(bossOutcomeRes),
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.testTag("victory_boss_outcome")
+                        )
+                        if (StoryBeats.isFinale(levelId)) {
+                            // FINAL: "sonraki hedef" yok, kapanis satiri.
+                            Text(
+                                text = stringResource(R.string.story_boss_finale),
+                                color = SleekGold,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.testTag("victory_boss_finale")
+                            )
+                        } else {
+                            val bossNextRes = storyBossNextRes(levelId)
+                            if (bossNextRes != null) {
+                                Spacer(Modifier.height(2.dp))
+                                Text(
+                                    text = stringResource(R.string.story_next_label),
+                                    color = SleekTextAccent,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 10.sp,
+                                    maxLines = 1
+                                )
+                                Text(
+                                    text = stringResource(bossNextRes),
+                                    color = SleekTextAccent,
+                                    fontSize = 13.sp,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.testTag("victory_boss_next")
+                                )
+                            }
+                        }
+                    }
+                }
+
               } // <- kaydirilabilir istatistik alani biter
 
                 // BUTONLAR: kaydirma alaninin DISINDA, yani her zaman gorunur.

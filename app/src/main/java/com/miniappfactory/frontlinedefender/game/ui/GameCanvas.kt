@@ -343,7 +343,16 @@ fun GameCanvas(
     frameTick: IntState,
     /** Ust HUD seridinin px yuksekligi — oynanis alani bunun altinda baslar. */
     topInsetPx: Float,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /**
+     * Harita arkaplani durumu degisince cagrilir (FD-018/019): (durum, "yeniden
+     * dene" eylemi). Cagiran taraf bununla motoru bilgilendirir — YALNIZ
+     * [MapLoad.Ready]'de serbest; [MapLoad.Loading] ve [MapLoad.Failed]'de
+     * PREPARATION DONAR, erken dalga/dokunus olmaz — ve "yukleniyor" /
+     * "yuklenemedi + yeniden dene" gostergesini yonetir. Varsayilan bos: mevcut
+     * onizlemeler/testler degismeden derlenir.
+     */
+    onMapStateChange: (MapLoad<ImageBitmap>, () -> Unit) -> Unit = { _, _ -> }
 ) {
     // Faz 3: tum sprite'lar BIR KEZ decode edilir. Kare dongusunde decode yok.
     val sprites = rememberGameSprites()
@@ -370,7 +379,12 @@ fun GameCanvas(
     // fonksiyonu — deterministik, ayni bolum her zaman ayni varyant.
     val mapId = remember(levelId) { gameEngine.activeMapId }
     val biome = remember(levelId) { BiomeVariants.biomeFor(levelId) }
-    val mapBitmap = rememberMapBitmap(mapId, biome)
+    val mapBg = rememberMapBackground(mapId, biome)
+    val mapBitmap = mapBg.state.valueOrNull
+    // Durum degisince cagirana bildir: (durum + yeniden-dene eylemi). Cagiran
+    // motoru bilgilendirir (yalniz Ready serbest) ve yukleniyor/yuklenemedi
+    // gostergesini + "yeniden dene"yi yonetir (FD-019).
+    LaunchedEffect(mapBg.state) { onMapStateChange(mapBg.state, mapBg.retry) }
 
     Canvas(
         modifier = modifier
@@ -387,7 +401,9 @@ fun GameCanvas(
                         tapOffset.x - shake.x,
                         tapOffset.y - shake.y
                     )
-                    handleCanvasTap(gameEngine, adjustedTap)
+                    // FD-018: harita hazir degilken (soguk giris) saha dokunusu
+                    // islenmez — oyuncu gormedigi yuvaya kule kurmasin.
+                    if (gameEngine.isMapReady) handleCanvasTap(gameEngine, adjustedTap)
                 }
             }
     ) {
@@ -429,6 +445,21 @@ fun GameCanvas(
                     height = art.height
                 )
                 drawMapEdgeBleed(mapBitmap, art, GameConfig.mapEdgeBleedPx(s))
+            } else {
+                // HARITA HENUZ HAZIR DEGIL (soguk savasa giriste biyom decode+
+                // recolor arka planda surerken `mapBitmap` null olur). Boyali
+                // pad yuvalari ve yol bu bitmap'in icinde oldugu icin, bos
+                // birakilirsa pad'ler/dusmanlar KOYU LETTERBOX bosluguna asili
+                // "yerlesim bozuk / dusman yoldan gelmiyor" gorunur. Oynanis
+                // dikdortgenine notr bir arazi zemini ciziyoruz: kart yerlesimi
+                // bitmap gelince (PREPARATION fazinda, ilk dusmandan cok once)
+                // ustune oturur. Bu YALNIZCA kozmetik bir ara-durumdur; pad ve
+                // dokunma KOORDINATLARI bitmap'ten BAGIMSIZ, zaten dogru yerde.
+                drawRect(
+                    color = Color(GameConfig.MAP_LOADING_FILL_COLOR),
+                    topLeft = Offset(art.left, art.top),
+                    size = Size(art.width, art.height)
+                )
             }
 
             // 2. Yol/spawn/us CIZIMI YOK — yol artik haritada boyali.

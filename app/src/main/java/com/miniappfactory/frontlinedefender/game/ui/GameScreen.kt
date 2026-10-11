@@ -24,6 +24,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.miniappfactory.frontlinedefender.ui.theme.SleekGold
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.ImageBitmap
+import com.miniappfactory.frontlinedefender.game.model.BiomeVariants
 import com.miniappfactory.frontlinedefender.game.model.GameConfig
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -136,29 +138,53 @@ fun GameScreen() {
     // (onLevelCleared / grantSupplyDrop / gorevler).
     val campaignProgress = remember(saveManager) { CampaignProgressImpl(saveManager) }
 
+    // PERDE ACILIS KARTI kalici deposu — TEK KAYNAK. Hem bolum secim ekrani hem
+    // de zaferden DOGRUDAN gecis (FD-008) ayni gorulmemis-opener kontrolunu bu
+    // nesneden okur; iki ayri `SaveManagerActIntroStore` ayni bayraklari yazsa
+    // da tek kaynak drift'i onler. Kalicilik `SaveManager`in var olan tek
+    // atislik bayrak API'si (`act_intro_1..5`); `SaveManager` DEGISTIRILMEDI.
+    val actIntroStore = remember(saveManager) { SaveManagerActIntroStore(saveManager) }
+
     /** Son bolum sonucu — zafer ekrani coin odul dokumunu bundan okur. */
     var lastClearResult by remember { mutableStateOf<LevelClearResult?>(null) }
 
     /**
-     * Zafer ekranindaki "SONRAKI BOLUM" butonunun hedefi; `null` ise buton
-     * GOSTERILMEZ.
+     * FD-008 — ZAFERDEN DOGRUDAN SONRAKI BOLUME GECIS.
      *
-     * Iki durumda null olur: kampanya bitti (son bolum) veya siradaki bolum
-     * hala kilitli. Ikincisi bilincli — kilitli bolume goturen bir buton
-     * oyuncuyu "yeterli coinin yok" duvarina carptirirdi; zafer aninin
-     * yapmamasi gereken tam olarak budur. O durumda tek buton kalir ve
-     * oyuncu haritaya doner, kilidi orada gorur.
+     * `nextCampaignLevel` zaferdeki sonraki ADAYDIR ve sonraki bolum KILITLI
+     * olsa bile gosterilir (eski davranis yalnizca acik bolumde gosteriyordu ve
+     * kilitliyse oyuncuyu haritaya yolluyordu). `null` ise kampanya bitti (son
+     * bolum) ve SONRAKI BOLUM cizilmez.
+     *
+     * Kilitli sonraki, HARITAYA DONMEDEN, bolum secim ekranindakiyle AYNI
+     * `UnlockConfirmOverlay` + `tryUnlock` ile acilir: fiyat + acik onay +
+     * islem-ani bakiye kontrolu, otomatik ucret kesme YOK. Gorulmemis bir perde
+     * acilisi (L12/23/34/45) ayni `actIntroStore` kontrolunden gecer — yeni
+     * "seen" sistemi YAZILMADI. Butun dallanma saf `VictoryFlow`dan okunur.
      */
-    val nextPlayableLevel: Int? = run {
-        val candidate = gameEngine.levelSpec.levelId + 1
-        if (gameState == GameState.VICTORY &&
-            candidate <= EconomyConfig.CAMPAIGN_LEVELS &&
-            campaignProgress.isUnlocked(candidate)
-        ) {
-            candidate
-        } else {
-            null
-        }
+    val nextCampaignLevel: Int? = run {
+        if (gameState != GameState.VICTORY) return@run null
+        VictoryFlow.nextCandidate(gameEngine.levelSpec.levelId, EconomyConfig.CAMPAIGN_LEVELS)
+    }
+
+    // FD-010 — ZAFER GECIS SAHIBI. Butun bekleyen-pencere durumu ve TEK-GECIS
+    // garantisi burada; ekran yalniz donen `Start` adimini uygular ve pencereleri
+    // cizer. Cift callback (ayni karede iki dokunus ya da ilk baslatmadan sonra
+    // bayat callback) ikinci kez `None` doner, yani motorun DEGISMIS levelId'si
+    // uzerinden yanlis bolum baslatilamaz.
+    val victory = remember { VictoryTransition(EconomyConfig.CAMPAIGN_LEVELS) }
+
+    // VICTORY disina cikinca (sonraki baslatildi / haritaya donuldu / ana menu /
+    // geri tusu) bekleyen pencereler ve sahiplik bayragi sifirlanir — bir
+    // sonraki zafer temiz baslar, bayat overlay acilmaz.
+    LaunchedEffect(gameState) {
+        if (gameState != GameState.VICTORY) victory.onLeftVictory()
+    }
+
+    // Donen adimi uygula: yalniz START motoru baslatir (NORMAL; elite = false).
+    // UNLOCK/INTRO adimlarinda pencereyi VictoryTransition zaten acti.
+    fun runVictoryStep(step: VictoryFlow.Step) {
+        if (step is VictoryFlow.Step.Start) gameEngine.startNewGame(step.level, elite = false)
     }
 
     /** Cephanelik (meta yukseltme dukkani) acik mi — LEVEL_SELECT ustunde katman. */
@@ -257,10 +283,35 @@ fun GameScreen() {
         //    dugme 2x'e cikardigi anda deger true'ya kilitlenir.
         campaignProgress.noteSellTrackingActive()
         campaignProgress.noteGameSpeed(gameEngine.gameSpeed.value)
+
+        // SOGUK GIRIS HARITA BOSLUGUNU KISALT. Harita bitmap'i (boyali pad
+        // yuvalari + YOL) biyom decode+recolor ile asenkron geliyor; hazir
+        // olana kadar GameCanvas yalnizca harita katmanini atlar ve pad'ler
+        // notr zemine asili gorunur. Decode'u SAVAS BASINDA erken tetikleyince,
+        // ilk kompozisyondaki sprite decode ANA THREAD'de surerken bu is
+        // `Dispatchers.Default`'ta paralel koşar ve harita ilk kareye yetisme
+        // sansi artar. Dedupe sayesinde `rememberMapBitmap`in yuklemesiyle
+        // CAKISMAZ (ikinci 8.3 MB decode / bellek tepesi yok). Fire-and-forget;
+        // bu efektin kendi scope'u battleEpoch degisince iptal eder.
+        GameSprites.prewarmBackground(
+            this,
+            context.resources,
+            gameEngine.activeMapId,
+            BiomeVariants.biomeFor(gameEngine.levelSpec.levelId)
+        )
     }
 
     /** Savas gercekten devam ediyor mu? Dalga aralarindaki PREPARATION'i saymaz. */
     var battleActive by remember { mutableStateOf(false) }
+
+    // FD-018/019 — HARITA ARKAPLANI DURUMU (soguk savasa giris). GameCanvas
+    // bildirir; biz motoru bilgilendiririz (YALNIZ Ready serbest; Loading ve
+    // Failed'de PREPARATION DONAR, erken dalga ve saha dokunusu yok) ve
+    // "yukleniyor" / "yuklenemedi + yeniden dene / bolum sec" gostergesini
+    // ciziriz. Failed'de oyun ASKIDA kalmaz ama KILITLI kalir — oyuncu ya
+    // yeniden dener ya da haritaya doner (yanlis harita asla gosterilmez).
+    var mapState by remember { mutableStateOf<MapLoad<ImageBitmap>>(MapLoad.Loading) }
+    var mapRetry by remember { mutableStateOf<() -> Unit>({}) }
 
     // ⛔ GERI TUSU OYUNDAN CIKARIYORDU.
     //
@@ -417,9 +468,7 @@ fun GameScreen() {
                     // Faz 20 — PERDE ACILIS KARTI baglantisi. Kalicilik `SaveManager`in
                     // var olan dizeyle anahtarlanan tek atislik bayrak API'si uzerinden
                     // yuruyor (`act_intro_1..5`).
-                    actIntroStore = remember(saveManager) {
-                        SaveManagerActIntroStore(saveManager)
-                    },
+                    actIntroStore = actIntroStore,
                     // COIN CIPI = IKMAL DEPOSU KAPISI (satin alma). Reklamla coin kazanma
                     // teklifi YOKTUR; cip yalnizca depoyu acar.
                     onOpenStore = { storeOpen = true }
@@ -449,8 +498,25 @@ fun GameScreen() {
                     gameEngine = gameEngine,
                     frameTick = frameTick,
                     topInsetPx = hudInsetPx,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
+                    onMapStateChange = { st, retry ->
+                        mapState = st
+                        mapRetry = retry
+                        // YALNIZ Ready serbest birakir; Loading/Failed'de motor
+                        // PREPARATION'i dondurur, erken dalga/dokunus yok.
+                        gameEngine.setMapReady(st.isReady)
+                    }
                 )
+
+                // HARITA gostergesi: Loading -> "yukleniyor"; Failed -> hata +
+                // yeniden dene / bolum sec (oyun KILITLI, yanlis harita yok).
+                if (mapState !is MapLoad.Ready) {
+                    MapLoadingOverlay(
+                        failed = mapState is MapLoad.Failed,
+                        onRetry = mapRetry,
+                        onLevelSelect = { gameEngine.returnToLevelSelect() }
+                    )
+                }
 
                 // Top HUD Header
                 HUDOverlay(
@@ -544,15 +610,73 @@ fun GameScreen() {
                         onMainMenu = { gameEngine.returnToLevelSelect() },
                         onResetProgress = resetProgressAndReload
                     )
-                    GameState.VICTORY -> VictoryModal(
-                        gameEngine = gameEngine,
-                        clearResult = lastClearResult,
-                        nextLevelId = nextPlayableLevel,
-                        onNextLevel = nextPlayableLevel?.let { next ->
-                            { gameEngine.startNewGame(next) }
-                        },
-                        onLevelSelect = { gameEngine.returnToLevelSelect() }
-                    )
+                    GameState.VICTORY -> {
+                        VictoryModal(
+                            gameEngine = gameEngine,
+                            clearResult = lastClearResult,
+                            nextLevelId = nextCampaignLevel,
+                            // Buton sonraki kilitli olsa bile cizilir. Hedef
+                            // DONMUS (composition degeri `nextCampaignLevel`),
+                            // motorun anlik levelId'si DEGIL — sahip ikinci
+                            // dokunusta None doner.
+                            onNextLevel = nextCampaignLevel?.let { next ->
+                                {
+                                    runVictoryStep(
+                                        victory.onNextTapped(
+                                            clearedLevelId = next - 1,
+                                            isNextUnlocked = campaignProgress.isUnlocked(next),
+                                            store = actIntroStore
+                                        )
+                                    )
+                                }
+                            },
+                            onLevelSelect = { gameEngine.returnToLevelSelect() }
+                        )
+
+                        // KILITLI SONRAKI — haritaya DONMEDEN, bolum secimdekiyle
+                        // AYNI fiyat/onay/islem-ani bakiye akisi (FD-008).
+                        victory.pendingUnlock?.let { lvl ->
+                            UnlockConfirmOverlay(
+                                spec = GameConfig.levelSpec(lvl),
+                                balance = campaignProgress.coins,
+                                // Iptal: zafer durumu korunur, ucret yok.
+                                onCancel = { victory.onUnlockCancelled(lvl) },
+                                onConfirm = {
+                                    // HARCAMA sahip guard'inin ICINDE: tryUnlock
+                                    // yalnizca pencere gercekten acikken ve gecis
+                                    // sahiplenilmemisken calisir. Bayat/iptal
+                                    // sonrasi callback coin DUSUREMEZ (FD-012).
+                                    // tryUnlock islem-ani bakiyeyi kontrol eder;
+                                    // yetersiz/zaten-acikta false -> zaferde kal.
+                                    runVictoryStep(
+                                        victory.onUnlockConfirmed(lvl, actIntroStore) {
+                                            campaignProgress.tryUnlock(lvl)
+                                        }
+                                    )
+                                }
+                            )
+                        }
+
+                        // GORULMEMIS PERDE ACILISI — bolum secimdekiyle AYNI kart,
+                        // ayni kalici bayrak; yeni "seen" sistemi YOK. Kart tek
+                        // sefer savasi baslatir (bayat tekrar sahip tarafindan
+                        // engellenir).
+                        victory.pendingIntro?.let { lvl ->
+                            ActIntroOverlay(
+                                act = ActIntro.actOf(lvl),
+                                onDismiss = {
+                                    // markSeen YALNIZCA kabul edilen kapanista
+                                    // (Start) yazilir — bayat/cift dismiss bayragi
+                                    // kirletmez ve savasi baslatmaz (FD-012).
+                                    val step = victory.onIntroDismissed(lvl)
+                                    if (step is VictoryFlow.Step.Start) {
+                                        actIntroStore.markSeen(ActIntro.actOf(lvl))
+                                        runVictoryStep(step)
+                                    }
+                                }
+                            )
+                        }
+                    }
                     GameState.DEFEAT -> {
                         val defeatLevel = gameEngine.levelSpec.levelId
                         val decision = campaignProgress.continueDecision(defeatLevel)

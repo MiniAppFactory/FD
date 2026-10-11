@@ -844,7 +844,7 @@ private fun ReplayChoiceOverlay(
 }
 
 @Composable
-private fun UnlockConfirmOverlay(
+internal fun UnlockConfirmOverlay(
     spec: GameConfig.LevelSpec,
     balance: Int,
     onCancel: () -> Unit,

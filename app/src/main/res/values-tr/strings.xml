@@ -294,4 +294,10 @@ Normal tekrar coin kazandırmaz; Elit Sevk bir meydan okumadır.</string>
     <string name="store_card_body">Coin paketleri al</string>
     <string name="store_card_open">AÇ</string>
     <string name="store_card_packs">%1$d PAKET</string>
+
+    <!-- FD-018 -->
+    <string name="map_loading">HARİTA YÜKLENİYOR</string>
+    <!-- FD-019 -->
+    <string name="map_load_failed">HARİTA YÜKLENEMEDİ</string>
+    <string name="map_retry">YENİDEN DENE</string>
 </resources>

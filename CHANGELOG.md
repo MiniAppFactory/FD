@@ -6,6 +6,35 @@ yalan soyleyebiliyorlardi; surum notu artik kodla ayni gecmisi paylasiyor.
 
 ---
 
+## 2026-10-11 — HARITA KAYMASI DUZELTMESI (FD-032/033/034)
+
+Cihazda goruldu (S8 / SM-G950F, dalga 1): dusmanlar boyali yolu takip
+etmiyor, harita rotaya gore DIKEY kaymis.
+
+- KOK NEDEN: rota/pad geometrisi (`scaledRoutes`/`scaledBuildSpots`) yalniz
+  `loadLevel`'da olcekleniyordu. Ust HUD yuksekligi once bir TAHMINLE
+  (`GameConfig.HUD_TOP_INSET_DP`) baslayip HUD olculunce (`onSizeChanged`)
+  gercek degere guncellenince `topInsetPx` degisir -> `fieldRect` yeniden
+  hesaplanir -> harita bitmap'i `mapArtRect(fieldRect)`=YENI dikdortgene
+  cizilir, ama rota/pad ESKI dikdortgende kalir: kalici dikey kayma.
+- DUZELTME: `GameEngine.updateMapDimensions` rect degisince `rescaleGeometry()`
+  cagirir (rota+pad+kule yeni dikdortgene tasinir); canli dusman/mermi zaten
+  `remapLiveEntities` ile tasiniyordu. Yeni sistem yok — mevcut tek-kaynak
+  `normXToScreen`/`normYToScreen` transformu tutarli uygulandi.
+- REGRESYON: `MapShiftOnHudInsetChangeTest` (2 test; karsit ornek dahil).
+  Mevcut muhafizlar yesil: `ResizeKeepsEnemiesOnRoute`, `MapArtAlignment`,
+  `MapLayoutSafety`. Tam suite 1371/0/2, lint 0.
+- Oynanis/denge/ekonomi ve perf diff'i degismedi.
+
+## 2026-10-10 — CARPMA YOLU TAHSIS OPTIMIZASYONU
+
+- Top, cryo ve fuze alan etkileri artik her carpismada gecici `ArrayList`
+  uretmiyor; dusman listesi ayni sirayla, indeksli ve tahsissiz geziliyor.
+- Olen hedefe giden makineli tufek mermisinin sinirli yeniden hedeflemesi de
+  `filter + minByOrNull` ara listesi yerine tek geciste en yakin hedefi buluyor.
+- Dusman sirasi, esitlik davranisi, yaricap siniri (`<=`) ve hasar sirasi
+  korundu; oynanis/denge/ekonomi degismedi.
+
 ## 2026-09-30 — REKLAMSIZ + COIN HAKLARI + BES PAKET (v56)
 
 Kaynak: Codex TASK 001 (docs/CODEX_TO_CLAUDE_20260930.txt), kullanicinin acik yetkisiyle.

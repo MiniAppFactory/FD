@@ -423,4 +423,10 @@ Normal replay earns no coin; Elite Deploy is a challenge run.</string>
     <string name="store_debug_title" translatable="false">DEBUG · FAKE PURCHASES</string>
     <string name="store_debug_body" translatable="false">No Play Console needed; this panel does NOT exist in release builds. Each button runs the real fulfilment path (policy, ledger, wallet) with a fake Play token; only the consume/acknowledge call to Play is faked.</string>
     <string name="store_debug_status" translatable="false">Balance: %1$s · Total purchased: %2$s</string>
+
+    <!-- FD-018: soguk savasa giriste harita arkaplani gelene kadar gosterilir. -->
+    <string name="map_loading">LOADING MAP</string>
+    <!-- FD-019: harita yuklenemedi (retry'lara ragmen). Yanlis harita gosterilmez. -->
+    <string name="map_load_failed">MAP FAILED TO LOAD</string>
+    <string name="map_retry">RETRY</string>
 </resources>

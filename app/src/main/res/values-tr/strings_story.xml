@@ -114,4 +114,26 @@
         <item>Yamaç. Her şey.</item>
     </string-array>
 
+    <!-- BOSS ZAFER DONUS KARTI — EN dosyasiyla BIREBIR ayni anahtarlar
+         (StoryStringsTest.turkishCarriesEveryEnglishKey otomatik dogrular).
+         Ton: telsiz, sifatsiz. KESME ISARETI YOK (aapt hatasi). Butceler
+         StoryStringsTest ile kilitli. -->
+    <string name="story_debrief_label">DÖNÜŞ</string>
+    <string name="story_next_label">SIRADAKİ</string>
+
+    <string name="story_boss_11">İlk komuta tankı düştü. Kolun bir başı var.</string>
+    <string name="story_boss_next_11">Karşı taarruz. Köyü geri al.</string>
+    <string name="story_boss_16">Bir gecede iki komuta düştü.</string>
+    <string name="story_boss_next_16">Şelaleye it. Üç tank bekliyor.</string>
+    <string name="story_boss_22">Üç tank tek geçitte durdu. Kol hiç tek değildi.</string>
+    <string name="story_boss_next_22">Kış cephesi. Kovalama bitti. Tut.</string>
+    <string name="story_boss_33">Köy kolu ikiye böldü.</string>
+    <string name="story_boss_next_33">Çekil. Çöl hattını tut.</string>
+    <string name="story_boss_44">Çatalda iki komuta düştü. Komuta sustu.</string>
+    <string name="story_boss_next_44">Son siper. Ayakta kalan tutar.</string>
+    <string name="story_boss_48">Kuşatma kırıldı.</string>
+    <string name="story_boss_next_48">Son koridora çekil.</string>
+    <string name="story_boss_55">Yamaç tutuldu. Demir Kol kırıldı.</string>
+    <string name="story_boss_finale">Hat hâlâ ayakta.</string>
+
 </resources>

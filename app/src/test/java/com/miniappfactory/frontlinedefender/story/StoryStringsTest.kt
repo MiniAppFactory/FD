@@ -60,6 +60,23 @@ class StoryStringsTest {
         const val ACT_LABEL_BUDGET_CHARS = 10
         const val ACK_BUDGET_CHARS = 12
 
+        /**
+         * Boss zafer donus karti (docs/STORY.md §7). Kart, zafer modalinin
+         * 480 dp genisligindeki panelinde, kaydirilabilir alanda cizilir —
+         * bolum kartindan (106 dp) cok daha ferah. Yine de disiplin icin
+         * butce kilitli: donus satiri iki cumleye kadar, sonraki hedef tek
+         * emir. story_debrief_label / story_next_label onay cipiyle ayni
+         * taban (kisa, tek satir).
+         */
+        const val BOSS_OUTCOME_BUDGET_CHARS = 64
+        const val BOSS_NEXT_BUDGET_CHARS = 48
+
+        /** 7 boss (STORY §4.4); L55 finalinde "sonraki" yoktur, kapanis satiri vardir. */
+        val BOSS_LEVELS = listOf(11, 16, 22, 33, 44, 48, 55)
+
+        val BOSS_OUTCOME_KEY = Regex("story_boss_\\d+")
+        val BOSS_NEXT_KEY = Regex("story_boss_next_\\d+")
+
         val STRING_ENTRY = Regex(
             "<string name=\"([^\"]+)\"[^>]*>(.*?)</string>",
             RegexOption.DOT_MATCHES_ALL
@@ -207,6 +224,63 @@ class StoryStringsTest {
                 "$lang/story_ack ${ack.length} karakter (butce $ACK_BUDGET_CHARS): \"$ack\"",
                 ack.length <= ACK_BUDGET_CHARS
             )
+        }
+    }
+
+    // =====================================================================
+    // BOSS DONUS KARTI — varlik, butce (docs/STORY.md §7)
+    // =====================================================================
+
+    /** 7 boss donus satiri + 6 sonraki-hedef + final kapanis, iki dilde de dolu. */
+    @Test
+    fun everyBossDebriefKeyIsPresentInBothLanguages() {
+        byLanguage().forEach { (lang, strings) ->
+            BOSS_LEVELS.forEach { id ->
+                assertTrue(
+                    "$lang/story_boss_$id yok — boss $id donus karti bos kalir",
+                    strings["story_boss_$id"]?.isNotBlank() == true
+                )
+            }
+            (BOSS_LEVELS - 55).forEach { id ->
+                assertTrue(
+                    "$lang/story_boss_next_$id yok — boss $id sonraki hedefi bos kalir",
+                    strings["story_boss_next_$id"]?.isNotBlank() == true
+                )
+            }
+            assertTrue(
+                "$lang/story_boss_finale yok — L55 kapanis satiri bos",
+                strings["story_boss_finale"]?.isNotBlank() == true
+            )
+            assertTrue(
+                "$lang/story_debrief_label yok", strings["story_debrief_label"]?.isNotBlank() == true
+            )
+            assertTrue(
+                "$lang/story_next_label yok", strings["story_next_label"]?.isNotBlank() == true
+            )
+        }
+    }
+
+    @Test
+    fun bossDebriefLinesFitTheirBudget() {
+        byLanguage().forEach { (lang, strings) ->
+            strings.forEach { (key, value) ->
+                when {
+                    // next_ ONCE kontrol edilir: "story_boss_11" sonraki degil ama
+                    // "story_boss_next_11" outcome regex'ine de uyar.
+                    BOSS_NEXT_KEY.matches(key) -> assertTrue(
+                        "$lang/$key ${value.length} karakter (butce $BOSS_NEXT_BUDGET_CHARS): \"$value\"",
+                        value.length <= BOSS_NEXT_BUDGET_CHARS
+                    )
+                    BOSS_OUTCOME_KEY.matches(key) || key == "story_boss_finale" -> assertTrue(
+                        "$lang/$key ${value.length} karakter (butce $BOSS_OUTCOME_BUDGET_CHARS): \"$value\"",
+                        value.length <= BOSS_OUTCOME_BUDGET_CHARS
+                    )
+                    key == "story_debrief_label" || key == "story_next_label" -> assertTrue(
+                        "$lang/$key ${value.length} karakter (butce $ACK_BUDGET_CHARS): \"$value\"",
+                        value.length <= ACK_BUDGET_CHARS
+                    )
+                }
+            }
         }
     }
 

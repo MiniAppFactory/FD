@@ -118,6 +118,88 @@ object ActIntro {
     fun hintId(act: Int): String = "act_intro_${act.coerceIn(1, ACT_COUNT)}"
 }
 
+/**
+ * BOSS ANLATI DORUKLARI — zafer panelindeki "donus karti" (docs/STORY.md §7).
+ *
+ * `ActIntro` gibi SAF aritmetik/veri: Android kaynagi okumaz, `GameConfig`e
+ * BAGIMLI DEGILDIR, bu yuzden Robolectric'siz kilitlenebilir. Boss kumesi
+ * `STORY.md` §4.4'te dondurulmus 7 bolumdur; motor-dogru kaynak ise
+ * `WaveDefinitions.wavesFor(levelId)` icindeki `COMMAND_TANK` dalgasidir.
+ * Bu iki tarafin AYNI kumeyi verdigi `ActIntroTest` icinde dogrulanir —
+ * `ActIntro.actOf` <-> `GameConfig.LevelSpec.act` eslemesiyle ayni disiplin.
+ */
+object StoryBeats {
+
+    /** `STORY.md` §4.4 boss bolumleri. Motor dogrulamasi ActIntroTest'te. */
+    val BOSS_LEVELS: Set<Int> = setOf(11, 16, 22, 33, 44, 48, 55)
+
+    /** Kampanya finali — "sonraki hedef" yerine kapanis satiri cizilir. */
+    const val FINALE_LEVEL = 55
+
+    fun isBoss(levelId: Int): Boolean = levelId in BOSS_LEVELS
+
+    fun isFinale(levelId: Int): Boolean = levelId == FINALE_LEVEL
+}
+
+/**
+ * ZAFER -> SONRAKI BOLUM AKISI (FD-008).
+ *
+ * `ActIntro`/`StoryBeats` gibi SAF karar mantigi: Compose ve Android kaynagi
+ * tanimaz, bu yuzden `VictoryFlowTest` ile Robolectric'siz kilitlenir.
+ * `GameScreen`in zafer dalindaki butun dallanma BURADAN okunur — ekran yalnizca
+ * donen adimi uygular (pencere ac / savas baslat). Boylece "acik/kilitli,
+ * gorulmemis/gorulmus perde acilisi, kampanya finali" kararlari tek yerde durur
+ * ve testlenebilir (LevelSelectScreen.deploy kapisinin `ActIntroTest.gate`
+ * ile modellenmesiyle ayni disiplin).
+ *
+ * Kilitli sonraki icin UNLOCK adimi doner; ekran onu bolum secimdekiyle AYNI
+ * `UnlockConfirmOverlay` + `tryUnlock` (fiyat + acik onay + islem-ani bakiye,
+ * otomatik ucret kesme yok, zaten acik bolumu tekrar UCRETLENDIRMEZ) ile isler.
+ */
+object VictoryFlow {
+
+    sealed interface Step {
+        /** Kampanya bitti (son bolum temizlendi); SONRAKI BOLUM cizilmez. */
+        data object None : Step
+        /** Sonraki kilitli: once UnlockConfirmOverlay (haritaya DONMEDEN). */
+        data class Unlock(val level: Int) : Step
+        /** Gorulmemis perde acilisi: once ActIntroOverlay, sonra savas. */
+        data class Intro(val level: Int, val act: Int) : Step
+        /** Dogrudan NORMAL savas (elite = false; normal/elit ayrimi korunur). */
+        data class Start(val level: Int) : Step
+    }
+
+    /** Zaferdeki sonraki ADAY; kampanya disiysa `null` (SONRAKI BOLUM yok). */
+    fun nextCandidate(clearedLevelId: Int, campaignLevels: Int): Int? =
+        (clearedLevelId + 1).takeIf { it in 1..campaignLevels }
+
+    /** SONRAKI BOLUM dokunuldugundaki ILK adim. */
+    fun firstStep(
+        clearedLevelId: Int,
+        campaignLevels: Int,
+        isNextUnlocked: Boolean,
+        store: ActIntroStore?
+    ): Step {
+        val next = nextCandidate(clearedLevelId, campaignLevels) ?: return Step.None
+        return if (!isNextUnlocked) Step.Unlock(next) else afterUnlock(next, store)
+    }
+
+    /**
+     * Kilit acildiktan SONRA (veya sonraki zaten acikken): gorulmemis perde
+     * acilisiysa perde karti, degilse dogrudan savas. `store == null` (act-intro
+     * bagli degil) -> her zaman dogrudan savas; eski davranisla birebir ayni.
+     */
+    fun afterUnlock(level: Int, store: ActIntroStore?): Step =
+        if (store != null &&
+            ActIntro.isActOpener(level) &&
+            !store.isSeen(ActIntro.actOf(level))
+        ) {
+            Step.Intro(level, ActIntro.actOf(level))
+        } else {
+            Step.Start(level)
+        }
+}
+
 // ---------------------------------------------------------------------------
 // Kalicilik yuzeyi
 // ---------------------------------------------------------------------------
@@ -193,6 +275,36 @@ fun levelObjectiveOrEmpty(levelId: Int): String {
     val lines = stringArrayResource(R.array.story_objectives)
     val index = levelId - 1
     return if (index in lines.indices) lines[index] else ""
+}
+
+/**
+ * Boss zafer "donus" satiri (ne oldu) — `null` ise boss DEGIL ve kart cizilmez.
+ * `when` 7 boss bolumunun hepsini kapsar; boss olmayan id `null` doner, yani
+ * cagiran taraf `StoryBeats.isBoss` kontrolu olmadan da guvenlidir.
+ */
+fun storyBossOutcomeRes(levelId: Int): Int? = when (levelId) {
+    11 -> R.string.story_boss_11
+    16 -> R.string.story_boss_16
+    22 -> R.string.story_boss_22
+    33 -> R.string.story_boss_33
+    44 -> R.string.story_boss_44
+    48 -> R.string.story_boss_48
+    55 -> R.string.story_boss_55
+    else -> null
+}
+
+/**
+ * Boss zaferinden sonraki hedef satiri. FINAL (L55) icin `null` — orada "sonraki"
+ * yoktur, yerine [R.string.story_boss_finale] kapanis satiri cizilir.
+ */
+fun storyBossNextRes(levelId: Int): Int? = when (levelId) {
+    11 -> R.string.story_boss_next_11
+    16 -> R.string.story_boss_next_16
+    22 -> R.string.story_boss_next_22
+    33 -> R.string.story_boss_next_33
+    44 -> R.string.story_boss_next_44
+    48 -> R.string.story_boss_next_48
+    else -> null
 }
 
 // ---------------------------------------------------------------------------
