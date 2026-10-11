@@ -2,6 +2,7 @@ package com.miniappfactory.frontlinedefender.game.ui
 
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -11,6 +12,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -228,10 +231,19 @@ fun AutoShrinkText(
     maxLines: Int = 1,
     textAlign: TextAlign? = null,
     resetKey: Any? = text,
-    stepSp: Float = 0.5f
+    stepSp: Float = 0.5f,
+    // ⚠ 2026-10-11 (FD-031) — font padding'i kapatma secenegi. Kart stat
+    // satirlari (hedef/dalga) ~13,5 dp'lik dar sablon yuvalarina oturuyor; 9 sp
+    // metnin VARSAYILAN font padding'li satir kutusu yuvayla neredeyse esit
+    // oldugundan Turkce alt-uzantilar (g, ç, ş, ğ, p) alt ayrac cizgisine
+    // deger/kesik gorunur. includeFontPadding=false satir kutusunu simetrik
+    // daraltir; glif AYNI merkezde kalir ama alt/ustte pay acilir. Varsayilan
+    // true -> mevcut tum cagirici davranisi birebir korunur.
+    includeFontPadding: Boolean = true
 ) {
     var fontSize by remember(resetKey, maxFontSize) { mutableStateOf(maxFontSize) }
 
+    val baseStyle = LocalTextStyle.current
     Text(
         text = text,
         color = color,
@@ -241,6 +253,10 @@ fun AutoShrinkText(
         textAlign = textAlign,
         // Ellipsis DEGIL: tasmayi punto ile cozuyoruz, kirparak degil.
         overflow = TextOverflow.Clip,
+        style = if (includeFontPadding) baseStyle
+        else baseStyle.merge(
+            TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false))
+        ),
         modifier = modifier,
         onTextLayout = { result ->
             val overflows = result.didOverflowWidth || result.didOverflowHeight

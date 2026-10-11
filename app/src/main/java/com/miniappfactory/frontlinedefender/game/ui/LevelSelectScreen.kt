@@ -1203,6 +1203,8 @@ private fun LevelCard(
                     maxFontSize = 9.sp,
                     minFontSize = 7.sp,
                     maxLines = 1,
+                    // FD-031: dar yuvada alt-uzanti kirpilmasini onler.
+                    includeFontPadding = false,
                     modifier = Modifier.fillMaxWidth()
                 )
             }
@@ -1233,7 +1235,9 @@ private fun LevelCard(
                 fontWeight = FontWeight.Bold,
                 maxFontSize = 9.sp,
                 minFontSize = 7.sp,
-                maxLines = 1
+                maxLines = 1,
+                // FD-031: dar yuvada alt-uzanti kirpilmasini onler.
+                includeFontPadding = false
             )
         }
 

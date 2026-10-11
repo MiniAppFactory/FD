@@ -26,10 +26,12 @@ import com.miniappfactory.frontlinedefender.game.economy.EconomyConfig
 import com.miniappfactory.frontlinedefender.game.economy.PlayerWallet
 import com.miniappfactory.frontlinedefender.game.economy.lockCost
 import com.miniappfactory.frontlinedefender.game.engine.GameEngine
+import com.miniappfactory.frontlinedefender.game.engine.GameState
 import com.miniappfactory.frontlinedefender.game.model.GameConfig
 import com.miniappfactory.frontlinedefender.game.ui.ActIntro
 import com.miniappfactory.frontlinedefender.game.ui.ActIntroOverlay
 import com.miniappfactory.frontlinedefender.game.ui.ActIntroStore
+import com.miniappfactory.frontlinedefender.game.ui.MapLoadingOverlay
 import com.miniappfactory.frontlinedefender.game.ui.UnlockConfirmOverlay
 import com.miniappfactory.frontlinedefender.game.ui.VictoryFlow
 import com.miniappfactory.frontlinedefender.game.ui.VictoryModal
@@ -194,6 +196,106 @@ class VictoryUnlockFlowTest {
         assertEquals("iptal -> HARCAMA CAGRILMAZ (0)", 0, charges)
         assertEquals("iptal -> bakiye degismez", before, progress.coins)
         assertFalse("L12 hala kilitli", progress.isUnlocked(12))
+
+        // AKISIN SONUNA KADAR (FD-029 #1): iptal sonrasi hicbir Start adimi
+        // dogmaz, motor L12'ye GECMEZ — baslatilmadigi icin varsayilan L1'de.
+        assertEquals("iptal sonrasi gecis olmadi -> motor L12 yuklemedi", 1, engine.currentLevelId.value)
+    }
+
+    // =====================================================================
+    // AKISIN SONU: KILIDI AC -> ANLASILDI -> MOTOR GERCEKTEN L12'DE (FD-029 #2)
+    //
+    // Mevcut zincir `onUnlockConfirmed` -> Intro(12) adiminda bitiyordu. Bu test
+    // zinciri `onIntroDismissed` -> Step.Start(12)'e ve oradan GERCEK motora
+    // (GameScreen'in Start adimini uyguladigi gibi `startNewGame`) kadar surer:
+    // L12 yuklendi (levelSpec.levelId=12), aktif levelId=12, durum PREPARATION.
+    // =====================================================================
+
+    @Test
+    fun unlockConfirm_thenIntroDismiss_startsEngineAtL12Preparation() {
+        val cost = lockCost(12)
+        val progress = progressWith(cost + 500)
+        val before = progress.coins
+        val t = VictoryTransition(EconomyConfig.CAMPAIGN_LEVELS)
+        val store = UnseenActIntroStore()
+
+        // SONRAKI -> kilitli -> Unlock(12)
+        assertEquals(VictoryFlow.Step.Unlock(12), t.onNextTapped(11, progress.isUnlocked(12), store))
+
+        // KILIDI AC: TEK harcama, bakiye tam lockCost(12) kadar duser.
+        var charges = 0
+        val confirmed = t.onUnlockConfirmed(level = 12, store = store) { charges++; progress.tryUnlock(12) }
+        assertEquals("yeterli -> L12 Act II intro", VictoryFlow.Step.Intro(12, ActIntro.actOf(12)), confirmed)
+        assertEquals("harcama TEK kez", 1, charges)
+        assertEquals("bakiye tam lockCost(12) dustu", before - cost, progress.coins)
+        assertTrue("L12 acildi", progress.isUnlocked(12))
+
+        // CIFT-TIK KORUMASI: onay callback'i bayat tekrar kosarsa cift ucret YOK.
+        val staleConfirm = t.onUnlockConfirmed(level = 12, store = store) { charges++; progress.tryUnlock(12) }
+        assertEquals("bayat onay -> gecis yok", VictoryFlow.Step.None, staleConfirm)
+        assertEquals("cift-tik cift-ucret YOK", 1, charges)
+        assertEquals("bakiye bir kez dustu", before - cost, progress.coins)
+
+        // ANLASILDI: perde karti kapandi -> Start(12) (GameScreen bu adimi uygular).
+        val start = t.onIntroDismissed(12)
+        assertEquals("ANLASILDI -> Start(12)", VictoryFlow.Step.Start(12), start)
+
+        // CIFT-TIK KORUMASI: ikinci ANLASILDI bayat -> ikinci Start YOK.
+        assertEquals("bayat ANLASILDI -> gecis yok", VictoryFlow.Step.None, t.onIntroDismissed(12))
+
+        // GameScreen'in Start dalini birebir uygula: motoru L12'ye surer.
+        engine.startNewGame((start as VictoryFlow.Step.Start).level)
+
+        assertEquals("motor GERCEKTEN L12'yi yukledi", 12, engine.currentLevelId.value)
+        assertEquals("aktif levelSpec L12", 12, engine.levelSpec.levelId)
+        assertEquals("L12 PREPARATION", GameState.PREPARATION, engine.gameState.value)
+    }
+
+    // =====================================================================
+    // HARITA FAILED -> YENIDEN DENE + BOLUM SEC callback'leri (FD-029 #3)
+    //
+    // Kontrollu/enjekte hata: `MapLoadingOverlay(failed = true, ...)` uretimdeki
+    // GameScreen ile AYNI callback dikisini kullanir (onRetry = mapRetry,
+    // onLevelSelect = { gameEngine.returnToLevelSelect() }). Cihazda kaynak
+    // bozma YOK; hata bayragi dogrudan enjekte edilir. YENIDEN DENE callback'i
+    // cagrilir, BOLUM SEC ise GERCEK `returnToLevelSelect`i kosar (motor
+    // LEVEL_SELECT'e doner).
+    // =====================================================================
+
+    @Test
+    fun mapFailed_retryAndLevelSelect_callbacksFire_andLevelSelectReturns() {
+        engine.startNewGame(12) // savasta: harita arkaplani yuklenirken hata olusur
+        assertEquals("on kosul: L12 PREPARATION", GameState.PREPARATION, engine.gameState.value)
+
+        var retries = 0
+        composeRule.setContent {
+            FrontlineDefenderTheme {
+                Box(Modifier.fillMaxSize()) {
+                    MapLoadingOverlay(
+                        failed = true,
+                        onRetry = { retries++ },
+                        onLevelSelect = { engine.returnToLevelSelect() }, // GameScreen ile ayni
+                    )
+                }
+            }
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("map_failed_retry").assertIsDisplayed().assertHasClickAction()
+        composeRule.onNodeWithTag("map_failed_level_select").assertIsDisplayed().assertHasClickAction()
+
+        composeRule.onNodeWithTag("map_failed_retry").performClick()
+        assertEquals("YENIDEN DENE callback cagrildi", 1, retries)
+
+        composeRule.onNodeWithTag("map_failed_level_select").performClick()
+        composeRule.waitForIdle()
+        assertEquals(
+            "BOLUM SEC -> GERCEK returnToLevelSelect kostu (motor LEVEL_SELECT)",
+            GameState.LEVEL_SELECT,
+            engine.gameState.value,
+        )
+
+        capture("map_failed_overlay_tr.png")
     }
 
     // =====================================================================
